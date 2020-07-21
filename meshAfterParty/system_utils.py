@@ -130,13 +130,21 @@ su.save_object(another_neuron,"inhibitory_saved_neuron")
 """
 from pathlib import Path
 import pickle
-def save_object(obj, filename):
+def save_object(obj, filename,return_size=False):
     if type(filename) == type(Path()):
         filename = str(filename.absolute())
     if filename[-4:] != ".pkl":
         filename += ".pkl"
     with open(filename, 'wb') as output:  # Overwrites any existing file.
         pickle.dump(obj, output, pickle.HIGHEST_PROTOCOL)
+    print(f"Saved object at {Path(filename).absolute()}")
+    
+    file_size = get_file_size(filename)/1000000
+    print(f"File size is {file_size} MB")
+    
+    if return_size:
+        return file_size
+    
 
 def load_object(filename):
     if filename[-4:] != ".pkl":
@@ -150,21 +158,40 @@ def load_object(filename):
 
 #--------------- Less memory pickling options -----------------
 # Pickle a file and then compress it into a file with extension 
-def compressed_pickle(title, data):
+import bz2
+import _pickle as cPickle
+def compressed_pickle(obj,filename,return_size=False):
     """
-    compressed_pickle('example_cp', data) 
+    compressed_pickle(data,'example_cp') 
     """
-    with bz2.BZ2File(title + '.pbz2', 'w') as f: 
-        cPickle.dump(data, f)
+    if type(filename) == type(Path()):
+        filename = str(filename.absolute())
+    if filename[-5:] != ".pbz2":
+        filename += ".pbz2"
+ 
+    with bz2.BZ2File(filename, 'w') as f: 
+        cPickle.dump(obj, f)
+        
+    print(f"Saved object at {Path(filename).absolute()}")
+    file_size = get_file_size(filename)/1000000
+    print(f"File size is {file_size} MB")
+    
+    if return_size:
+        return file_size
 
 
 # Load any compressed pickle file
-def decompress_pickle(file):
+def decompress_pickle(filename):
     """
     Example: 
     data = decompress_pickle('example_cp.pbz2') 
     """
-    data = bz2.BZ2File(file, 'rb')
+    if type(filename) == type(Path()):
+        filename = str(filename.absolute())
+    if filename[-5:] != ".pbz2":
+        filename += ".pbz2"
+        
+    data = bz2.BZ2File(filename, 'rb')
     data = cPickle.load(data)
     return data
 

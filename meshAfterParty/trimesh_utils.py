@@ -11,6 +11,11 @@ import time
 from tqdm.notebook import tqdm
 import numpy_utils as nu
 
+#loading a mesh safely without any processing to mess up the vertices/faces
+def load_mesh_no_processing(current_mesh_file):
+    return trimesh.load_mesh(current_mesh_file,process=False)
+
+
 def mesh_center_vertex_average(mesh_list):
     if not nu.is_array_like(mesh_list):
         mesh_list = [mesh_list]
@@ -272,9 +277,53 @@ def closest_distance_between_meshes(original_mesh,submesh,print_flag=False):
         
     return np.min(distances)
 
+def compare_meshes_by_face_midpoints_list(mesh1_list,mesh2_list,**kwargs):
+    match_list = []
+    for mesh1,mesh2 in zip(mesh1_list,mesh2_list):
+        match_list.append(compare_meshes_by_face_midpoints(mesh1,mesh2,**kwargs))
+    
+    return match_list
+
+def compare_meshes_by_face_midpoints(mesh1,mesh2,match_threshold=0.001,print_flag=False):
+    #0) calculate the face midpoints of each of the faces for original and submesh
+    global_start = time.time()
+    total_faces_greater_than_treshold = dict()
+    starting_meshes = [mesh1,mesh2]
+    for i in range(0,2):
+        
+        original_mesh_midpoints = starting_meshes[i].triangles_center
+        submesh_midpoints = starting_meshes[np.abs(i-1)].triangles_center
+
+
+        #1) Put the submesh face midpoints into a KDTree
+        submesh_mesh_kdtree = KDTree(submesh_midpoints)
+        #2) Query the fae midpoints of submesh against KDTree
+        distances,closest_node = submesh_mesh_kdtree.query(original_mesh_midpoints)
+
+        faces_greater_than_treshold = (np.arange(len(original_mesh_midpoints)))[distances >= match_threshold]
+        total_faces_greater_than_treshold[i] = faces_greater_than_treshold
+    
+    if print_flag:
+        print(f"Total time for mesh mapping: {time.time() - global_start}")
+    
+    
+    if len(total_faces_greater_than_treshold[0])>0 or len(total_faces_greater_than_treshold[1])>0:
+        if print_flag:
+            print(f"{len(total_faces_greater_than_treshold[0])} face midpoints of mesh1 were farther than {match_threshold} "
+                  f"from the face midpoints of mesh2")
+            print(f"{len(total_faces_greater_than_treshold[1])} face midpoints of mesh2 were farther than {match_threshold} "
+                  f"from the face midpoints of mesh1")
+        return False
+    else:
+        if print_flag:
+            print("Meshes are equal!")
+        return True
+    
+
 def original_mesh_faces_map(original_mesh, submesh,
                            matching=True,
-                           print_flag=True):
+                           print_flag=True,
+                           match_threshold = 0.001):
     """
     PUrpose: Given a base mesh and mesh that was a submesh of that base mesh
     - find the original face indices of the submesh
@@ -296,7 +345,7 @@ def original_mesh_faces_map(original_mesh, submesh,
     if type(submesh) != type(trimesh.Trimesh()):
         submesh = combine_meshes(submesh)
     
-    match_threshold = 0.001
+    
     
     #0) calculate the face midpoints of each of the faces for original and submesh
     original_mesh_midpoints = original_mesh.triangles_center
@@ -405,7 +454,6 @@ def mesh_pieces_connectivity(
         else:
             raise Exception("Soething messed up with return in mesh connectivity")
             
-    
 
 
 

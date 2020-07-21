@@ -1,9 +1,32 @@
 import networkx as nx
 import numpy as np
 import numpy_utils as nu
+import time
 
-def compare_endpoints(endpoints_1,endpoints_2):
-    return np.array_equal(np.sort(endpoints_1,axis=0),np.sort(endpoints_2,axis=0))
+def compare_endpoints(endpoints_1,endpoints_2,**kwargs):
+    """
+    comparing the endpoints of a graph: 
+    
+    Ex: 
+    import networkx_utils as xu
+    xu = reload(xu)
+    end_1 = np.array([[2,3,4],[1,4,5]])
+    end_2 = np.array([[1,4,5],[2,3,4]])
+
+    xu.compare_endpoints(end_1,end_2)
+    """
+    #this older way mixed the elements of the coordinates together to just sort the columns
+    #return np.array_equal(np.sort(endpoints_1,axis=0),np.sort(endpoints_2,axis=0))
+    
+    #this is correct way to do it (but has to be exact to return true)
+    #return np.array_equal(nu.sort_multidim_array_by_rows(endpoints_1),nu.sort_multidim_array_by_rows(endpoints_2))
+
+    return nu.compare_threshold(nu.sort_multidim_array_by_rows(endpoints_1),
+                                nu.sort_multidim_array_by_rows(endpoints_2),
+                                **kwargs)
+
+
+
 def combine_graphs(list_of_graphs):
     """
     Purpose: Will combine graphs, but if they have the same name
@@ -141,18 +164,53 @@ def relabel_node_names(G,mapping,copy=False):
     nx.relabel_nodes(G, mapping, copy=copy)
     print("Finished relabeling nodes")
     
+    
+def get_all_attributes_for_nodes(G,node_list=[],
+                       return_dict=False):
+    if len(node_list) == 0:
+        node_list = list(G.nodes())
+    
+    attributes_list = [] 
+    attributes_list_dict = dict()
+    for n in node_list:
+        attributes_list.append(G.nodes[n])
+        attributes_list_dict.update({n:G.nodes[n]})
+    
+    if return_dict:
+        return attributes_list_dict
+    else:
+        return attributes_list
+    
+# -------------- start of functions to help with edges ---------------#
+def get_all_attributes_for_edges(G1,edges_list=[],return_dict=False):
+    """
+    Ex: 
+    G1 = limb_concept_network
+    xu.get_all_attributes_for_edges(G1,return_dict=True)
+    """
+    if len(edges_list) == 0:
+        print("Edge list was 0 so generating sorted edges")
+        edges_list = nu.sort_multidim_array_by_rows(G1.edges(),order_row_items=isinstance(G1,(nx.Graph)))
+    elif len(edges_list) != len(G1.edges()):
+        print(f"**Warning the length of edges_list ({len(edges_list)}) is less than the total number of edges for Graph**")
+    else:
+        pass
 
-#graph wrapper that allows for the ordered storing and returning of edges
-"""
-Functions that want to add functionality to
-add_edge
-add_edges_from
+    attributes_list = [] 
+    attributes_list_dict = dict()
+    for u,v in edges_list:
+        attributes_list.append(G1[u][v])
+        attributes_list_dict.update({(u,v):G1[u][v]})
+    
+    
+    if return_dict:
+        return attributes_list_dict
+    else:
+        return attributes_list
 
-delete_edge
 
 
 
-"""
 def get_edge_attributes(G,attribute="order",edge_list=[],undirected=True):
     #print(f"edge_list = {edge_list}, type={type(edge_list)}, shape = {edge_list.shape}")
     #print("")
@@ -351,6 +409,321 @@ def get_starting_node(G,attribute_for_start="starting_coordinate"):
 
     starting_node = list(starting_node_dict.keys())[0]
     return starting_node
+
+
+def compare_networks(
+    G1,
+    G2,
+    compare_edge_attributes=["all"],
+    compare_edge_attributes_exclude=[],
+    edge_threshold_attributes = ["weight"],
+    edge_comparison_threshold=0,
+    compare_node_attributes=["all"], 
+    compare_node_attributes_exclude=[],
+    node_threshold_attributes = ["coordinates","starting_coordinate","endpoints"],
+    node_comparison_threshold=0,
+    return_differences=False,
+    print_flag=False
+    ):
+    """
+    Purpose: To customly compare graphs based on the edges attributes and nodes you want to compare
+    AND TO MAKE SURE THEY HAVE THE SAME NODE NAMES
+    
+    
+    G1,G2,#the 2 graphs that will be compared
+    compare_edge_attributes=[],#whether to consider the edge attributes when comparing
+    edge_threshold_attributes = [], #the names of attributes that will be considered close if below edge_comparison_threshold
+    edge_comparison_threshold=0, #the threshold for comparing the attributes named in edge_threshold_attributes
+    compare_node_attributes=[], #whether to consider the node attributes when comparing
+    node_threshold_attributes = [], #the names of attributes that will be considered close if below node_comparison_threshold
+    node_comparison_threshold=0, #the threshold for comparing the attributes named in node_threshold_attributes
+    print_flag=False
+    
+    
+    Pseudocode:
+    0) check that number of edges and nodes are the same, if not then return false
+    1) compare the sorted edges array to see if equal
+    2) compare the edge weights are the same (maybe within a threshold) (BUT MUST SPECIFY THRESHOLD)
+    3) For each node name: 
+    - check that the attributes are the same
+    - can specify attribute names that can be within a certian threshold (BUT MUST SPECIFY THRESHOLD)
+    
+    
+    Example: 
+    # Testing of the graph comparison 
+    network_copy = limb_concept_network.copy()
+    network_copy_2 = network_copy.copy()
+
+    #changing and seeing if we can pick up on the difference
+    network_copy[1][2]["order"] = 55
+    network_copy_2.nodes[2]["endpoints"] = np.array([[1,2,3],[4,5,6]])
+    network_copy_2.nodes[3]["endpoints"] = np.array([[1,2,5],[4,5,6]])
+    network_copy_2.remove_edge(1,2)
+
+    xu.compare_networks(
+        G1=network_copy,
+        G2=network_copy_2,
+        compare_edge_attributes=["all"],
+        edge_threshold_attributes = [],
+        edge_comparison_threshold=0,
+        compare_node_attributes=["endpoints"], 
+        node_threshold_attributes = ["endpoints"],
+        node_comparison_threshold=0.1,
+        print_flag=True
+        )
+        
+    Example with directional: 
+    #directional test 
+
+    network_copy = limb_concept_network.copy()
+    network_copy_2 = network_copy.copy()
+
+    #changing and seeing if we can pick up on the difference
+
+    network_copy_2.nodes[2]["endpoints"] = np.array([[1,2,3],[4,5,6]])
+    network_copy_2.nodes[3]["endpoints"] = np.array([[1,2,5],[4,5,6]])
+    del network_copy_2.nodes[12]["starting_coordinate"]
+    #network_copy_2.remove_edge(1,2)
+
+    xu.compare_networks(
+        G1=network_copy,
+        G2=network_copy_2,
+        compare_edge_attributes=["all"],
+        edge_threshold_attributes = [],
+        edge_comparison_threshold=0,
+        compare_node_attributes=["all"], 
+        node_threshold_attributes = ["endpoints"],
+        compare_node_attributes_exclude=["data"],
+        node_comparison_threshold=0.1,
+        print_flag=True
+        )
+    
+    Example on how to use to compare skeletons: 
+    skeleton_1 = copy.copy(total_skeleton)
+    skeleton_2 = copy.copy(total_skeleton)
+    skeleton_1[0][0] = np.array([558916.8, 1122107. ,  842972.8])
+
+    sk_1_graph = sk.convert_skeleton_to_graph(skeleton_1)
+    sk_2_graph = sk.convert_skeleton_to_graph(skeleton_2)
+
+    xu.compare_networks(sk_1_graph,sk_2_graph,print_flag=True,
+                     edge_comparison_threshold=2,
+                     node_comparison_threshold=2)
+    
+    """
+    
+    total_compare_time = time.time()
+    
+    local_compare_time = time.time()
+    if not nu.is_array_like(compare_edge_attributes):
+        compare_edge_attributes = [compare_edge_attributes]
+    
+    if not nu.is_array_like(compare_edge_attributes):
+        compare_edge_attributes = [compare_edge_attributes]
+      
+    differences_list = []
+    return_value = None
+    for i in range(0,1):
+        #0) check that number of edges and nodes are the same, if not then return false
+        if str(type(G1)) != str(type(G1)):
+            differences_list.append(f"Type of G1 graph ({type(G1)}) does not match type of G2 graph({type(G2)})")
+            break
+
+        if len(G1.edges()) != len(G2.edges()):
+            differences_list.append(f"Number of edges in G1 ({len(G1.edges())}) does not match number of edges in G2 ({len(G2.edges())})")
+            break
+
+        if len(G1.nodes()) != len(G2.nodes()):
+            differences_list.append(f"Number of nodes in G1 ({len(G1.nodes())}) does not match number of nodes in G2 ({len(G2.nodes())})")
+            break
+
+        if set(list(G1.nodes())) != set(list(G2.nodes())):
+            differences_list.append(f"Nodes in G1 ({set(list(G1.nodes()))}) does not match nodes in G2 ({set(list(G2.nodes()))})")
+            break
+
+        if print_flag: 
+            print(f"Total time for intial checks: {time.time() - local_compare_time}")
+        local_compare_time = time.time()
+
+        #1) compare the sorted edges array to see if equal
+        unordered_bool = str(type(G1)) == str(type(nx.Graph())) or str(type(G1)) == str(type(GraphOrderedEdges()))
+
+        if print_flag:
+            print(f"unordered_bool = {unordered_bool}")
+
+        #already checked for matching edge length so now guard against the possibility that no edges:
+        if len(list(G1.edges())) > 0:
+
+
+            G1_sorted_edges = nu.sort_multidim_array_by_rows(list(G1.edges()),order_row_items=unordered_bool)
+            G2_sorted_edges = nu.sort_multidim_array_by_rows(list(G2.edges()),order_row_items=unordered_bool)
+
+
+            if not np.array_equal(G1_sorted_edges,G2_sorted_edges):
+                differences_list.append("The edges array are not equal ")
+                break
+
+            if print_flag: 
+                print(f"Total time for Sorting and Comparing Edges: {time.time() - local_compare_time}")
+            local_compare_time = time.time()
+
+            #2) compare the edge weights are the same (maybe within a threshold) (BUT MUST SPECIFY THRESHOLD)
+            if print_flag:
+                print(f"compare_edge_attributes = {compare_edge_attributes}")
+            if len(compare_edge_attributes)>0:
+
+                G1_edge_attributes = get_all_attributes_for_edges(G1,edges_list=G1_sorted_edges,return_dict=True)
+                G2_edge_attributes = get_all_attributes_for_edges(G2,edges_list=G2_sorted_edges,return_dict=True)
+
+                """
+                loop that will go through each edge and compare the dictionaries:
+                - only compare the attributes selected (compare all if "all" in list)
+                - if certain attributes show up in the edge_threshold_attributes then compare then against the edge_comparison_threshold
+                """
+
+                for z,curr_edge in enumerate(G1_edge_attributes.keys()):
+                    G1_edge_dict = G1_edge_attributes[curr_edge]
+                    G2_edge_dict = G2_edge_attributes[curr_edge]
+                    #print(f"G1_edge_dict.keys() = {G1_edge_dict.keys()}")
+
+                    if "all" not in compare_edge_attributes:
+                        G1_edge_dict = dict([(k,v) for k,v in G1_edge_dict.items() if k in compare_edge_attributes])
+                        G2_edge_dict = dict([(k,v) for k,v in G2_edge_dict.items() if k in compare_edge_attributes])
+
+                    #do the exclusion of some attributes:
+                    G1_edge_dict = dict([(k,v) for k,v in G1_edge_dict.items() if k not in compare_edge_attributes_exclude])
+                    G2_edge_dict = dict([(k,v) for k,v in G2_edge_dict.items() if k not in compare_edge_attributes_exclude])
+
+                    if z ==1:
+                        if print_flag:
+                            print(f"Example G1_edge_dict = {G1_edge_dict}")
+
+
+                    #check that they have the same number of keys
+                    if set(list(G1_edge_dict.keys())) != set(list(G2_edge_dict.keys())):
+                        differences_list.append(f"The dictionaries for the edge {curr_edge} did not have same keys in G1 ({G1_edge_dict.keys()}) as G2 ({G2_edge_dict.keys()})")
+                        continue
+                        #return False
+                    #print(f"G1_edge_dict.keys() = {G1_edge_dict.keys()}")
+                    #check that all of the values for each key match
+                    for curr_key in G1_edge_dict.keys():
+                        #print(f"{(G1_edge_dict[curr_key],G2_edge_dict[curr_key])}")
+                        if curr_key in edge_threshold_attributes:
+                            value_difference = np.linalg.norm(G1_edge_dict[curr_key]-G2_edge_dict[curr_key])
+                            if value_difference > edge_comparison_threshold:
+                                differences_list.append(f"The edge {curr_edge} has a different value for {curr_key} in G1 ({G1_edge_dict[curr_key]}) and in G2 ({G2_edge_dict[curr_key]}) "
+                                     f"that was above the current edge_comparison_threshold ({edge_comparison_threshold}) ")
+                                #return False
+                        else:
+                            if nu.is_array_like(G1_edge_dict[curr_key]):
+                                if not np.array_equal(G1_edge_dict[curr_key],G2_edge_dict[curr_key]):
+                                    differences_list.append(f"The edge {curr_edge} has a different value for {curr_key} in G1 ({G1_edge_dict[curr_key]}) and in G2 ({G2_edge_dict[curr_key]}) ")
+                            else:
+                                if G1_edge_dict[curr_key] != G2_edge_dict[curr_key]:
+                                    differences_list.append(f"The edge {curr_edge} has a different value for {curr_key} in G1 ({G1_edge_dict[curr_key]}) and in G2 ({G2_edge_dict[curr_key]}) ")
+                                    #return False
+
+        #if no discrepancy has been detected then return True
+        if len(differences_list) == 0:
+            if print_flag:
+                print("Made it through edge comparison without there being any discrepancies")
+
+        if print_flag: 
+            print(f"Total time for Checking Edges Attributes : {time.time() - local_compare_time}")
+        local_compare_time = time.time()
+
+        """
+        3) For each node name: 
+        - check that the attributes are the same
+        - can specify attribute names that can be within a certian threshold (BUT MUST SPECIFY THRESHOLD)
+        """
+
+        if len(compare_node_attributes)>0:
+
+            G1_node_attributes = get_all_attributes_for_nodes(G1,return_dict=True)
+            G2_node_attributes = get_all_attributes_for_nodes(G2,return_dict=True)
+
+            """
+            loop that will go through each node and compare the dictionaries:
+            - only compare the attributes selected (compare all if "all" in list)
+            - if certain attributes show up in the node_threshold_attributes then compare then against the node_comparison_threshold
+            """
+            if print_flag:
+                print(f"compare_node_attributes = {compare_node_attributes}")
+            for z,n in enumerate(G1_node_attributes.keys()):
+                G1_node_dict = G1_node_attributes[n]
+                G2_node_dict = G2_node_attributes[n]
+
+                if "all" not in compare_node_attributes:
+                    G1_node_dict = dict([(k,v) for k,v in G1_node_dict.items() if k in compare_node_attributes])
+                    G2_node_dict = dict([(k,v) for k,v in G2_node_dict.items() if k in compare_node_attributes])
+
+
+                #doing the exlusion
+                G1_node_dict = dict([(k,v) for k,v in G1_node_dict.items() if k not in compare_node_attributes_exclude])
+                G2_node_dict = dict([(k,v) for k,v in G2_node_dict.items() if k not in compare_node_attributes_exclude])
+
+                if z ==1:
+                    if print_flag:
+                        print(f"Example G1_edge_dict = {G1_node_dict}")
+
+
+                #check that they have the same number of keys
+                if set(list(G1_node_dict.keys())) != set(list(G2_node_dict.keys())):
+                    differences_list.append(f"The dictionaries for the node {n} did not have same keys in G1 ({G1_node_dict.keys()}) as G2 ({G2_node_dict.keys()})")
+                    continue
+                    #return False
+
+                #check that all of the values for each key match
+                for curr_key in G1_node_dict.keys():
+                    #print(f"curr_key = {curr_key}")
+
+                    if curr_key in node_threshold_attributes:
+                        value_difference = np.linalg.norm(G1_node_dict[curr_key]-G2_node_dict[curr_key])
+                        if value_difference > node_comparison_threshold:
+                            differences_list.append(f"The node {n} has a different value for {curr_key} in G1 ({G1_node_dict[curr_key]}) and in G2 ({G2_node_dict[curr_key]}) "
+                                 f"that was above the current node_comparison_threshold ({node_comparison_threshold}) ")
+                            #return False
+                    else:
+
+                        if nu.is_array_like(G1_node_dict[curr_key]):
+                            #print((set(list(G1_node_dict.keys())),set(list(G2_node_dict.keys()))))
+                            if not np.array_equal(G1_node_dict[curr_key],G2_node_dict[curr_key]):
+                                differences_list.append(f"The node {n} has a different value for {curr_key} in G1 ({G1_node_dict[curr_key]}) and in G2 ({G2_node_dict[curr_key]}) ")
+                                #return False
+                        else:
+                            #print(f"curr_key = {curr_key}")
+                            #print(f"G1_node_dict[curr_key] != G2_node_dict[curr_key] = {G1_node_dict[curr_key] != G2_node_dict[curr_key]}")
+                            #print(f"G1_node_dict[curr_key] = {G1_node_dict[curr_key]}, G2_node_dict[curr_key] = {G2_node_dict[curr_key]}")
+                            if G1_node_dict[curr_key] != G2_node_dict[curr_key]:
+                                differences_list.append(f"The node {n} has a different value for {curr_key} in G1 ({G1_node_dict[curr_key]}) and in G2 ({G2_node_dict[curr_key]}) ")
+                                #return False
+                        #print(f"differences_list = {differences_list}")
+
+        if print_flag: 
+            print(f"Total time for Comparing Node Attributes: {time.time() - local_compare_time}")
+        local_compare_time = time.time()
+    
+    #if no discrepancy has been detected then return True
+    
+    if len(differences_list) == 0:
+        if print_flag:
+            print("Made it through Node comparison without there being any discrepancies")
+        return_boolean = True
+    else:
+        if print_flag:
+            print("Differences List:")
+            for j,diff in enumerate(differences_list):
+                print(f"{j})   {diff}")
+        return_boolean = False
+    
+    if return_differences is None:
+        raise Exception("return_differences is None!!!")
+        
+    if return_differences:
+        return return_boolean,differences_list
+    else:
+        return return_boolean
         
     
     

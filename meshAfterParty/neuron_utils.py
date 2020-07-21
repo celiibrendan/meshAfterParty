@@ -31,7 +31,10 @@ import itertools
 # tools for restricting 
 
 
-# -------------- tools for the concept graphs ------------------ #
+# -------------- tools for the concept networks ------------------ #
+
+
+    
 def get_starting_info_from_concept_network(concept_networks):
     """
     Pseudocode: 
@@ -498,7 +501,7 @@ def branches_to_concept_network(curr_branch_skeletons,
 
 
 
-
+""" Older function definition
 def generate_limb_concept_networks_from_global_connectivity(
     limb_idx_to_branch_meshes_dict,
     limb_idx_to_branch_skeletons_dict,
@@ -506,7 +509,18 @@ def generate_limb_concept_networks_from_global_connectivity(
     soma_idx_connectivity,
     current_neuron,
     return_limb_labels=True
-    ):
+    ): 
+"""
+    
+def generate_limb_concept_networks_from_global_connectivity(
+        limb_correspondence,
+        soma_meshes,
+        soma_idx_connectivity,
+        current_neuron,
+        return_limb_labels=True
+        ):
+    
+    
     """
     ****** Could significantly speed this up if better picked the 
     periphery meshes (which now are sending all curr_limb_divided_meshes)
@@ -572,6 +586,26 @@ def generate_limb_concept_networks_from_global_connectivity(
     
 
     """
+    # ------------ 7/17 Added preprocessing Step so can give the function more generic arguments ---------------- #
+    #getting mesh and skeleton dictionaries
+    limb_idx_to_branch_meshes_dict = dict()
+    limb_idx_to_branch_skeletons_dict = dict()
+    for k in limb_correspondence.keys():
+        limb_idx_to_branch_meshes_dict[k] = [limb_correspondence[k][j]["branch_mesh"] for j in limb_correspondence[k].keys()]
+        limb_idx_to_branch_skeletons_dict[k] = [limb_correspondence[k][j]["branch_skeleton"] for j in limb_correspondence[k].keys()]      
+
+    #getting the soma dictionaries
+    soma_idx_to_mesh_dict = dict()
+    for k,v in enumerate(soma_meshes):
+        soma_idx_to_mesh_dict[k] = v
+
+
+
+
+    
+    
+    
+    
 
     
     
@@ -733,7 +767,7 @@ def generate_limb_concept_networks_from_global_connectivity(
             
         print(f"Local time for concept mapping = {time.time() - local_concept_time}")
 
-    print(f"Total time for concept mapping = {time.time() - global_concept_time}")
+    print(f"\n\n ----- Total time for concept mapping = {time.time() - global_concept_time} ----")
         
         
     #returning from the function    
@@ -770,13 +804,14 @@ def preprocess_neuron(mesh=None,
     and used for higher order processing (how to visualize is included)
     
     """
-    
+    if description is None:
+        description = "no_description"
     if segment_id is None:
         #pick a random segment id
         segment_id = np.random.randint(100000000)
         print(f"picking a random 7 digit segment id: {segment_id}")
-    if description is None:
-        description = "no_description"
+        description += "_random_id"
+
     
     if mesh is None:
         if current_mesh_file is None:
@@ -1338,6 +1373,10 @@ def preprocess_neuron(mesh=None,
         for k in limb_correspondence[limb_idx].keys():
             limb_correspondence[limb_idx][k]["branch_mesh"] = divided_submeshes[k]
             limb_correspondence[limb_idx][k]["branch_face_idx"] = divided_submeshes_idx[k]
+            
+            #clean the limb correspondence that we do not need
+            del limb_correspondence[limb_idx][k]["correspondence_mesh"]
+            del limb_correspondence[limb_idx][k]["correspondence_face_idx"]
 #             total_widths.append(limb_correspondence[limb_idx][k]["width_from_skeleton"])
 #             total_branch_skeletons.append(limb_correspondence[limb_idx][k]["branch_skeleton"])
 #             total_branch_meshes.append(limb_correspondence[limb_idx][k]["branch_mesh"])
@@ -1394,44 +1433,31 @@ def preprocess_neuron(mesh=None,
     
     # ---1) Making concept graphs:
 
-    #getting mesh and skeleton dictionaries
-    limb_idx_to_branch_meshes_dict = dict()
-    limb_idx_to_branch_skeletons_dict = dict()
-    for k in limb_correspondence.keys():
-        limb_idx_to_branch_meshes_dict[k] = [limb_correspondence[k][j]["branch_mesh"] for j in limb_correspondence[k].keys()]
-        limb_idx_to_branch_skeletons_dict[k] = [limb_correspondence[k][j]["branch_skeleton"] for j in limb_correspondence[k].keys()]      
-
-    #getting the soma dictionaries
-    soma_idx_to_mesh_dict = dict()
-    for k,v in enumerate(current_mesh_data[0]["soma_meshes"]):
-        soma_idx_to_mesh_dict[k] = v
-
-    soma_idx_connectivity = current_mesh_data[0]["soma_to_piece_connectivity"]
-
-
-
-
     limb_concept_networks,limb_labels = generate_limb_concept_networks_from_global_connectivity(
-        limb_idx_to_branch_meshes_dict = limb_idx_to_branch_meshes_dict,
-        limb_idx_to_branch_skeletons_dict = limb_idx_to_branch_skeletons_dict,
-        soma_idx_to_mesh_dict = soma_idx_to_mesh_dict,
-        soma_idx_connectivity = soma_idx_connectivity,
+        limb_correspondence = limb_correspondence,
+        #limb_idx_to_branch_meshes_dict = limb_idx_to_branch_meshes_dict,
+        #limb_idx_to_branch_skeletons_dict = limb_idx_to_branch_skeletons_dict,
+        
+        soma_meshes=current_mesh_data[0]["soma_meshes"],
+        soma_idx_connectivity=current_mesh_data[0]["soma_to_piece_connectivity"],
+        #soma_idx_to_mesh_dict = soma_idx_to_mesh_dict,
+        #soma_idx_connectivity = soma_idx_connectivity,
+        
         current_neuron=current_neuron,
         return_limb_labels=True
         )
 
-    #Before go and get concept maps:
-    print("Sizes of dictionaries sent")
-    for curr_limb in limb_idx_to_branch_skeletons_dict.keys():
-        print((len(limb_idx_to_branch_skeletons_dict[curr_limb]),len(limb_idx_to_branch_meshes_dict[curr_limb])))
+#     #Before go and get concept maps:
+#     print("Sizes of dictionaries sent")
+#     for curr_limb in limb_idx_to_branch_skeletons_dict.keys():
+#         print((len(limb_idx_to_branch_skeletons_dict[curr_limb]),len(limb_idx_to_branch_meshes_dict[curr_limb])))
 
 
-    print("\n\n Sizes of concept maps gotten back")
-    for curr_idx in limb_concept_networks.keys():
-        for soma_idx,concept_network in limb_concept_networks[curr_idx].items():
-            print(len(np.unique(list(concept_network.nodes()))))
+#     print("\n\n Sizes of concept maps gotten back")
+#     for curr_idx in limb_concept_networks.keys():
+#         for soma_idx,concept_network in limb_concept_networks[curr_idx].items():
+#             print(len(np.unique(list(concept_network.nodes()))))
             
-    
     
     
     
@@ -1447,6 +1473,8 @@ def preprocess_neuron(mesh=None,
     
     #Preparing the data structure to save or use for Neuron class construction
 
+    
+    
     preprocessed_data = dict(
                             soma_meshes = current_mesh_data[0]["soma_meshes"],
                             soma_to_piece_connectivity = current_mesh_data[0]["soma_to_piece_connectivity"],
@@ -1469,3 +1497,297 @@ def preprocess_neuron(mesh=None,
     
     
 
+# -----------------------  For the compression of a neuron object ---------------------- #
+def find_face_idx_and_check_recovery(original_mesh,submesh_list,print_flag=False):
+    if len(submesh_list) == 0:
+        if print_flag:
+            print("Nothing in submesh_list sent to find_face_idx_and_check_recovery so just returning empty list")
+            return []
+    submesh_list_face_idx = []
+    for sm in submesh_list:
+        sm_faces_idx = tu.original_mesh_faces_map(original_mesh=original_mesh, 
+                                   submesh=sm,
+                               matching=True,
+                               print_flag=False)
+        submesh_list_face_idx.append(sm_faces_idx)
+        
+    recovered_submesh_meshes = [original_mesh.submesh([sm_f],append=True) for sm_f in submesh_list_face_idx]
+    #return recovered_submesh_meshes
+    for j,(orig_sm,rec_sm) in enumerate(zip(submesh_list,recovered_submesh_meshes)):
+        result = tu.compare_meshes_by_face_midpoints(orig_sm,rec_sm,print_flag=False)
+        if not result:
+            tu.compare_meshes_by_face_midpoints(orig_sm,rec_sm,print_flag=True)
+            raise Exception(f"Submesh {j} was not able to be accurately recovered")
+    
+    return submesh_list_face_idx
+    
+
+import copy
+from tqdm.notebook import tqdm
+
+def smaller_preprocessed_data(neuron_object,print_flag=False):
+    double_soma_obj = neuron_object
+    
+    total_compression_time = time.time()
+    
+    # doing the soma recovery more streamlined
+    compression_time = time.time()
+    soma_meshes_face_idx = find_face_idx_and_check_recovery(original_mesh=double_soma_obj.mesh,
+                                                           submesh_list=double_soma_obj.preprocessed_data["soma_meshes"])
+    if print_flag:
+        print(f"Total time for soma meshes compression = {time.time() - compression_time }")
+    compression_time = time.time()
+    #insignificant, non_soma touching and inside pieces just mesh pieces ()
+    insignificant_limbs_face_idx = find_face_idx_and_check_recovery(original_mesh=double_soma_obj.mesh,
+                                                           submesh_list=double_soma_obj.preprocessed_data["insignificant_limbs"])
+
+    inside_pieces_face_idx = find_face_idx_and_check_recovery(original_mesh=double_soma_obj.mesh,
+                                                           submesh_list=double_soma_obj.preprocessed_data["inside_pieces"])
+
+    non_soma_touching_meshes_face_idx = find_face_idx_and_check_recovery(original_mesh=double_soma_obj.mesh,
+                                                           submesh_list=double_soma_obj.preprocessed_data["non_soma_touching_meshes"])
+    
+    if print_flag:
+        print(f"Total time for insignificant_limbs,inside_pieces,non_soma_touching_meshes compression = {time.time() - compression_time }")
+    compression_time = time.time()
+    
+    # recover the limb meshes from the original
+    limb_meshes_face_idx = find_face_idx_and_check_recovery(original_mesh=double_soma_obj.mesh,
+                                                           submesh_list=double_soma_obj.preprocessed_data["limb_meshes"])
+    if print_flag:
+        print(f"Total time for limb_meshes compression = {time.time() - compression_time }")
+    compression_time = time.time()    
+    
+    # limb_correspondence can get rid of branch mesh and just recover from branch_face_idx
+    
+    
+    
+    
+    """
+    Pseudocode: 
+    1) Want to keep skeleton and width
+    2) Generate new branch_face_idx based on the original mesh
+    --> later can recover the branch_mesh from the whole neuron mesh and the new branch_face_idx
+    --> regenerate the and branch_face_idx from the recovered limb mesh and he recovered mesh
+
+
+    """
+    if print_flag:
+        print(f"    Starting Limb Correspondence Compression")
+    new_limb_correspondence = copy.deepcopy(double_soma_obj.preprocessed_data["limb_correspondence"])
+    
+
+    for k in new_limb_correspondence:
+        for j in tqdm(new_limb_correspondence[k]):
+            new_limb_correspondence[k][j]["branch_face_idx_whole_neuron"] = find_face_idx_and_check_recovery(original_mesh=double_soma_obj.mesh,
+                                                           submesh_list=[new_limb_correspondence[k][j]["branch_mesh"]])[0]
+
+            if "branch_face_idx" in new_limb_correspondence[k][j].keys():
+                del new_limb_correspondence[k][j]["branch_face_idx"]
+            if "branch_mesh" in new_limb_correspondence[k][j].keys():
+                del new_limb_correspondence[k][j]["branch_mesh"]
+                
+    if print_flag:
+        print(f"Total time for new_limb_correspondence compression = {time.time() - compression_time }")
+    compression_time = time.time() 
+    
+    
+    # all of the data will be 
+    soma_meshes_face_idx
+
+    # soma_to_piece_connectivity is already small dictionary
+    double_soma_obj.preprocessed_data["soma_to_piece_connectivity"]
+    double_soma_obj.preprocessed_data["soma_sdfs"]
+
+    insignificant_limbs_face_idx
+    inside_pieces_face_idx
+    non_soma_touching_meshes_face_idx
+
+    limb_meshes_face_idx
+
+    new_limb_correspondence
+
+    double_soma_obj.preprocessed_data['limb_labels']
+    double_soma_obj.preprocessed_data['limb_concept_networks']
+
+    compressed_dict = dict(
+                          soma_meshes_face_idx=soma_meshes_face_idx,
+
+                          soma_to_piece_connectivity=double_soma_obj.preprocessed_data["soma_to_piece_connectivity"],
+                          soma_sdfs=double_soma_obj.preprocessed_data["soma_sdfs"],
+
+                          insignificant_limbs_face_idx=insignificant_limbs_face_idx,
+                          inside_pieces_face_idx=inside_pieces_face_idx,
+                          non_soma_touching_meshes_face_idx=non_soma_touching_meshes_face_idx,
+
+                          limb_meshes_face_idx=limb_meshes_face_idx,
+
+                          new_limb_correspondence=new_limb_correspondence,
+                            
+                          segment_id=double_soma_obj.segment_id,
+                          description=double_soma_obj.description
+            
+                          # don't need these any more because will recompute them when decompressing
+                          #limb_labels= double_soma_obj.preprocessed_data['limb_labels'],
+                          #limb_concept_networks=double_soma_obj.preprocessed_data['limb_concept_networks']
+    )
+    
+    if print_flag:
+        print(f"Total time for compression = {time.time() - total_compression_time }")
+    
+    return compressed_dict
+
+from pathlib import Path
+import system_utils as su
+def save_compressed_neuron(neuron_object,output_folder,file_name="",return_file_path=False):
+    output_folder = Path(output_folder)
+    
+    if file_name == "":
+        file_name = f"{neuron_object.segment_id}_{neuron_object.description}"
+    
+    output_path = output_folder / Path(file_name)
+    
+    output_path = Path(output_path)
+    output_path.parents[0].mkdir(parents=True, exist_ok=True)
+    
+    inhib_object_compressed_preprocessed_data = smaller_preprocessed_data(neuron_object,print_flag=True)
+    compressed_size = su.compressed_pickle(inhib_object_compressed_preprocessed_data,output_path,return_size=True)
+    
+    print(f"\n\n---Finished outputing neuron at location: {output_path.absolute()}---")
+    
+    if return_file_path:
+        return output_path
+    
+    
+
+#For decompressing the neuron
+def decompress_neuron(filepath,original_mesh):
+    
+    loaded_compression = su.decompress_pickle(filepath)
+    
+    #creating dictionary that will be used to construct the new neuron object
+    recovered_preprocessed_data = dict()
+    
+    """
+    a) soma_meshes: use the 
+    Data: soma_meshes_face_idx 
+    Process: use submesh on the neuron mesh for each
+
+    """
+    recovered_preprocessed_data["soma_meshes"] = [original_mesh.submesh([k],append=True) for k in loaded_compression["soma_meshes_face_idx"]]
+    
+    """
+    b) soma_to_piece_connectivity
+    Data: soma_to_piece_connectivity
+    Process: None
+
+    c) soma_sdfs
+    Data: soma_sdfs
+    Process: None
+    """
+    recovered_preprocessed_data["soma_to_piece_connectivity"] = loaded_compression["soma_to_piece_connectivity"]
+    recovered_preprocessed_data["soma_sdfs"] = loaded_compression["soma_sdfs"]
+    
+    """
+    d) insignificant_limbs
+    Data: insignificant_limbs_face_idx
+    Process: use submesh on the neuron mesh for each
+
+    d) non_soma_touching_meshes
+    Data: non_soma_touching_meshes_face_idx
+    Process: use submesh on the neuron mesh for each
+
+    d) inside_pieces
+    Data: inside_pieces_face_idx
+    Process: use submesh on the neuron mesh for each
+    """
+
+    recovered_preprocessed_data["insignificant_limbs"] = [original_mesh.submesh([k],append=True) for k in loaded_compression["insignificant_limbs_face_idx"]]
+
+    recovered_preprocessed_data["non_soma_touching_meshes"] = [original_mesh.submesh([k],append=True) for k in loaded_compression["non_soma_touching_meshes_face_idx"]]
+
+    recovered_preprocessed_data["inside_pieces"] = [original_mesh.submesh([k],append=True) for k in loaded_compression["inside_pieces_face_idx"]]
+    
+    """
+    e) limb_meshes
+    Data: limb_meshes_face_idx
+    Process: use submesh on the neuron mesh for each
+
+    """
+
+    recovered_preprocessed_data["limb_meshes"] = [original_mesh.submesh([k],append=True) for k in loaded_compression["limb_meshes_face_idx"]]
+    
+    
+    """
+
+    f) limb_correspondence
+    Data: new_limb_correspondence
+    Process: 
+    -- get branch mesh for each item
+    --> later can recover the branch_mesh from the whole neuron mesh and the new branch_face_idx
+    -- get branch_face_idx for each itme
+    --> regenerate the and branch_face_idx from the recovered limb mesh and he recovered mesh
+
+    """
+
+    new_limb_correspondence = loaded_compression["new_limb_correspondence"]
+
+    for k in new_limb_correspondence:
+        for j in tqdm(new_limb_correspondence[k]):
+
+            new_limb_correspondence[k][j]["branch_mesh"] = original_mesh.submesh([new_limb_correspondence[k][j]["branch_face_idx_whole_neuron"]],append=True)
+            new_limb_correspondence[k][j]["branch_face_idx"] = tu.original_mesh_faces_map(original_mesh=recovered_preprocessed_data["limb_meshes"][k], 
+                                       submesh=new_limb_correspondence[k][j]["branch_mesh"] ,
+                                   matching=True,
+                                   print_flag=False)
+
+
+            if "branch_face_idx_whole_neuron" in new_limb_correspondence[k][j].keys():
+                del new_limb_correspondence[k][j]["branch_face_idx_whole_neuron"]
+
+    recovered_preprocessed_data["limb_correspondence"] = new_limb_correspondence
+    
+    
+    
+    """
+    g) limb_concept_networks, limb_labels:
+    Data: All previous data
+    Process: Call the funciton that creates the concept_networks using all the data above
+    """
+    import neuron_utils as nru 
+    nru = reload(nru)
+
+    limb_concept_networks,limb_labels = nru.generate_limb_concept_networks_from_global_connectivity(
+            limb_correspondence = recovered_preprocessed_data["limb_correspondence"],
+            #limb_idx_to_branch_meshes_dict = limb_idx_to_branch_meshes_dict,
+            #limb_idx_to_branch_skeletons_dict = limb_idx_to_branch_skeletons_dict,
+
+            soma_meshes=recovered_preprocessed_data["soma_meshes"],
+            soma_idx_connectivity=recovered_preprocessed_data["soma_to_piece_connectivity"] ,
+            #soma_idx_to_mesh_dict = soma_idx_to_mesh_dict,
+            #soma_idx_connectivity = soma_idx_connectivity,
+
+            current_neuron=original_mesh,
+            return_limb_labels=True
+            )
+
+    recovered_preprocessed_data["limb_concept_networks"] = limb_concept_networks
+    recovered_preprocessed_data["limb_labels"] = limb_labels
+    
+    
+    """
+    h) get the segment ids and the original description
+    
+    """
+    # Now create the neuron from preprocessed data
+    decompressed_neuron = neuron.Neuron(mesh=original_mesh,
+                 segment_id=loaded_compression["segment_id"],
+                 description=loaded_compression["description"],
+                 preprocessed_data=recovered_preprocessed_data,
+                 minimal_output=True)
+    
+    return decompressed_neuron
+
+    
+
+ 

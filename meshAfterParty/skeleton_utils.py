@@ -2942,6 +2942,41 @@ def find_branch_endpoints(db):
     else:
         return end_node_coordinates
     
+def compare_skeletons_ordered(skeleton_1,skeleton_2,
+                             edge_threshold=0.01, #how much the edge distances can vary by
+                              node_threshold = 0.01, #how much the nodes can vary by
+                              print_flag = False
+                             ):
+    """
+    Purpose: To compare skeletons where the edges are ordered (not comparing overall skeletons)
+    Those would be isomorphic graphs (not yet developed)
+    
+    Example of how to use: 
+    skeletons_idx_to_stack = [0,1,2,3]
+    total_skeleton = sk.stack_skeletons([double_soma_obj.concept_network.nodes["L1"]["data"].concept_network.nodes[k]["data"].skeleton for k in skeletons_idx_to_stack])
+    #sk.graph_skeleton_and_mesh(other_skeletons=[total_skeleton])
+    
+    skeleton_1 = copy.copy(total_skeleton)
+    skeleton_2 = copy.copy(total_skeleton)
+    skeleton_1[0][0] = np.array([558916.8, 1122107. ,  842972.8]) #change so there will be error
+    
+    sk.compare_skeletons_ordered(skeleton_1,
+                          skeleton_2,
+                             edge_threshold=0.01, #how much the edge distances can vary by
+                              node_threshold = 0.01, #how much the nodes can vary by
+                              print_flag = True
+                             )
+
+    
+    """
+    sk_1_graph = convert_skeleton_to_graph(skeleton_1)
+    sk_2_graph = convert_skeleton_to_graph(skeleton_2)
+
+    return xu.compare_networks(sk_1_graph,sk_2_graph,print_flag=print_flag,
+                     edge_comparison_threshold=edge_threshold,
+                     node_comparison_threshold=node_threshold)
+    
+    
     
 
 ''' #Old way that does not account for there being branches with the same endpoints

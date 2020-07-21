@@ -15,6 +15,45 @@ np.insert(x,slice(0,5),2)
 >> output: array([ 2,  1,  2,  4,  2,  5,  2, 10])
 
 """
+def compare_threshold(item1,item2,threshold=0.0001,print_flag=False):
+    """
+    Purpose: Function that will take a scalar or 2D array and subtract them
+    if the distance between them is less than the specified threshold
+    then consider equal
+    
+    Example: 
+    nu = reload(nu)
+
+    item1 = [[1,4,5,7],
+             [1,4,5,7],
+             [1,4,5,7]]
+    item2 = [[1,4,5,8.00001],
+            [1,4,5,7.00001],
+            [1,4,5,7.00001]]
+
+    # item1 = [1,4,5,7]
+    # item2 = [1,4,5,9.0000001]
+
+    print(nu.compare_threshold(item1,item2,print_flag=True))
+    """
+    item1 = np.array(item1)
+    item2 = np.array(item2)
+
+    if item1.ndim != item2.ndim:
+        raise Exception(f"Dimension for item1.ndim ({item1.ndim}) does not equal item2.ndim ({item2.ndim})")
+    if item1.ndim > 2 or item2.ndim > 2:
+        raise Exception(f"compare_threshold does not handle items with greater than 2 dimensions: item1.ndim ({item1.ndim}), item2.ndim ({item2.ndim}) ")
+
+    if item1.ndim < 2:
+        difference = np.linalg.norm(item1-item2)
+    else:
+        difference = np.sum(np.linalg.norm(item1 - item2,axis=1))
+    
+    if print_flag:
+        print(f"difference = {difference}")
+        
+    #compare against threshold and return result
+    return difference <= threshold
 
 def concatenate_lists(list_of_lists):
     try:
@@ -100,6 +139,7 @@ def get_matching_vertices(possible_vertices,ignore_diagonal=True,
         result = matching_vertices[left_side != right_side]
     else:
         result = matching_vertices
+        
     if len(result) > 0:
         return np.unique(np.sort(result,axis=1),axis=0)
     else:
@@ -130,3 +170,38 @@ that gives the distance
 
 def matching_rows(vals,row):
     return np.where((np.array(vals) == np.array(row)).all(axis=1))[0]
+
+# ----------- made when developing the neuron class ------------- #
+def sort_multidim_array_by_rows(edge_array,order_row_items=False):
+    """
+    Purpose: To sort an array along the 0 axis where you maintain the row integrity
+    (with possibly sorting the individual elements along a row)
+    
+    Example: On how to get sorted edges
+    import numpy_utils as nu
+    nu = reload(nu)
+    nu.sort_multidim_array_by_rows(limb_concept_network.edges(),order_row_items=True)
+    
+    """
+    #print(f'edge_array = {edge_array} with type = {type(edge_array)}')
+    
+    #make sure it is an array
+    edge_array = np.array(edge_array)
+    
+    #check that multidimensional
+    if len(edge_array.shape ) < 2:
+        print(f"edge_array = {edge_array}")
+        raise Exception("array passed did not have at least 2 dimensions")
+        
+    #will rearrange the items to be in a row if not care about the order here
+    if order_row_items:
+        edge_array = np.sort(edge_array,axis=1)
+
+    #sort by the x and then y of the egde
+    def sorting_func(k):
+        return [k[i] for i,v in enumerate(edge_array.shape)]
+
+    #sorted_edge_array = np.array(sorted(edge_array , key=lambda k: [k[0], k[1]]))
+    sorted_edge_array = np.array(sorted(edge_array , key=sorting_func))
+    
+    return sorted_edge_array
