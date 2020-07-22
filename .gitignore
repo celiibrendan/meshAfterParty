@@ -5,3 +5,4 @@
 *.mls
 *.npz
 *.pkl
+!*multi_soma_example.off

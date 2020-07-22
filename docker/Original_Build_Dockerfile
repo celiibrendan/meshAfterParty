@@ -1,0 +1,152 @@
+# FROM celiib/pinky_100_soma_extraction:latest
+# LABEL maintainer="Brendan, Christos Papadopoulos"
+
+FROM ubuntu:18.04
+LABEL maintainer="Brendan Papadopoulos"
+RUN apt-get update
+RUN apt-get install -y --no-install-recommends apt-utils
+RUN apt-get -y update && \
+    apt-get -y install graphviz libxml2-dev python3-cairosvg parallel
+
+# duplicated dependencies but previously missing parts are necessary for building python-igraph
+RUN apt-get -y install build-essential python3-dev libxml2 libxml2-dev zlib1g-dev
+
+RUN apt-get -y install python3.7
+RUN apt-get -y install python3-pip
+RUN pip3 install datajoint --upgrade
+# RUN pip3 install python-igraph xlrd
+RUN apt-get -y install python3-igraph
+RUN pip3 install xlrd
+RUN apt-get -y install vim
+RUN pip3 install matplotlib==3.0.3
+
+
+
+WORKDIR /src
+
+RUN pip3 install ipyvolume jupyterlab statsmodels pycircstat nose
+RUN pip3 install seaborn --upgrade
+RUN pip3 install jgraph
+
+
+
+RUN . /etc/profile
+
+RUN apt-get update && apt-get install -q -y \
+    build-essential \
+    python \
+    python-numpy \
+    git \
+    g++ \
+    libeigen3-dev \
+    qt5-qmake \
+    qtscript5-dev \
+    libqt5xmlpatterns5-dev \
+    libqt5opengl5-dev \
+    assimp-utils \
+    nano \
+    xvfb \
+    && rm -rf /var/lib/apt/lists/*
+
+
+
+WORKDIR /
+
+#add the cgal scripts
+EXPOSE 8888
+
+#add the cgal scripts
+#RUN git clone https://github.com/sdorkenw/MeshParty.git
+#WORKDIR /MeshParty
+#RUN pip3 install . --upgrade
+
+RUN pip3 install pykdtree trimesh 
+RUN pip3 install sklearn pymeshfix
+
+#------------ 8/4 NEW ADDED FOR CGAL, MESHLAB AND OTHER APPLICATIONS -----  #
+
+RUN apt-get -y update
+#RUN apt-get -y install meshlab
+
+RUN apt-get -y update && \
+    apt-get -y install graphviz libxml2-dev python3-cairosvg parallel
+
+# CGAL Dependencies ########################################################
+RUN apt-get -y install libboost-all-dev libgmp-dev libmpfr-dev libcgal-dev libboost-wave-dev libeigen3-dev
+############################################################################
+
+
+RUN apt-get -y install vim
+RUN . /etc/profile
+ADD ./CGAL /src/CGAL
+RUN pip3 install -e /src/CGAL/cgal_segmentation
+RUN pip3 install -e /src/CGAL/cgal_skeleton
+
+
+RUN pip3 install scipy pandas
+
+# ADD ./python /src/funconnect/python
+# RUN pip3 install -e /src/funconnect/python
+
+RUN apt-get -y install software-properties-common
+RUN apt-get -y update
+
+#### manually running the steps from https://hub.docker.com/r/hamzamerzic/meshlab/ ###
+
+# add all of the lines that will compile the meshlabserver
+WORKDIR /
+RUN git clone https://github.com/hamzamerzic/vcglib -b devel
+RUN git clone https://github.com/hamzamerzic/meshlab -b devel
+
+#replace the certain files in vcglib and meshlab so will compile
+RUN rm /vcglib/wrap/io_trimesh/import_nvm.h /vcglib/wrap/io_trimesh/import_out.h /meshlab/src/meshlab_mini.pro
+
+ADD ./meshlab_patch_files/import_nvm.h /vcglib/wrap/io_trimesh/import_nvm.h
+ADD ./meshlab_patch_files/import_out.h /vcglib/wrap/io_trimesh/import_out.h
+ADD ./meshlab_patch_files/meshlab_mini.pro /meshlab/src/meshlab_mini.pro
+
+ARG QMAKE_FLAGS="-spec linux-g++ CONFIG+=release CONFIG+=qml_release CONFIG+=c++11 QMAKE_CXXFLAGS+=-fPIC QMAKE_CXXFLAGS+=-std=c++11 QMAKE_CXXFLAGS+=-fpermissive INCLUDEPATH+=/usr/include/eigen3 LIBS+=-L/meshlab/src/external/lib/linux-g++"
+
+ARG MAKE_FLAGS="-j"
+
+WORKDIR /meshlab/src/external
+RUN qmake -qt=5 external.pro $QMAKE_FLAGS && make $MAKE_FLAGS
+
+WORKDIR /meshlab/src/common
+RUN qmake -qt=5 common.pro $QMAKE_FLAGS && make $MAKE_FLAGS
+
+WORKDIR /meshlab/src
+RUN qmake -qt=5 meshlab_mini.pro $QMAKE_FLAGS && make $MAKE_FLAGS
+
+ENV PATH="/meshlab/src/distrib:${PATH}"
+
+# WORKDIR /
+
+# RUN mkdir -p /scripts
+# ADD ./jupyter/run_jupyter_unix.sh /scripts/
+# ADD ./jupyter/jupyter_notebook_config.py /root/.jupyter/
+# ADD ./jupyter/custom.css /root/.jupyter/custom/
+# RUN chmod -R a+x /scripts
+# ENTRYPOINT ["/scripts/run_jupyter_unix.sh"]
+
+RUN apt-get install -y python3-rtree
+RUN apt-get install -y nodejs npm
+#RUN jupyter labextension install @jupyter-widgets/jupyterlab-manager
+#RUN jupyter labextension install ipyvolume
+
+
+WORKDIR /src
+
+ADD . /src/decimation_skeletonization
+RUN git clone https://github.com/Cpapa97/minnie-config.git
+RUN pip3 install -e minnie-config
+
+WORKDIR /notebooks
+
+ADD ./notebooks .
+
+ADD ./jupyter/run_jupyter_unix.sh /scripts/
+ADD ./jupyter/jupyter_notebook_config.py /root/.jupyter/
+ADD ./jupyter/custom.css /root/.jupyter/custom/
+RUN chmod -R a+x /scripts
+ENTRYPOINT ["/scripts/run_jupyter_unix.sh"]

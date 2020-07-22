@@ -253,8 +253,15 @@ def split(mesh, only_watertight=False, adjacency=None, engine=None, return_compo
     ordered_components = np.array([components[i] for i in ordered_indices])
     
     if len(ordered_meshes)>=2:
-        if len(ordered_meshes[0].faces) < len(ordered_meshes[1].faces):
-            raise Exception("Split is not passing back ordered faces")
+        if (len(ordered_meshes[0].faces) < len(ordered_meshes[1].faces)) and (len(ordered_meshes[0].vertices) < len(ordered_meshes[1].vertices)) :
+            #print(f"ordered_meshes = {ordered_meshes}")
+            raise Exception(f"Split is not passing back ordered faces:"
+                            f" ordered_meshes = {ordered_meshes},  "
+                           f"components= {components},  "
+                           f"meshes = {meshes},  "
+                            f"current_array={current_array},  "
+                            f"ordered_indices={ordered_indices},  "
+                           )
     
     #control if the meshes is iterable or not
     if return_components:
