@@ -11,6 +11,13 @@ import sys, os
 # # ************ warning this will disable all printing until turned off *************
 
     
+"""
+How to get a reference to the current module
+
+import sys
+current_module = sys.modules[__name__]
+"""
+    
 #better way of turning off printing: 
 import os, sys
 

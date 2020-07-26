@@ -21,7 +21,7 @@ import networkx_utils as xu
 import matplotlib_utils as mu
 
 #importing at the bottom so don't get any conflicts
-import neuron #package where can use the Branches class to help do branch skeleton analysis
+
 
 
 from tqdm.notebook import tqdm
@@ -30,10 +30,101 @@ import itertools
 
 # tools for restricting 
 
+# -------------- 7/22 Help Filter Bad Branches ------------------ #
+def classify_error_branch(curr_branch,width_to_face_ratio=5):
+    curr_width = curr_branch.width
+    curr_face_count = len(curr_branch.mesh.faces)
+    if curr_width/curr_face_count > width_to_face_ratio:
+        return True
+    else:
+        return False
+    
+def classify_endpoint_error_branches_from_limb_concept_network(curr_concept_network,**kwargs):
+    """
+    Purpose: To identify all endpoints of concept graph where the branch meshes/skeleton
+    are likely a result of bad skeletonization or meshing:
+    
+    Applications: Can get rid of these branches later
+    
+    Pseudocode: 
+    1) Get all of the endpoints of the concept network
+    2) Get all of the branch objects for the endpoints
+    3) Return the idx's of the branch objects that test positive for being an error branch
+    """
+    
+    #1) Get all of the endpoints of the concept network
+    end_nodes = xu.get_nodes_of_degree_k(curr_concept_network,1)
+    
+    #2) Get all of the branch objects for the endpoints
+    end_node_branches = [curr_concept_network.nodes[k]["data"] for k in end_nodes]
+    
+    #3) Return the idx's of the branch objects that test positive for being an error branch
+    total_error_end_node_branches = []
+    
+    for en_idx,e_branch in zip(end_nodes,end_node_branches):
+        if classify_error_branch(e_branch):
+            total_error_end_node_branches.append(en_idx)
+    
+    return total_error_end_node_branches
+    
 
 # -------------- tools for the concept networks ------------------ #
 
+def get_limb_names_from_concept_network(concept_network):
+    """
+    Purpose: Function that takes in either a neuron object
+    or the concept network and returns just the concept network
+    depending on the input
+    
+    """
+    return [k for k in concept_network.nodes() if "L" in k]
 
+def get_soma_names_from_concept_network(concept_network):
+    """
+    Purpose: Function that takes in either a neuron object
+    or the concept network and returns just the concept network
+    depending on the input
+    
+    """
+    return [k for k in concept_network.nodes() if "S" in k]
+    
+
+def return_concept_network(current_neuron):
+    """
+    Purpose: Function that takes in either a neuron object
+    or the concept network and returns just the concept network
+    depending on the input
+    
+    """
+    if current_neuron.__class__.__name__ == "Neuron":
+        curr_concept_network = current_neuron.concept_network
+    elif type(current_neuron) == type(xu.GraphOrderedEdges()):
+        curr_concept_network = current_neuron
+    return curr_concept_network
+    
+
+def convert_limb_concept_network_to_neuron_skeleton(curr_concept_network,check_connected_component=True):
+    """
+    Purpose: To take a concept network that has the branch 
+    data within it to the skeleton for that limb
+    
+    Pseudocode: 
+    1) Get the nodes names of the branches 
+    2) Order the node names
+    3) For each node get the skeletons into an array
+    4) Stack the array
+    5) Want to check that skeleton is connected component
+    
+    Example of how to run: 
+    full_skeleton = convert_limb_concept_network_to_neuron_skeleton(recovered_neuron.concept_network.nodes["L1"]["data"].concept_network)
+    
+    """
+    sorted_nodes = np.sort(list(curr_concept_network.nodes()))
+    #print(f"sorted_nodes = {sorted_nodes}")
+    full_skeleton = sk.stack_skeletons([curr_concept_network.nodes[k]["data"].skeleton for k in sorted_nodes])
+    if check_connected_component:
+        sk.check_skeleton_one_component(full_skeleton)
+    return full_skeleton
     
 def get_starting_info_from_concept_network(concept_networks):
     """
@@ -69,6 +160,7 @@ def get_starting_info_from_concept_network(concept_networks):
         output_dicts.append(curr_output_dict)
     
     return output_dicts
+
 
 def convert_concept_network_to_skeleton(curr_concept_network):
     #get the midpoints
@@ -1611,6 +1703,10 @@ def smaller_preprocessed_data(neuron_object,print_flag=False):
     double_soma_obj.preprocessed_data['limb_concept_networks']
 
     compressed_dict = dict(
+                          #saving the original number of faces and vertices to make sure reconstruciton doesn't happen with wrong mesh
+                          original_mesh_n_faces = len(double_soma_obj.mesh.faces),
+                          original_mesh_n_vertices = len(double_soma_obj.mesh.vertices), 
+        
                           soma_meshes_face_idx=soma_meshes_face_idx,
 
                           soma_to_piece_connectivity=double_soma_obj.preprocessed_data["soma_to_piece_connectivity"],
@@ -1639,7 +1735,8 @@ def smaller_preprocessed_data(neuron_object,print_flag=False):
 
 from pathlib import Path
 import system_utils as su
-def save_compressed_neuron(neuron_object,output_folder,file_name="",return_file_path=False):
+
+def save_compressed_neuron(neuron_object,output_folder,file_name="",return_file_path=False,export_mesh=False):
     output_folder = Path(output_folder)
     
     if file_name == "":
@@ -1654,6 +1751,9 @@ def save_compressed_neuron(neuron_object,output_folder,file_name="",return_file_
     compressed_size = su.compressed_pickle(inhib_object_compressed_preprocessed_data,output_path,return_size=True)
     
     print(f"\n\n---Finished outputing neuron at location: {output_path.absolute()}---")
+    
+    if export_mesh:
+        neuron_object.mesh.export(str(output_path.absolute()) +".off")
     
     if return_file_path:
         return output_path
@@ -1674,6 +1774,24 @@ def decompress_neuron(filepath,original_mesh):
     Process: use submesh on the neuron mesh for each
 
     """
+    if type(original_mesh) == type(Path()) or type(original_mesh) == str:
+        original_mesh = tu.load_mesh_no_processing(original_mesh)
+    
+    if len(original_mesh.faces) != loaded_compression["original_mesh_n_faces"]:
+        raise Exception(f"Number of faces in mesh used for compression ({loaded_compression['original_mesh_n_faces']})"
+                        f" does not match the number of faces in mesh passed to decompress_neuron function "
+                        f"({len(original_mesh.faces)})")
+    else:
+        print("Passed faces original mesh check")
+    
+    if len(original_mesh.vertices) != loaded_compression["original_mesh_n_vertices"]:
+        raise Exception(f"Number of vertices in mesh used for compression ({loaded_compression['original_mesh_n_vertices']})"
+                        f" does not match the number of vertices in mesh passed to decompress_neuron function "
+                        f"({len(original_mesh.vertices)})")
+    else:
+        print("Passed vertices original mesh check")
+    
+    
     recovered_preprocessed_data["soma_meshes"] = [original_mesh.submesh([k],append=True) for k in loaded_compression["soma_meshes_face_idx"]]
     
     """
@@ -1754,10 +1872,8 @@ def decompress_neuron(filepath,original_mesh):
     Data: All previous data
     Process: Call the funciton that creates the concept_networks using all the data above
     """
-    import neuron_utils as nru 
-    nru = reload(nru)
 
-    limb_concept_networks,limb_labels = nru.generate_limb_concept_networks_from_global_connectivity(
+    limb_concept_networks,limb_labels = generate_limb_concept_networks_from_global_connectivity(
             limb_correspondence = recovered_preprocessed_data["limb_correspondence"],
             #limb_idx_to_branch_meshes_dict = limb_idx_to_branch_meshes_dict,
             #limb_idx_to_branch_skeletons_dict = limb_idx_to_branch_skeletons_dict,
@@ -1789,5 +1905,134 @@ def decompress_neuron(filepath,original_mesh):
     return decompressed_neuron
 
     
+# --------------  7/23 To help with visualizations of neuron ---------------- #
 
- 
+def get_whole_neuron_skeleton(current_neuron,
+                             check_connected_component=True,
+                             print_flag=False):
+    """
+    Purpose: To generate the entire skeleton with limbs stitched to the somas
+    of a neuron object
+    
+    Example Use: 
+    
+    total_neuron_skeleton = nru.get_whole_neuron_skeleton(current_neuron = recovered_neuron)
+    sk.graph_skeleton_and_mesh(other_meshes=[current_neuron.mesh],
+                              other_skeletons = [total_neuron_skeleton])
+                              
+    Ex 2: 
+    nru = reload(nru)
+    returned_skeleton = nru.get_whole_neuron_skeleton(recovered_neuron,print_flag=True)
+    sk.graph_skeleton_and_mesh(other_skeletons=[returned_skeleton])
+    """
+    limb_skeletons_total = []
+    for limb_idx in current_neuron.get_limb_node_names():
+        if print_flag:
+            print(f"\nWorking on limb: {limb_idx}")
+        curr_limb_obj = current_neuron.concept_network.nodes[limb_idx]["data"]
+        #stack the new skeleton pieces with the current skeleton 
+        curr_limb_skeleton = curr_limb_obj.get_skeleton(check_connected_component=True)
+        if print_flag:
+            print(f"curr_limb_skeleton.shape = {curr_limb_skeleton.shape}")
+        
+        limb_skeletons_total.append(curr_limb_skeleton)
+
+    #get the soma skeletons
+    soma_skeletons_total = []
+    for soma_idx in current_neuron.get_soma_node_names():
+        if print_flag:
+            print(f"\nWorking on soma: {soma_idx}")
+        #get the soma skeletons
+        curr_soma_skeleton = get_soma_skeleton(current_neuron,soma_name=soma_idx)
+        
+        if print_flag:
+            print(f"for soma {soma_idx}, curr_soma_skeleton.shape = {curr_soma_skeleton.shape}")
+        
+        soma_skeletons_total.append(curr_soma_skeleton)
+
+    total_neuron_skeleton = sk.stack_skeletons(limb_skeletons_total + soma_skeletons_total)
+
+    if check_connected_component:
+        sk.check_skeleton_one_component(total_neuron_skeleton)
+
+    return total_neuron_skeleton
+
+def get_soma_skeleton(current_neuron,soma_name):
+    """
+    Purpose: to return the skeleton for a soma that goes from the 
+    soma center to all of the connecting limb
+    
+    Pseudocode: 
+    1) get all of the limbs connecting to the soma (through the concept network)
+    2) get the starting coordinate for that soma
+    For all of the limbs connected
+    3) Make the soma center to that starting coordinate a segment
+    
+
+    
+    """
+    #1) get all of the limbs connecting to the soma (through the concept network)
+    limbs_connected_to_soma = xu.get_neighbors(current_neuron.concept_network,soma_name,int_label=False)
+    #2) get the starting coordinate for that soma
+    curr_soma_center = current_neuron.concept_network.nodes[soma_name]["data"].mesh_center
+    
+    #For all of the limbs connected
+    #3) Make the soma center to that starting coordinate a segment
+    soma_skeleton_pieces = []
+    for limb_idx in limbs_connected_to_soma:
+        curr_limb_obj = curr_limb_obj = current_neuron.concept_network.nodes[limb_idx]["data"]
+        
+        curr_starting_coordinate = [cn_data["starting_coordinate"] for cn_data in curr_limb_obj.all_concept_network_data
+                                                    if f"S{cn_data['starting_soma']}" == soma_name]
+        if len(curr_starting_coordinate) != 1:
+            raise Exception(f"curr_starting_coordinate not exactly one element: {curr_starting_coordinate}")
+        
+        curr_endpoint = curr_starting_coordinate[0]
+        
+        new_skeleton_piece = np.vstack([curr_soma_center,curr_endpoint]).reshape(-1,2,3)
+        soma_skeleton_pieces.append(new_skeleton_piece)
+    
+    return sk.stack_skeletons(soma_skeleton_pieces)
+
+
+# def get_soma_skeleton_for_limb(current_neuron,limb_idx):
+#     """
+#     Purpose: To get the extra piece of skeleton
+#     associated with that limb for all of those soma it connects to
+    
+
+#     """
+    
+#     #
+    
+#     soma_to_starting_dict = dict()
+#     for cn_data in curr_limb_obj.all_concept_network_data:
+#         soma_to_starting_dict[cn_data["starting_soma"]] = cn_data["starting_coordinate"]
+
+#     """
+#     will generate the new skeleton stitches
+
+
+#     """
+#     new_skeleton_pieces = []
+#     for curr_soma,curr_endpoint in soma_to_starting_dict.items():
+#         curr_soma_center = current_neuron.concept_network.nodes[f"S{curr_soma}"]["data"].mesh_center
+#         #print(f"curr_soma_center = {curr_soma_center}")
+#         new_skeleton_piece = np.vstack([curr_soma_center,curr_endpoint]).reshape(-1,2,3)
+#         new_skeleton_pieces.append(new_skeleton_piece)
+#         #print(f"new_skeleton_piece = {new_skeleton_piece}")
+
+    
+#     return new_skeleton_pieces
+
+
+    
+    
+    
+    
+    
+    
+    
+    
+
+import neuron #package where can use the Branches class to help do branch skeleton analysis

@@ -1121,7 +1121,7 @@ def stack_skeletons(sk_list):
         print("No skeletons to stack so returning empty list")
         return []
     elif len(list_of_skeletons) == 1:
-        print("only one skeleton so no stacking needed")
+        #print("only one skeleton so no stacking needed")
         return np.array(list_of_skeletons).reshape(-1,2,3)
     else:
         return (np.vstack(list_of_skeletons)).reshape(-1,2,3)
@@ -2976,6 +2976,20 @@ def compare_skeletons_ordered(skeleton_1,skeleton_2,
                      edge_comparison_threshold=edge_threshold,
                      node_comparison_threshold=node_threshold)
     
+    
+# ----------------- 7/22 Functions made to help with graph searching and visualizaiton ------------ #
+def skeleton_n_components(curr_skeleton):
+    """
+    Purpose: To get the number of connected components represented by 
+    the current skeleton
+    """
+    cleaned_branch_components = nx.number_connected_components(convert_skeleton_to_graph(curr_skeleton))
+    return cleaned_branch_components
+
+def check_skeleton_one_component(curr_skeleton):
+    cleaned_branch_components = skeleton_n_components(curr_skeleton)
+    if cleaned_branch_components > 1:
+        raise Exception(f"Skeleton is not one component: n_components = {cleaned_branch_components}")
     
     
 

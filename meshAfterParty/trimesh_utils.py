@@ -10,9 +10,14 @@ from pykdtree.kdtree import KDTree
 import time
 from tqdm.notebook import tqdm
 import numpy_utils as nu
+from pathlib import Path
 
 #loading a mesh safely without any processing to mess up the vertices/faces
 def load_mesh_no_processing(current_mesh_file):
+    if type(current_mesh_file) == type(Path()):
+        current_mesh_file = str(current_mesh_file.absolute())
+    if current_mesh_file[-4:] != ".off":
+        current_mesh_file += ".off"
     return trimesh.load_mesh(current_mesh_file,process=False)
 
 

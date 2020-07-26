@@ -114,7 +114,7 @@ class Branch:
         if str(type(skeleton)) == str(Branch):
             #print("Recived Branch object so copying object")
             #self = copy.deepcopy(skeleton)
-            self.skeleton = dc(skeleton.skeleton)
+            self.skeleton = dc(skeleton.skeleton).reshape(-1,2,3)
             self.mesh=dc(skeleton.mesh)
             self.width = dc(skeleton.width)
             self.mesh_face_idx = dc(skeleton.mesh_face_idx)
@@ -127,7 +127,7 @@ class Branch:
                 self.labels=[self.labels]
             return 
             
-        self.skeleton=skeleton
+        self.skeleton=skeleton.reshape(-1,2,3)
         self.mesh=mesh
         self.width=width
         self.mesh_face_idx = mesh_face_idx
@@ -252,6 +252,25 @@ class Limb:
     c. Put the branches as "data" in the network
     d. Get all of the starting coordinates and starting edges and put as member attributes in the limb
     """
+    def get_skeleton(self,check_connected_component=True):
+        """
+        Purpose: Will return the entire skeleton of all the branches
+        stitched together
+        
+        """
+        return nru.convert_limb_concept_network_to_neuron_skeleton(self.concept_network,
+                             check_connected_component=check_connected_component)
+    
+    @property
+    def skeleton(self,check_connected_component=False):
+        """
+        Purpose: Will return the entire skeleton of all the branches
+        stitched together
+        
+        """
+        return nru.convert_limb_concept_network_to_neuron_skeleton(self.concept_network,
+                             check_connected_component=check_connected_component)
+    
     
     def convert_concept_network_to_directional(self,no_cycles = True):
         """
@@ -284,7 +303,18 @@ class Limb:
         """
         if self.concept_network is None:
             raise Exception("Cannot use convert_concept_nextwork_to_directional on limb if concept_network is None")
-        curr_limb_concept_network = self.concept_network
+            
+        curr_limb_concept_network = self.concept_network    
+        
+        #make sure that there is one and only one starting node embedded in the graph
+        try: 
+            xu.get_starting_node(curr_limb_concept_network)
+        except:
+            print("There was not exactly one starting nodes in the current self.concept_network"
+                  " when trying to convert to concept network ")
+            xu.get_starting_node(curr_limb_concept_network)
+        
+        
         
         node_widths = dict([(k,curr_limb_concept_network.nodes[k]["data"].width) for k in curr_limb_concept_network.nodes() ])
         
@@ -297,7 +327,86 @@ class Limb:
         return directional_concept_network
         
         
+    def set_concept_network_directional(self,starting_soma,print_flag=False):
+        """
+        Pseudocode: 
+        1) Get the current concept_network
+        2) Delete the current starting coordinate
+        3) Use the all_concept_network_data to find the starting node and coordinate for the
+        starting soma specified
+        4) set the starting coordinate of that node
+        5) rerun the convert_concept_network_to_directional and set the output to the self attribute
+        Using: 
+        self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True)
+        
+        Example: 
+        
+        import neuron_visualizations as nviz
 
+        curr_limb_obj = recovered_neuron.concept_network.nodes["L1"]["data"]
+        print(xu.get_starting_node(curr_limb_obj.concept_network_directional))
+        print(curr_limb_obj.current_starting_coordinate)
+        print(curr_limb_obj.current_starting_node)
+        print(curr_limb_obj.current_starting_endpoints)
+        print(curr_limb_obj.current_starting_soma)
+        
+        nviz.plot_concept_network(curr_limb_obj.concept_network_directional,
+                         arrow_size=5,
+                         scatter_size=3)
+                         
+        curr_limb_obj.set_concept_network_directional(starting_soma=1,print_flag=False)
+        
+        print(xu.get_starting_node(curr_limb_obj.concept_network_directional))
+        print(curr_limb_obj.current_starting_coordinate)
+        print(curr_limb_obj.current_starting_node)
+        print(curr_limb_obj.current_starting_endpoints)
+        print(curr_limb_obj.current_starting_soma)
+
+        nviz.plot_concept_network(curr_limb_obj.concept_network_directional,
+                                 arrow_size=5,
+                                 scatter_size=3)
+        
+        """
+        
+        #find which the starting_coordinate and starting_node
+
+        previous_starting_node = xu.get_starting_node(self.concept_network)
+        if print_flag:
+            print(f"Deleting starting coordinate from node {previous_starting_node}")
+        del self.concept_network.nodes[previous_starting_node]["starting_coordinate"]
+
+        matching_concept_network_data = [k for k in self.all_concept_network_data if k["starting_soma"] == starting_soma]
+
+        if len(matching_concept_network_data) != 1:
+            raise Exception(f"The concept_network data for the starting soma ({starting_soma}) did not have exactly one match: {matching_concept_network_data}")
+
+        matching_concept_network_dict = matching_concept_network_data[0]
+        curr_starting_node = matching_concept_network_dict["starting_node"]
+        curr_starting_coordinate= matching_concept_network_dict["starting_coordinate"]
+
+        #set the starting coordinate in the concept network
+        attrs = {curr_starting_node:{"starting_coordinate":curr_starting_coordinate}}
+        if print_flag:
+            print(f"attrs = {attrs}")
+        xu.set_node_attributes_dict(self.concept_network,attrs)
+
+        #make sure only one starting coordinate
+        new_starting_coordinate = xu.get_starting_node(self.concept_network)
+        if print_flag:
+            print(f"New starting coordinate at node {new_starting_coordinate}")
+        
+        self.current_starting_coordinate = matching_concept_network_dict["starting_coordinate"]
+        self.current_starting_node = matching_concept_network_dict["starting_node"]
+        self.current_starting_endpoints = matching_concept_network_dict["starting_endpoints"]
+        self.current_starting_soma = matching_concept_network_dict["starting_soma"]
+        
+        if print_flag:
+            self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True)
+        else:
+            with su.suppress_stdout_stderr():
+                self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True)
+        
+        
     
     def __init__(self,
                              mesh,
@@ -802,6 +911,17 @@ class Neuron:
 
     
     """
+    def get_total_n_branches(self):
+        return np.sum([len(self.concept_network.nodes[li]["data"].concept_network.nodes()) for li in self.get_limb_node_names()])
+    
+    def get_skeleton(self,check_connected_component=True):
+        return nru.get_whole_neuron_skeleton(self,
+                                 check_connected_component=check_connected_component)
+    
+    @property
+    def skeleton(self,check_connected_component=False):
+        return nru.get_whole_neuron_skeleton(self,
+                                 check_connected_component=check_connected_component)
     
     def __init__(self,mesh,
                  segment_id=None,
@@ -1225,12 +1345,18 @@ class Neuron:
                                   limb_name="",
                                  limb_idx=-1,
                                   node_size=0.3,
+                                  directional=True,
                                  append_figure=False,
                                  show_at_end=True,**kwargs):
         if limb_name == "":
+            if limb_idx == -1:
+                raise Exception("Limb name and limb_idx both not specified")
             limb_name = f"L{limb_idx}"
             
-        curr_limb_concept_network_directional = self.concept_network.nodes[limb_name]["data"].concept_network_directional
+        if directional:
+            curr_limb_concept_network_directional = self.concept_network.nodes[limb_name]["data"].concept_network_directional
+        else:
+            curr_limb_concept_network_directional = self.concept_network.nodes[limb_name]["data"].concept_network
         nviz.plot_concept_network(curr_concept_network = curr_limb_concept_network_directional,
                             scatter_size=node_size,
                             show_at_end=show_at_end,
