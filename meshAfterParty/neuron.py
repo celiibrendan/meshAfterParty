@@ -375,7 +375,7 @@ class Limb:
             print(f"Deleting starting coordinate from node {previous_starting_node}")
         del self.concept_network.nodes[previous_starting_node]["starting_coordinate"]
 
-        matching_concept_network_data = [k for k in self.all_concept_network_data if k["starting_soma"] == starting_soma]
+        matching_concept_network_data = [k for k in self.all_concept_network_data if ((k["starting_soma"] == starting_soma) or (nru.soma_label(k["starting_soma"]) == starting_soma))]
 
         if len(matching_concept_network_data) != 1:
             raise Exception(f"The concept_network data for the starting soma ({starting_soma}) did not have exactly one match: {matching_concept_network_data}")

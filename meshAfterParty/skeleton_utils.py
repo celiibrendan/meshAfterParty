@@ -198,6 +198,11 @@ def plot_ipv_skeleton(edge_coordinates,color=[0,0.,1,1]):
 def plot_ipv_scatter(scatter_points,scatter_color=[1.,0.,0.,0.5],
                     scatter_size=0.4):
     scatter_points = np.array(scatter_points).reshape(-1,3)
+#     print(f"scatter_points[:,0] = {scatter_points[:,0]}")
+#     print(f"scatter_points[:,1] = {scatter_points[:,1]}")
+#     print(f"scatter_points[:,2] = {scatter_points[:,2]}")
+#     print(f"scatter_size = {scatter_size}")
+#     print(f"scatter_color = {scatter_color}")
     mesh_5 = ipv.scatter(
             scatter_points[:,0], 
             scatter_points[:,1],
@@ -289,10 +294,16 @@ def graph_skeleton_and_mesh(main_mesh_verts=[],
     if type(other_skeletons_colors) != list and type(other_skeletons_colors) != np.ndarray:
         other_skeletons_colors = [other_skeletons_colors]
         
-    if type(other_scatter) != list and type(other_scatter) != np.ndarray:
+#     if type(other_scatter) != list and type(other_scatter) != np.ndarray:
+#         other_scatter = [other_scatter]
+#     if type(other_scatter_colors) != list and type(other_scatter_colors) != np.ndarray:
+#         other_scatter_colors = [other_scatter_colors]
+
+    if not nu.is_array_like(other_scatter):
         other_scatter = [other_scatter]
-    if type(other_scatter_colors) != list and type(other_scatter_colors) != np.ndarray:
+    if not nu.is_array_like(other_scatter_colors):
         other_scatter_colors = [other_scatter_colors]
+    
         
     
     
@@ -368,6 +379,7 @@ def graph_skeleton_and_mesh(main_mesh_verts=[],
         main_mesh_vertices = main_mesh_vertices[0]
     else:
         #get rid of all empt
+        #print(f"main_mesh_vertices = {main_mesh_vertices}")
         main_mesh_vertices = np.vstack([k.reshape(-1,3) for k in main_mesh_vertices if len(k)>0])
     
     if len(main_mesh_vertices) == 0:

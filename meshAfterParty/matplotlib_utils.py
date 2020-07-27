@@ -86,6 +86,10 @@ def color_to_rgb(color_str):
     else:
         return np.array(color_str)
 
+def color_to_rgba(current_color,alpha=0.2):
+    curr_rgb = color_to_rgb(current_color)
+    return apply_alpha_to_color_list(curr_rgb,alpha=alpha)
+    
 from copy import copy
 def get_graph_color_list():
     return copy(graph_color_list)
@@ -160,11 +164,15 @@ def process_non_dict_color_input(color_input):
     elif any(nu.is_array_like(elem) for elem in color_input): #if there is an array in the list 
         color_list = [color_to_rgb(k) if type(k)==str else k for k in  color_input]
     else:
-        color_list = [color_list]
+        color_list = [color_input]
     
     return color_list
 
 def apply_alpha_to_color_list(color_list,alpha=0.2,print_flag=False):
+    single_input = False
+    if not nu.is_array_like(color_list):
+        color_list = [color_list]
+        single_input = True
     color_list_alpha_fixed = []
     
     for c in color_list:
@@ -176,5 +184,10 @@ def apply_alpha_to_color_list(color_list,alpha=0.2,print_flag=False):
             raise Exception(f"Found color that was not 3 or 4 length array in colors list: {c}")
     if print_flag:
         print(f"color_list_alpha_fixed = {color_list_alpha_fixed}")
+    
+    if single_input:
+        return color_list_alpha_fixed[0]
+    
     return color_list_alpha_fixed
     
+

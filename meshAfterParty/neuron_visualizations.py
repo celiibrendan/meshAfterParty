@@ -67,6 +67,7 @@ def plot_concept_network(curr_concept_network,
     
     
     if not append_figure:
+        ipv.pylab.clear()
         ipv.figure(figsize=(15,15))
     
     node_locations = dict([(k,curr_concept_network.nodes[k]["data"].mesh_center) for k in curr_concept_network.nodes()])
@@ -109,18 +110,19 @@ def plot_concept_network(curr_concept_network,
     
     
     if highlight_starting_node:
-        starting_node_num = xu.get_starting_node(curr_concept_network)
-        starting_node_num_coord = curr_concept_network.nodes[starting_node_num]["data"].mesh_center
+        starting_node_num = xu.get_starting_node(curr_concept_network,only_one=False)
+        starting_node_num_coord = [curr_concept_network.nodes[k]["data"].mesh_center for k in starting_node_num]
     
         #print(f"Highlighting starting node {starting_node_num} with coordinate = {starting_node_num_coord}")
         
-        sk.graph_skeleton_and_mesh(
-                                   other_scatter=[starting_node_num_coord],
-                                   other_scatter_colors=starting_node_color,
-                                   scatter_size=starting_node_size,
-                                   show_at_end=False,
-                                   append_figure=True
-                                  )
+        for k in starting_node_num_coord:
+            sk.graph_skeleton_and_mesh(
+                                       other_scatter=[k],
+                                       other_scatter_colors=starting_node_color,
+                                       scatter_size=starting_node_size,
+                                       show_at_end=False,
+                                       append_figure=True
+                                      )
     
     #print(f"Current scatter size = {scatter_size}")
     concept_network_skeleton = nru.convert_concept_network_to_skeleton(curr_concept_network)
@@ -142,102 +144,166 @@ def plot_concept_network(curr_concept_network,
         ipv.show()
         
         
-        
-        
-        
-        
-def plot_scatter_and_edges(scatter_points, #will help define the edges
-                           edges,
-                           directional,
-                           starting_coordinate,
-                           
+def visualize_concept_map(curr_concept_network,
+                            node_color="red",
+                            #node_color="black",
+                            node_alpha = 0.5,
+                            edge_color="black",
+                            node_size=0.1,
+
+                            starting_node=True,
+                            starting_node_size = 0.3,
+                            starting_node_color= "pink",
+                            starting_node_alpha = 0.8,
+
+                            arrow_color = "brown",
+                            arrow_alpha = 0.8,
                             arrow_size = 0.5,
-                            arrow_color = "maroon",
-                            edge_color = "black",
-                            node_color = "red",
-                            scatter_size = 0.1,
-                            starting_node_color="pink",
+
+                            arrow_color_reciprocal = "brown",
+                            arrow_alpha_reciprocal = 0.8,
+                            arrow_size_reciprocal = 0.5,
+                          
                             show_at_end=True,
-                            append_figure=False,
-                            highlight_starting_node=True,
-                            starting_node_size=-1):
-    
-    if starting_node_size == -1:
-        starting_node_size = scatter_size*3
+                            append_figure=False):
+
     
     """
+    Purpose: To plot a concept network with more
+    parameters than previous plot_concept_network
     
+    Ex: 
+    
+    neuron = reload(neuron)
+    recovered_neuron = neuron.Neuron(recovered_neuron)
+    nru = reload(nru)
+    nviz = reload(nviz)
+    returned_network = nru.whole_neuron_branch_concept_network(recovered_neuron,
+                                      directional=True,
+                                     limb_soma_touch_dictionary = "all",
+                                     print_flag = False)
+    
+    nviz.visualize_concept_map(returned_network,
+                          #starting_node_size = 10,
+                          arrow_color = "green")
     """
     
     
     if not append_figure:
+        ipv.pylab.clear()
         ipv.figure(figsize=(15,15))
     
     node_locations = dict([(k,curr_concept_network.nodes[k]["data"].mesh_center) for k in curr_concept_network.nodes()])
-
     node_edges = np.array(list(curr_concept_network.edges))
 
 
-
+    #Adding the arrows for a directional graph
     if type(curr_concept_network) == type(nx.DiGraph()):
-        #print("plotting a directional concept graph")
         #getting the midpoints then the directions of arrows for the quiver
         midpoints = []
         directions = []
+        
+        reciprocal_edges = xu.find_reciprocal_connections(curr_concept_network,redundant=True)
+        
         for n1,n2 in curr_concept_network.edges:
+            #going to skip reciprocal connections because will do them later
+            if len(nu.matching_rows(reciprocal_edges,[n1,n2])) > 0:
+                continue
             difference = node_locations[n2] - node_locations[n1]
             directions.append(difference)
             midpoints.append(node_locations[n1] + difference/2)
         directions = np.array(directions)
         midpoints = np.array(midpoints)
 
-
+        arrow_rgba = mu.color_to_rgba(arrow_color,arrow_alpha)
 
         ipv.pylab.quiver(midpoints[:,0],midpoints[:,1],midpoints[:,2],
                         directions[:,0],directions[:,1],directions[:,2],
                         size=arrow_size,
-                        size_selected=20,
-                        color = arrow_color)
+                        color = arrow_rgba)
+        
+        
+        if len(reciprocal_edges) > 0:
+            #getting the midpoints then the directions of arrows for the quiver
+            midpoints = []
+            directions = []
 
+            for n1,n2 in reciprocal_edges:
+                #going to skip reciprocal connections because will do them later
+                difference = node_locations[n2] - node_locations[n1]
+                directions.append(difference)
+                midpoints.append(node_locations[n1] + difference/2)
+            directions = np.array(directions)
+            midpoints = np.array(midpoints)
 
-    node_locations_array = np.array([v for v in node_locations.values()])
-    #print(f"node_locations_array = {node_locations_array}")
+            arrow_rgba = mu.color_to_rgba(arrow_color_reciprocal,
+                                          arrow_alpha_reciprocal)
+            
+            ipv.pylab.quiver(midpoints[:,0],midpoints[:,1],midpoints[:,2],
+                            directions[:,0],directions[:,1],directions[:,2],
+                            size=arrow_size_reciprocal,
+                            color = arrow_rgba)
 
-    
-    
-    if highlight_starting_node:
-        starting_node_num = xu.get_starting_node(curr_concept_network)
-        starting_node_num_coord = curr_concept_network.nodes[starting_node_num]["data"].mesh_center
+            
+    if starting_node:
+        starting_node_num = xu.get_starting_node(curr_concept_network,only_one=False)
+        starting_node_num_coord = [curr_concept_network.nodes[k]["data"].mesh_center for k in starting_node_num]
     
         #print(f"Highlighting starting node {starting_node_num} with coordinate = {starting_node_num_coord}")
+        for k in starting_node_num_coord:
+#             print(f"mu.color_to_rgba(starting_node_color,starting_node_alpha) = {mu.color_to_rgba(starting_node_color,starting_node_alpha)}")
+#             print(f"[k] = {[k]}")
+#             print(f"scatter_size = {node_size}")
+            sk.graph_skeleton_and_mesh(
+                                       other_scatter=[k],
+                                       other_scatter_colors=[mu.color_to_rgba(starting_node_color,starting_node_alpha)],
+                                       scatter_size=starting_node_size,
+                                       show_at_end=False,
+                                       append_figure=True
+                                   )
+    
+    #print("************ Done plotting the starting nodes *******************")
+    #plot all of the data points using the colors
+    if type(node_color) != dict:
+        color_list = mu.process_non_dict_color_input(node_color)
+        #now go through and add the alpha levels to those that don't have it
+        color_list_alpha_fixed = mu.apply_alpha_to_color_list(color_list,alpha=node_alpha)
+        color_list_correct_size = mu.generate_color_list_no_alpha_change(user_colors=color_list_alpha_fixed,
+                                                                         n_colors=len(curr_concept_network.nodes()))
+        node_locations_array = [v for v in node_locations.values()]
+    else:
+        #if dictionary then check that all the color dictionary keys match
+        node_names = list(curr_concept_network.nodes())
+        if set(list(node_color.keys())) != set(node_names):
+            raise Exception(f"The node_color dictionary ({node_color}) did not match the nodes in the concept network ({curr_concept_network})")
         
-        sk.graph_skeleton_and_mesh(
-                                   other_scatter=[starting_node_num_coord],
-                                   other_scatter_colors=starting_node_color,
-                                   scatter_size=starting_node_size,
-                                   show_at_end=False,
-                                   append_figure=True
-                                  )
+        #assemble the color list and the 
+        color_list_correct_size = [node_color[k] for k in node_names]
+        node_locations_array = [node_locations[k] for k in node_names]
+        
+#     print(f"node_locations = {node_locations}")
+#     print(f"\n\nnode_locations_array = {node_locations_array}")
+    #print("***** About to do all the other scatter points ***********")
     
     #print(f"Current scatter size = {scatter_size}")
     concept_network_skeleton = nru.convert_concept_network_to_skeleton(curr_concept_network)
     sk.graph_skeleton_and_mesh(other_skeletons=[concept_network_skeleton],
                               other_skeletons_colors=edge_color,
-                               other_scatter=[node_locations_array.reshape(-1,3)],
-                               other_scatter_colors=node_color,
-                               scatter_size=scatter_size,
+                               other_scatter=node_locations_array,
+                               other_scatter_colors=color_list_correct_size,
+                               scatter_size=node_size,
                                show_at_end=False,
                                append_figure=True
                               )
+
+    if show_at_end:
+        ipv.show()
+        
+        
+        
     
     
 
-    
-    
-    
-    if show_at_end:
-        ipv.show()        
-        
 
 
 def plot_branch_pieces(neuron_network,
@@ -339,6 +405,10 @@ def plot_ipv_skeleton(edge_coordinates,color=[0,0.,1,1]):
 def plot_ipv_scatter(scatter_points,scatter_color=[1.,0.,0.,0.5],
                     scatter_size=0.4):
     scatter_points = np.array(scatter_points).reshape(-1,3)
+    if len(scatter_points):
+        print("No scatter points to plot")
+        return
+    
     mesh_5 = ipv.scatter(
             scatter_points[:,0], 
             scatter_points[:,1],
@@ -350,9 +420,10 @@ def plot_ipv_scatter(scatter_points,scatter_color=[1.,0.,0.,0.5],
 
 import matplotlib_utils as mu
 import numpy_utils as nu
+import copy
 def visualize_neuron(
     #the neuron we want to visualize
-    current_neuron,
+    input_neuron,
     
     #the categories that will be visualized
     visualize_type=["mesh"],
@@ -405,18 +476,23 @@ def visualize_neuron(
     
     # ------ specific arguments for the concept_network -----
     network_directional=True,
-    limb_to_starting_soma=None,
+    limb_to_starting_soma="all",
     
-    node_size = 1,
+    edge_color = "black",
+    node_size = 0.15,
     
     starting_node=True,
     starting_node_size=0.3,
     starting_node_color= "pink",
     starting_node_alpha=0.5,
     
-    arrow_color = "maroon",
-    arrow_alpha = 0.5,
-    arrow_size = 0.5,
+    arrow_color = "brown",
+    arrow_alpha = 0.8,
+    arrow_size = 0.3,
+    
+    arrow_color_reciprocal = "brown",
+    arrow_alpha_reciprocal = 0.8,
+    arrow_size_reciprocal = 0.3,
     
     
     # arguments for plotting other meshes associated with neuron #
@@ -449,15 +525,16 @@ def visualize_neuron(
     
     ):
     
+    current_neuron = copy.deepcopy(input_neuron)
+    
     #To uncomment for full graphing
     if not append_figure:
+        ipv.pylab.clear()
         ipv.figure(figsize=(15,15))
     
         
     main_vertices = []
     
-    print(f"mesh_resolution = {mesh_resolution}")
-    print(f"mesh_color = {mesh_color}")
     #do the mesh visualization type
     for viz_type in visualize_type:
         print(f"\n Working on visualization type: {viz_type}")
@@ -521,6 +598,8 @@ def visualize_neuron(
             configuration_dict.setdefault("limb_to_starting_soma",limb_to_starting_soma)
             
             configuration_dict.setdefault("node_size",node_size)
+            configuration_dict.setdefault("edge_color",edge_color)
+            
             
             configuration_dict.setdefault("starting_node",starting_node)
             configuration_dict.setdefault("starting_node_size",starting_node_size)
@@ -530,6 +609,12 @@ def visualize_neuron(
             configuration_dict.setdefault("arrow_color",arrow_color)
             configuration_dict.setdefault("arrow_alpha",arrow_alpha)
             configuration_dict.setdefault("arrow_size",arrow_size)
+            
+            configuration_dict.setdefault("arrow_color_reciprocal",arrow_color_reciprocal)
+            configuration_dict.setdefault("arrow_alpha_reciprocal",arrow_alpha_reciprocal)
+            configuration_dict.setdefault("arrow_size_reciprocal",arrow_size_reciprocal)
+            
+            
             
         else:
             raise Exception(f"Recieved invalid visualization type: {viz_type}")
@@ -649,7 +734,10 @@ def visualize_neuron(
         #4) If soma is requested then get the some items
         
         
-    
+        soma_names = current_neuron.get_soma_node_names()
+        if nu.is_array_like(type(configuration_dict["soma"])):
+            soma_names = [k for k in soma_names if k in configuration_dict["soma"]]
+            
         if viz_type == "mesh":
             #add the vertices to plot to main_vertices list
             if len(plot_items)>0:
@@ -677,10 +765,7 @@ def visualize_neuron(
                 configuration_dict.setdefault("soma_alpha",mesh_soma_alpha)
 
                 """
-                soma_names = current_neuron.get_soma_node_names()
                 
-                if nu.is_array_like(type(configuration_dict["soma"])):
-                    soma_names = [k for k in soma_names if k in configuration_dict["soma"]]
                 soma_meshes = [current_neuron.concept_network.nodes[k]["data"].mesh for k in soma_names]
                 
                 soma_colors_list = mu.process_non_dict_color_input(configuration_dict["soma_color"])
@@ -718,10 +803,6 @@ def visualize_neuron(
             
             
             if configuration_dict["soma"]:
-                soma_names = current_neuron.get_soma_node_names()
-                
-                if nu.is_array_like(type(configuration_dict["soma"])):
-                    soma_names = [k for k in soma_names if k in configuration_dict["soma"]]
                     
                 soma_colors_list = mu.process_non_dict_color_input(configuration_dict["soma_color"])
                 soma_colors_list_alpha = mu.apply_alpha_to_color_list(soma_colors_list,alpha=configuration_dict["soma_alpha"])
@@ -744,51 +825,107 @@ def visualize_neuron(
                                       np.max(sk_vertices,axis=0)])
                 
         elif viz_type == "network":
-            #add the vertices to plot to main_vertices list
+            """
+            Pseudocode: 
+            0) get the mesh_centers of all of the nodes in the concept_network sent and add to the main vertices
+            1) get the current concept network (limb or branch) based on the resolution
+            - if branch level then use the function that assembles
+            2) get a list of all the nodes in the plot_items_order and assemble into a dictionary (have to fix the name)
+            3) For all the somas to be added, add them to the dictionary of label to color (and add vertices to main vertices)
+            4) Use that dictionary to send to the visualize_concept_map function and call the function
+            with all the other parameters in the configuration dict
+            
+            5) get the mesh_centers of all of the nodes in the concept_network sent and add to the main vertices
+            
+            """
+            
+            
+            #0) get the mesh_centers of all of the nodes in the concept_network sent and add to the main vertices
             if len(plot_items)>0:
                 reshaped_items = np.concatenate(plot_items).reshape(-1,3)
                 min_vertices = np.min(reshaped_items,axis=0)
                 max_vertices = np.max(reshaped_items,axis=0)
                 main_vertices.append(np.array([min_vertices,max_vertices]).reshape(-1,3))
                 
-            #this will look very different if the limbs or the branches want to be plotted
+                
             
-            """
-            configuration_dict.setdefault("network_directional",network_directional)
-            configuration_dict.setdefault("limb_to_starting_soma",limb_to_starting_soma)
+            #1) get the current concept network (limb or branch) based on the resolution
+            #- if branch level then use the function that assembles
+            if configuration_dict["resolution"] == "branch":
+                curr_concept_network = nru.whole_neuron_branch_concept_network(current_neuron,
+                                                          directional= configuration_dict["network_directional"],
+                                                         limb_soma_touch_dictionary = configuration_dict["limb_to_starting_soma"],
+                                                         print_flag = False)
+            else:
+                curr_concept_network = current_neuron.concept_network
+            #print(f"plot_items_order = {plot_items_order}")
+            #2) get a list of all the nodes in the plot_items_order and assemble into a dictionary for colors (have to fix the name)
+            item_to_color_dict = dict([(f"{name[0]}_{name[1]}",col) for name,col in zip(plot_items_order,color_list_correct_size)])
+            #print(f"item_to_color_dict = {item_to_color_dict}")
             
-            configuration_dict.setdefault("node_size",node_size)
+            #3) For all the somas to be added, add them to the dictionary of label to color
+            if soma_names:
+                soma_colors_list = mu.process_non_dict_color_input(configuration_dict["soma_color"])
+                soma_colors_list_alpha = mu.apply_alpha_to_color_list(soma_colors_list,alpha=configuration_dict["soma_alpha"])
+                soma_colors_list_alpha_fixed_size = mu.generate_color_list_no_alpha_change(soma_colors_list_alpha,
+                                                                                          n_colors=len(soma_names))
+                
+                for s_name,s_color in zip(soma_names,soma_colors_list_alpha_fixed_size):
+                    item_to_color_dict[s_name] = s_color
+                    main_vertices.append(current_neuron.concept_network.nodes[s_name]["data"].mesh_center)
+                
+            curr_concept_network_subgraph = nx.subgraph(curr_concept_network,list(item_to_color_dict.keys()))
             
-            configuration_dict.setdefault("starting_node",starting_node)
-            configuration_dict.setdefault("starting_node_size",starting_node_size)
-            configuration_dict.setdefault("starting_node_color",starting_node_color)
-            configuration_dict.setdefault("starting_node_alpha",starting_node_alpha)
+            #4) Use that dictionary to send to the visualize_concept_map function and call the function
+            #with all the other parameters in the configuration dict
             
-            configuration_dict.setdefault("arrow_color",arrow_color)
-            configuration_dict.setdefault("arrow_alpha",arrow_alpha)
-            configuration_dict.setdefault("arrow_size",arrow_size)
+            visualize_concept_map(curr_concept_network_subgraph,
+                            node_color=item_to_color_dict,
+                            edge_color=configuration_dict["edge_color"],
+                            node_size=configuration_dict["node_size"],
+
+                            starting_node=configuration_dict["starting_node"],
+                            starting_node_size = configuration_dict["starting_node_size"],
+                            starting_node_color= configuration_dict["starting_node_color"],
+                            starting_node_alpha = configuration_dict["starting_node_alpha"],
+
+                            arrow_color = configuration_dict["arrow_color"] ,
+                            arrow_alpha = configuration_dict["arrow_alpha"],
+                            arrow_size = configuration_dict["arrow_size"],
+
+                            arrow_color_reciprocal = configuration_dict["arrow_color_reciprocal"] ,
+                            arrow_alpha_reciprocal = configuration_dict["arrow_alpha_reciprocal"],
+                            arrow_size_reciprocal = configuration_dict["arrow_size_reciprocal"],
+                          
+                            show_at_end=False,
+                            append_figure=True)
             
-            """
+            # plot the entire thing if asked for it
+            if configuration_dict["whole_neuron"]:
+                #compute the new color
+                whole_neuron_network_color = mu.color_to_rgba(configuration_dict["whole_neuron_color"],
+                                                             configuration_dict["whole_neuron_alpha"])
+                visualize_concept_map(curr_concept_network,
+                            node_color=whole_neuron_network_color,
+                            edge_color=configuration_dict["edge_color"],
+                            node_size=configuration_dict["node_size"],
+
+                            starting_node=configuration_dict["starting_node"],
+                            starting_node_size = configuration_dict["starting_node_size"],
+                            starting_node_color= configuration_dict["starting_node_color"],
+                            starting_node_alpha = configuration_dict["starting_node_alpha"],
+
+                            arrow_color = configuration_dict["arrow_color"] ,
+                            arrow_alpha = configuration_dict["arrow_alpha"],
+                            arrow_size = configuration_dict["arrow_size"],
+
+                            arrow_color_reciprocal = configuration_dict["arrow_color_reciprocal"] ,
+                            arrow_alpha_reciprocal = configuration_dict["arrow_alpha_reciprocal"],
+                            arrow_size_reciprocal = configuration_dict["arrow_size_reciprocal"],
+                          
+                            show_at_end=False,
+                            append_figure=True)
             
-            raise Exception("Plotting of configuration network not implemented yet")
-#             plot_concept_network(curr_concept_network,
-#                             arrow_size = configuration_dict[,
-#                             arrow_color = "maroon",
-#                             edge_color = "black",
-#                             node_color = "red",
-#                             scatter_size = 0.1,
-#                             starting_node_color="pink",
-#                             show_at_end=True,
-#                             append_figure=False,
-#                             highlight_starting_node=True,
-#                             starting_node_size=-1)
-            
-            
-            
-                                                        
-            
-            if configuration_dict["soma"]:
-                raise Exception("Soma for skeleton Not implemented yet")
         else:
             raise Exception("Invalid viz_type")
         

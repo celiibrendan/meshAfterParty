@@ -169,6 +169,8 @@ that gives the distance
 """
 
 def matching_rows(vals,row):
+    if len(vals) == 0:
+        return np.array([])
     return np.where((np.array(vals) == np.array(row)).all(axis=1))[0]
 
 # ----------- made when developing the neuron class ------------- #

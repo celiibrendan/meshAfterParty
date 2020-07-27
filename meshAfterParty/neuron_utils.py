@@ -70,6 +70,140 @@ def classify_endpoint_error_branches_from_limb_concept_network(curr_concept_netw
 
 # -------------- tools for the concept networks ------------------ #
 
+import copy
+import networkx as nx
+
+def whole_neuron_branch_concept_network(input_neuron,
+                                  directional=True,
+                                 limb_soma_touch_dictionary = None,
+                                 print_flag = False):
+    
+    """
+    Purpose: To return the entire concept network with all of the limbs and 
+    somas connected of an entire neuron
+    
+    Arguments:
+    input_neuron: neuron object
+    directional: If want a directional or undirectional concept_network returned
+    limb_soma_touch_dictionary: a dictionary mapping the limb to the starting soma
+    you want it to start if directional option is set
+    Ex:  {"L1":[0,1]})
+    
+    
+    Pseudocode:  
+    1) Get the soma subnetwork from the concept network of the neuron
+    2) For each limb network:
+    - if directional: 
+    a) if no specific starting soma picked --> use the soma with the smallest index as starting one
+    - if undirectional
+    a2) if undirectional then just choose the concept network
+    b) Rename all of the nodes to L#_#
+    c) Add the network to the soma/total network and add an edge from the soma to the starting node
+    (do so for all)
+
+    3) Then take a subgraph of the concept network based on the nodes you want
+    4) Send the subgraph to a function that graphs the networkx graph
+
+    
+    """
+
+    
+
+    current_neuron = copy.deepcopy(input_neuron)
+    
+    if limb_soma_touch_dictionary is None:
+        limb_soma_touch_dictionary=dict()
+    elif type(limb_soma_touch_dictionary) == dict:
+        pass
+    elif limb_soma_touch_dictionary == "all":
+        limb_soma_touch_dictionary = dict([(limb_idx,xu.get_neighbors(current_neuron.concept_network,limb_idx,int_label=False)) for limb_idx in current_neuron.get_limb_node_names()])
+    else:
+        raise Exception(f"Recieved invalid input for  limb_soma_touch_dictionary: {limb_soma_touch_dictionary}")
+
+    total_network= nx.DiGraph(current_neuron.concept_network.subgraph(current_neuron.get_soma_node_names()))
+
+    for limb_idx in current_neuron.get_limb_node_names():
+        if print_flag:
+            print(f"Working on Limb: {limb_idx}")
+
+
+        if limb_idx in limb_soma_touch_dictionary.keys():
+            touching_soma = limb_soma_touch_dictionary[limb_idx]
+        else:
+            touching_soma = []
+
+        curr_limb_obj = current_neuron.concept_network.nodes[limb_label(limb_idx)]["data"]
+        curr_network = None
+        if not directional:
+            curr_network = curr_limb_obj.concept_network
+        else:
+            if len(touching_soma) > 0:
+                """
+                For all somas specified: get the network
+                1) if this is first one then just copy the network
+                2) if not then get the edges and add to existing network
+                """
+                for starting_soma in touching_soma:
+                    if print_flag:
+                        print(f"---Working on soma: {starting_soma}")
+                    curr_limb_obj.set_concept_network_directional(starting_soma)
+                    soma_specific_network = curr_limb_obj.concept_network_directional
+                    if curr_network is None:
+                        curr_network = copy.deepcopy(soma_specific_network)
+                    else:
+                        #get the edges
+                        curr_network.add_edges_from(soma_specific_network.edges())
+
+                        #get the specific starting node for that network and add it to the current one
+                        #print(f"For limb_idx {limb_idx}, curr_limb_obj.all_concept_network_data = {curr_limb_obj.all_concept_network_data}")
+                        matching_concept_network_data = [k for k in curr_limb_obj.all_concept_network_data if 
+                                                         ((soma_label(k["starting_soma"]) == starting_soma) or (["starting_soma"] == starting_soma))]
+
+                        if len(matching_concept_network_data) != 1:
+                            raise Exception(f"The concept_network data for the starting soma ({starting_soma}) did not have exactly one match: {matching_concept_network_data}")
+
+                        matching_concept_network_dict = matching_concept_network_data[0]
+                        curr_starting_node = matching_concept_network_dict["starting_node"]
+                        curr_starting_coordinate= matching_concept_network_dict["starting_coordinate"]
+
+                        #set the starting coordinate in the concept network
+                        attrs = {curr_starting_node:{"starting_coordinate":curr_starting_coordinate}}
+                        if print_flag:
+                            print(f"attrs = {attrs}")
+                        xu.set_node_attributes_dict(curr_network,attrs)
+
+            else:
+                curr_network = curr_limb_obj.concept_network_directional
+
+        #At this point should have the desired concept network
+
+        #print(curr_network.nodes())
+        mapping = dict([(k,f"{limb_label(limb_idx)}_{k}") for k in curr_network.nodes()])
+        curr_network = nx.relabel_nodes(curr_network,mapping)
+        #print(curr_network.nodes())
+#         if print_flag:
+#             print(f'current network edges = {curr_network["L0_17"],curr_network["L0_20"]}')
+
+
+        #need to get all connections from soma to limb:
+        soma_to_limb_edges = []
+        for soma_connecting_dict in curr_limb_obj.all_concept_network_data:
+            soma_to_limb_edges.append((soma_label(soma_connecting_dict["starting_soma"]),
+                                      f"{limb_label(limb_idx)}_{soma_connecting_dict['starting_node']}"))
+
+        total_network = nx.compose(total_network,curr_network)
+        total_network.add_edges_from(soma_to_limb_edges)
+        
+        if print_flag:
+            print(f'current network edges = {total_network["L0_17"],total_network["L0_20"]}')
+        
+    if directional:
+        return nx.DiGraph(total_network)
+    
+    return total_network
+
+
+
 def get_limb_names_from_concept_network(concept_network):
     """
     Purpose: Function that takes in either a neuron object
@@ -2026,7 +2160,25 @@ def get_soma_skeleton(current_neuron,soma_name):
 #     return new_skeleton_pieces
 
 
+def soma_label(name_input):
+    if type(name_input) == str:
+        return name_input
+    elif type(name_input) == int:
+        return f"S{name_input}"
+    else:
+        raise Exception(f"Recieved unexpected type ({type(name_input)}) for soma name")
+
+def limb_label(name_input):
+    if type(name_input) == str:
+        return name_input
+    elif type(name_input) == int:
+        return f"L{name_input}"
+    else:
+        raise Exception(f"Recieved unexpected type ({type(name_input)}) for limb name")
+
     
+    
+
     
     
     

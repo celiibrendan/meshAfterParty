@@ -3,6 +3,34 @@ import numpy as np
 import numpy_utils as nu
 import time
 
+def find_reciprocal_connections(G,redundant=False):
+    """
+    Will give a list of the edges that are reciprocal connections
+    ** only gives one version of the reciprocal connections so doesn't repeat**
+    
+    Arguments: 
+    G: the graph to look for reciprocal connections
+    redundant: whether to return a list with redundant connections or not (Ex: [(b,a)]  or [(b,a),(a,b)]
+    
+    Ex: 
+    import networkx_utils as xu
+    xu = reload(xu)
+    xu.find_reciprocal_connections(returned_network)
+    """
+    reciprocal_pairs = np.array([(u,v) for (u,v) in G.edges() if G.has_edge(v,u)])
+    if redundant:
+        return reciprocal_pairs
+    
+    filtered_reciprocal_pairs = []
+
+    for a,b in reciprocal_pairs:       
+        if len(nu.matching_rows(filtered_reciprocal_pairs,[b,a])) == 0:
+            filtered_reciprocal_pairs.append([a,b])
+
+    filtered_reciprocal_pairs = np.array(filtered_reciprocal_pairs)
+    return filtered_reciprocal_pairs
+
+
 def compare_endpoints(endpoints_1,endpoints_2,**kwargs):
     """
     comparing the endpoints of a graph: 
@@ -401,14 +429,17 @@ class GraphOrderedEdges(nx.Graph):
         self.reorder_edges()
         
 # ------------------ for neuron package -------------- #
-def get_starting_node(G,attribute_for_start="starting_coordinate"):
+def get_starting_node(G,attribute_for_start="starting_coordinate",only_one=True):
     starting_node_dict = get_all_nodes_with_certain_attribute_key(G,attribute_for_start)
-        
-    if len(starting_node_dict) != 1:
-        raise Exception(f"The number of starting nodes was not equal to 1: starting_node_dict = {starting_node_dict}")
+    
+    if only_one:
+        if len(starting_node_dict) != 1:
+            raise Exception(f"The number of starting nodes was not equal to 1: starting_node_dict = {starting_node_dict}")
 
-    starting_node = list(starting_node_dict.keys())[0]
-    return starting_node
+        starting_node = list(starting_node_dict.keys())[0]
+        return starting_node
+    else:
+        return list(starting_node_dict.keys())
 
 
 def compare_networks(
