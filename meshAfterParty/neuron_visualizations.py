@@ -286,9 +286,12 @@ def visualize_concept_map(curr_concept_network,
     #print("***** About to do all the other scatter points ***********")
     
     #print(f"Current scatter size = {scatter_size}")
+    print(f"edge_color = {edge_color} IN SKELETON")
     concept_network_skeleton = nru.convert_concept_network_to_skeleton(curr_concept_network)
-    sk.graph_skeleton_and_mesh(other_skeletons=[concept_network_skeleton],
-                              other_skeletons_colors=edge_color,
+    plot_ipv_skeleton(concept_network_skeleton,edge_color)
+    sk.graph_skeleton_and_mesh(
+                              #other_skeletons=[concept_network_skeleton],
+                              #other_skeletons_colors=[edge_color],
                                other_scatter=node_locations_array,
                                other_scatter_colors=color_list_correct_size,
                                scatter_size=node_size,
@@ -399,6 +402,8 @@ def plot_ipv_skeleton(edge_coordinates,color=[0,0.,1,1]):
     #print(f"color in ipv_skeleton = {color}")
     mesh2.color = color 
     mesh2.material.transparent = True
+    
+    #print(f"Color in skeleton ipv plot local = {color}")
 
     return unique_skeleton_verts_final
 
@@ -905,9 +910,14 @@ def visualize_neuron(
                 #compute the new color
                 whole_neuron_network_color = mu.color_to_rgba(configuration_dict["whole_neuron_color"],
                                                              configuration_dict["whole_neuron_alpha"])
+                
+                whole_neuron_network_edge_color = mu.color_to_rgba(configuration_dict["edge_color"],
+                                                             configuration_dict["whole_neuron_alpha"])
+                print(f"whole_neuron_network_edge_color = {whole_neuron_network_edge_color}")
+                
                 visualize_concept_map(curr_concept_network,
                             node_color=whole_neuron_network_color,
-                            edge_color=configuration_dict["edge_color"],
+                            edge_color=whole_neuron_network_edge_color,
                             node_size=configuration_dict["node_size"],
 
                             starting_node=configuration_dict["starting_node"],

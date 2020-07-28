@@ -192,6 +192,8 @@ def plot_ipv_skeleton(edge_coordinates,color=[0,0.,1,1]):
     #print(f"color in ipv_skeleton = {color}")
     mesh2.color = color 
     mesh2.material.transparent = True
+    
+    #print(f"Color in skeleton ipv plot = {color}")
 
     return unique_skeleton_verts_final
 
