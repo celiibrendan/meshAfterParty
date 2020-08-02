@@ -425,6 +425,7 @@ def plot_ipv_scatter(scatter_points,scatter_color=[1.,0.,0.,0.5],
 
 import matplotlib_utils as mu
 import numpy_utils as nu
+import trimesh_utils as tu
 import copy
 def visualize_neuron(
     #the neuron we want to visualize
@@ -448,6 +449,11 @@ def visualize_neuron(
     mesh_whole_neuron=False,
     mesh_whole_neuron_color="green",
     mesh_whole_neuron_alpha=0.2,
+    
+    mesh_spines = False,
+    mesh_spines_color = "red",
+    mesh_spines_alpha = 0.8,
+            
     
     #for the skeleton type:
     skeleton_configuration_dict=dict(),
@@ -530,6 +536,24 @@ def visualize_neuron(
     
     ):
     
+    """
+    How to plot the spines:
+    nviz.visualize_neuron(uncompressed_neuron,
+                      limb_branch_dict = dict(),
+                     #mesh_spines=True,
+                      mesh_whole_neuron=True,
+                      mesh_whole_neuron_alpha = 0.1,
+                      
+                    mesh_spines = True,
+                    mesh_spines_color = "red",
+                    mesh_spines_alpha = 0.8,
+                      
+                     )
+    
+    
+    """
+    import ipyvolume as ipv
+    
     current_neuron = copy.deepcopy(input_neuron)
     
     #To uncomment for full graphing
@@ -561,6 +585,10 @@ def visualize_neuron(
             configuration_dict.setdefault("whole_neuron",mesh_whole_neuron)
             configuration_dict.setdefault("whole_neuron_color",mesh_whole_neuron_color)
             configuration_dict.setdefault("whole_neuron_alpha",mesh_whole_neuron_alpha)
+            
+            configuration_dict.setdefault("mesh_spines",mesh_spines)
+            configuration_dict.setdefault("mesh_spines_color",mesh_spines_color)
+            configuration_dict.setdefault("mesh_spines_alpha",mesh_spines_alpha)
             
         elif viz_type == "skeleton":
             current_type="skeleton"
@@ -669,10 +697,8 @@ def visualize_neuron(
         
         
         
-            
-#         if print_flag:
-#             print(f"plot_items_order= {plot_items_order}")
-#             print(f"plot_items= {plot_items}")
+#         print(f"plot_items_order= {plot_items_order}")
+#         print(f"plot_items= {plot_items}")
         
      
         # Now need to build the colors dictionary
@@ -791,6 +817,42 @@ def visualize_neuron(
                 plot_ipv_mesh(current_neuron.mesh,color=whole_neuron_colors_list_alpha[0])
                 main_vertices.append([np.min(current_neuron.mesh.vertices,axis=0),
                                       np.max(current_neuron.mesh.vertices,axis=0)])
+                
+            
+            #plotting the spines
+            if configuration_dict["mesh_spines"]:
+                #plotting the spines
+                spine_meshes = []
+                
+                for limb_names in current_neuron.get_limb_node_names():
+                    #iterate through all of the branches
+                    curr_limb_obj = current_neuron.concept_network.nodes[limb_names]["data"]
+                    for branch_name in curr_limb_obj.concept_network.nodes():
+                        curr_spines = curr_limb_obj.concept_network.nodes[branch_name]["data"].spines
+                        if not curr_spines is None:
+                            spine_meshes += curr_spines
+                
+                spines_color_list = mu.process_non_dict_color_input(configuration_dict["mesh_spines_color"])
+                
+                
+                
+                spines_color_list_alpha = mu.apply_alpha_to_color_list(spines_color_list,alpha=configuration_dict["mesh_spines_alpha"])
+                #print(f"spines_color_list_alpha = {spines_color_list_alpha}")
+                if len(spines_color_list_alpha) == 1:
+                    #concatenate the meshes
+                    #print("Inside spine meshes combined")
+                    combined_spine_meshes = tu.combine_meshes(spine_meshes)
+                    plot_ipv_mesh(combined_spine_meshes,color=spines_color_list_alpha[0])
+                    main_vertices.append(combined_spine_meshes.vertices)
+                    
+                else:
+                    spines_colors_list_alpha_fixed_size = mu.generate_color_list_no_alpha_change(spines_color_list_alpha,
+                                                                                              n_colors=len(spine_meshes))
+
+
+                    for curr_spine_mesh,curr_spine_color in zip(spine_meshes,spines_colors_list_alpha_fixed_size):
+                        plot_ipv_mesh(curr_spine_mesh,color=curr_spine_color)
+                        main_vertices.append(curr_spine_mesh.vertices)
                 
             
         elif viz_type == "skeleton":
@@ -1001,4 +1063,17 @@ def visualize_neuron(
     
     
     return
+
+
+def plot_spines(current_neuron):
+    visualize_neuron(current_neuron,
+                          limb_branch_dict = dict(),
+                          mesh_whole_neuron=True,
+                          mesh_whole_neuron_alpha = 0.1,
+
+                        mesh_spines = True,
+                        mesh_spines_color = "red",
+                        mesh_spines_alpha = 0.8,
+
+                         )
     

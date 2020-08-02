@@ -30,6 +30,27 @@ def mesh_center_vertex_average(mesh_list):
         return mesh_list_centers[0]
     else:
         return mesh_list_centers
+    
+def mesh_center_weighted_face_midpoints(mesh):
+    """
+    Purpose: calculate a mesh center point
+    
+    Pseudocode: 
+    a) get the face midpoints
+    b) get the surface area of all of the faces and total surface area
+    c) multiply the surface area percentage by the midpoints
+    d) sum up the products
+    """
+    #a) get the face midpoints
+    face_midpoints = mesh.triangles_center
+    #b) get the surface area of all of the faces and total surface area
+    total_area = mesh.area
+    face_areas = mesh.area_faces
+    face_areas_prop = face_areas/total_area
+
+    #c) multiply the surface area percentage by the midpoints
+    mesh_center = np.sum(face_midpoints*face_areas_prop.reshape(-1,1),axis=0)
+    return mesh_center
         
 
 def write_neuron_off(current_mesh,main_mesh_path):
@@ -505,5 +526,37 @@ def split_mesh_into_face_groups(base_mesh,face_mapping,return_idx=True,
 
 
 
+"""    
+An algorithm that could be used to find sdf values    
     
-    
+
+import numpy as np
+import os
+os.environ['PYOPENGL_PLATFORM'] = 'egl'
+
+from mesh_to_sdf import get_surface_point_cloud, scale_to_unit_sphere
+import trimesh
+import skimage, skimage.measure
+import os
+
+
+
+mesh = current_mesh
+mesh = scale_to_unit_sphere(mesh)
+
+print("Scanning...")
+cloud = get_surface_point_cloud(mesh, surface_point_method='scan', scan_count=20, scan_resolution=400)
+
+cloud.show()
+
+os.makedirs("test", exist_ok=True)
+for i, scan in enumerate(cloud.scans):
+    scan.save("test/scan_{:d}.png".format(i))
+
+print("Voxelizing...")
+voxels = cloud.get_voxels(128, use_depth_buffer=True)
+
+print("Creating a mesh using Marching Cubes...")
+vertices, faces, normals, _ = skimage.measure.marching_cubes_lewiner(voxels, level=0)
+mesh = trimesh.Trimesh(vertices=vertices, faces=faces, vertex_normals=normals)
+mesh.show()"""

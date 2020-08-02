@@ -16,12 +16,15 @@ import neuron_visualizations as nviz
 import neuron_utils as nru
 from pathlib import Path
 import algorithms_utils as au
+import neuron_searching as ns
 
 import copy 
 
 import sys
 current_module = sys.modules[__name__]
 
+
+import spine_utils as spu
 
 
 def export_skeleton(self,subgraph_nodes=None):
@@ -120,6 +123,7 @@ class Branch:
             self.mesh_face_idx = dc(skeleton.mesh_face_idx)
             self.endpoints = dc(skeleton.endpoints)
             self.mesh_center = dc(skeleton.mesh_center)
+            self.spines = dc(skeleton.spines)
             if not self.mesh is None:
                 self.mesh_center = tu.mesh_center_vertex_average(self.mesh)
             self.labels=dc(skeleton.labels)
@@ -140,6 +144,7 @@ class Branch:
         self.labels=labels
         if not nu.is_array_like(self.labels):
             self.labels=[self.labels]
+        self.spines = None
         
     """
     --- Branch comparison:
@@ -1305,6 +1310,45 @@ class Neuron:
         su.save_object(self,file)
     
         
+    def calculate_spines(self,
+                        query="width > 400 and n_faces_branch>100",
+                        clusters_threshold=2,
+                        smoothness_threshold=0.1,
+                        shaft_threshold=300,
+                        cgal_path=Path("./cgal_temp")):
+        
+        if type(query) == dict():
+            functions_list = query["functions_list"]
+            current_query = query["query"]
+        else:
+            functions_list = ["width","n_faces_branch"]
+            current_query = query
+
+        new_branch_dict = ns.query_neuron(self,
+                       functions_list=functions_list,
+                       query=current_query)
+        
+        for limb_idx,branch_list in new_branch_dict.items():
+            for branch_idx in branch_list:
+                print(f"Working on limb {limb_idx} branch {branch_idx}")
+                #calculate the spines
+                spine_submesh_split= spu.get_spine_meshes_unfiltered(current_neuron = self,
+                                                        limb_idx=limb_idx,
+                                                        branch_idx=branch_idx,
+                                                        clusters=clusters_threshold,
+                                                        smoothness=smoothness_threshold,
+                                                        cgal_folder = cgal_path,
+                                                        delete_temp_file=True,
+                                                        return_sdf=False,
+                                                        print_flag=False,
+                                                        shaft_threshold=shaft_threshold)
+
+                spine_submesh_split_filtered = spu.filter_spine_meshes(spine_submesh_split,
+                                                                      spine_n_face_threshold=20)
+
+                self.concept_network.nodes[nru.limb_label(limb_idx)]["data"].concept_network.nodes[branch_idx]["data"].spines = spine_submesh_split_filtered
+
+    
     
     def plot_soma_limb_concept_network(self,
                                       soma_color="red",
