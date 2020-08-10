@@ -6,6 +6,7 @@ import neuron_utils as nru
 import networkx_utils as xu
 import time
 
+
 def plot_concept_network(curr_concept_network,
                             arrow_size = 0.5,
                             arrow_color = "maroon",
@@ -430,6 +431,12 @@ import matplotlib_utils as mu
 import numpy_utils as nu
 import trimesh_utils as tu
 import copy
+
+
+import sys
+current_module = sys.modules[__name__]
+from importlib import reload
+
 def visualize_neuron(
     #the neuron we want to visualize
     input_neuron,
@@ -611,6 +618,9 @@ def visualize_neuron(
     
     
     """
+    import neuron_visualizations as nviz
+    nviz = reload(nviz)
+    
     total_time = time.time()
     #print(f"print_time = {print_time}")
     import ipyvolume as ipv
@@ -723,6 +733,7 @@ def visualize_neuron(
         
         #sets the limb branch dict specially  (uses overall one if none assigned)
 
+        #print(f"current_type = {current_type}")
         
         #handle if the limb_branch_dict is "all"
         if configuration_dict["limb_branch_dict"] is None:
@@ -748,13 +759,16 @@ def visualize_neuron(
         plot_items = []
         plot_items_order = []
         if configuration_dict["resolution"] == "limb":
+            
             plot_items = [getattr(current_neuron.concept_network.nodes[li]["data"],current_type) for li in limbs_to_plot]
             plot_items_order = [[li] for li in limbs_to_plot]
         elif configuration_dict["resolution"] == "branch":
+            
             for li in limbs_to_plot:
                 curr_limb_obj = current_neuron.concept_network.nodes[li]["data"]
                 #handle if "all" is the key
-                if configuration_dict["limb_branch_dict"][li] == "all":
+                if ((configuration_dict["limb_branch_dict"][li] == "all") or 
+                   ("all" in configuration_dict["limb_branch_dict"][li])):
                     #gather all of the branches: 
                     plot_items += [getattr(curr_limb_obj.concept_network.nodes[k]["data"],current_type) for k in sorted(curr_limb_obj.concept_network.nodes())]
                     plot_items_order += [[li,k] for k in sorted(curr_limb_obj.concept_network.nodes())]

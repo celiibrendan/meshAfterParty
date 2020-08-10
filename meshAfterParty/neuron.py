@@ -421,16 +421,20 @@ class Limb:
                   " when trying to convert to concept network ")
             xu.get_starting_node(curr_limb_concept_network)
         
-        
+
         if width_source is None:
             #check to see if the mesh center width is available
             try:
                 if "no_spine_average_mesh_center" in curr_limb_concept_network.nodes[0]["data"].width_new.keys():
                     width_source = "no_spine_average_mesh_center"
+                else:
+                    width_source = "width"
             except:
                 width_source = "width"
-            
-    
+        
+        if print_flag:
+            print(f"width_source = {width_source}, type = {type(width_source)}")
+        
         if width_source == "width":
             if print_flag:
                 print("Using the default width")

@@ -21,6 +21,7 @@ RUN pip3 install webcolors
 #enabling the visualization of widgets and ipyvolume
 RUN apt update
 RUN apt install curl -y
+RUN apt install nodejs
 RUN npm install n -g
 RUN n stable
 RUN jupyter labextension install @jupyter-widgets/jupyterlab-manager
