@@ -13,6 +13,8 @@ from soma_extraction_utils import find_soma_centroids,find_soma_centroid_contain
 import numpy as np
 import trimesh
 
+from tqdm_utils import tqdm
+
 
 def save_skeleton_cgal(surface_with_poisson_skeleton,largest_mesh_path):
     """
@@ -446,7 +448,6 @@ import ipyvolume as ipv
 import calcification_Module as cm
 from pathlib import Path
 import time
-from tqdm.notebook import tqdm
 import skeleton_utils as sk
 
 #  Utility functions
@@ -926,7 +927,6 @@ def downsample_skeleton(current_skeleton):
 import networkx as nx
 
 from pykdtree.kdtree import KDTree
-from tqdm.notebook import tqdm
 
 import scipy
 def stitch_skeleton(

@@ -64,7 +64,13 @@ def concatenate_lists(list_of_lists):
 def is_array_like(current_data):
     return type(current_data) in [type(np.ndarray([])),type(np.array([])),list]
 
-
+def non_empty_or_none(current_data):
+    if current_data is None:
+        return False
+    else:
+        if len(current_data) == 0:
+            return False
+        return True
 
 def array_after_exclusion(
                         original_array=[],                    

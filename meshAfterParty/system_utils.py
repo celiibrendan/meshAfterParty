@@ -21,6 +21,7 @@ current_module = sys.modules[__name__]
 #better way of turning off printing: 
 import os, sys
 
+
 class HiddenPrints:
     """
     Example of how to use: 
@@ -50,13 +51,17 @@ def ignore_warnings():
 
 from contextlib import contextmanager,redirect_stderr,redirect_stdout
 from os import devnull
+import tqdm_utils as tqu
+from tqdm_utils import tqdm
+import copy
 
 @contextmanager
-def suppress_stdout_stderr():
+def suppress_stdout_stderr(suppress_tqdm=True):
     """
     Purpose: Will suppress all print outs
     and pinky warning messages:
-    --> will not suppress the output of all the widgets like tqdm
+    --> will now suppress the output of all the widgets like tqdm outputs
+    if suppress_tqdm = True
     
     Ex: How to suppress warning messages in Poisson
     import soma_extraction_utils as sm
@@ -79,9 +84,20 @@ with su.suppress_stdout_stderr():
     
     
     """
+    #get the original setting of the tqdm.disable
+    if suppress_tqdm:
+        original_tqdm = copy.copy(tqdm.disable)
+        tqu.turn_off_tqdm()
+    
+    
     with open(devnull, 'w') as fnull:
         with redirect_stderr(fnull) as err, redirect_stdout(fnull) as out:
             yield (err, out)
+            
+    if not original_tqdm:
+        tqu.turn_on_tqdm()
+            
+    
             
 
 
@@ -138,6 +154,14 @@ su.save_object(another_neuron,"inhibitory_saved_neuron")
 from pathlib import Path
 import pickle
 def save_object(obj, filename,return_size=False):
+    """
+    Purpose: to save a pickled object of a neuron
+    
+    ** Warning ** do not reload the module of the 
+    object you are compressing before compression
+    or else it will not work***
+    
+    """
     if type(filename) == type(Path()):
         filename = str(filename.absolute())
     if filename[-4:] != ".pkl":

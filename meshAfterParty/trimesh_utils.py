@@ -8,9 +8,10 @@ import numpy as np
 import networkx as nx
 from pykdtree.kdtree import KDTree
 import time
-from tqdm.notebook import tqdm
+
 import numpy_utils as nu
 from pathlib import Path
+from tqdm_utils import tqdm
 
 #loading a mesh safely without any processing to mess up the vertices/faces
 def load_mesh_no_processing(current_mesh_file):
@@ -355,8 +356,9 @@ def compare_meshes_by_face_midpoints(mesh1,mesh2,match_threshold=0.001,print_fla
 
 def original_mesh_faces_map(original_mesh, submesh,
                            matching=True,
-                           print_flag=True,
-                           match_threshold = 0.001):
+                           print_flag=False,
+                           match_threshold = 0.001,
+                           return_mesh=False):
     """
     PUrpose: Given a base mesh and mesh that was a submesh of that base mesh
     - find the original face indices of the submesh
@@ -373,10 +375,24 @@ def original_mesh_faces_map(original_mesh, submesh,
     global_start = time.time()
     
     if type(original_mesh) != type(trimesh.Trimesh()):
-        raise Excpeiton("original mesh must be trimesh object")
+        raise Exception("original mesh must be trimesh object")
     
     if type(submesh) != type(trimesh.Trimesh()):
-        submesh = combine_meshes(submesh)
+        if not nu.non_empty_or_none(submesh):
+            if matching:
+                return_faces = np.array([])
+                if return_mesh:
+                    return trimesh.Trimesh(faces=np.array([]),
+                                          vertices=np.array([]))
+            else:
+                return_faces = np.arange(0,len(original_mesh.faces))
+                if return_mesh:
+                    return original_mesh
+                
+            return return_faces
+                
+        else:
+            submesh = combine_meshes(submesh)
     
     
     
@@ -395,9 +411,15 @@ def original_mesh_faces_map(original_mesh, submesh,
     #3) Only keep those that correspond to the faces or do not correspond to the faces
     #based on the parameter setting
     if matching:
-        return (np.arange(len(original_mesh_midpoints)))[distances < match_threshold]
+        return_faces = (np.arange(len(original_mesh_midpoints)))[distances < match_threshold]
+        
     else:
-        return (np.arange(len(original_mesh_midpoints)))[distances >= match_threshold]
+        return_faces = (np.arange(len(original_mesh_midpoints)))[distances >= match_threshold]
+        
+    if return_mesh:
+        return original_mesh.submesh([return_faces],append=True)
+    else:
+        return return_faces
     
     
 def mesh_pieces_connectivity(

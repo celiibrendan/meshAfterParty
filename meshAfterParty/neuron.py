@@ -18,6 +18,8 @@ from pathlib import Path
 import algorithms_utils as au
 import neuron_searching as ns
 
+import width_utils as wu
+
 import copy 
 
 import sys
@@ -72,6 +74,11 @@ def convert_soma_to_piece_connectivity_to_graph(soma_to_piece_connectivity):
     
 from copy import deepcopy as dc
 
+def dc_check(current_object,attribute):
+    try:
+        return getattr(current_object,attribute)
+    except:
+        return None
 
 def copy_concept_network(curr_network):
     copy_network = dc(curr_network)
@@ -123,12 +130,23 @@ class Branch:
             self.mesh_face_idx = dc(skeleton.mesh_face_idx)
             self.endpoints = dc(skeleton.endpoints)
             self.mesh_center = dc(skeleton.mesh_center)
-            self.spines = dc(skeleton.spines)
+            
+            
+            
             if not self.mesh is None:
                 self.mesh_center = tu.mesh_center_vertex_average(self.mesh)
             self.labels=dc(skeleton.labels)
             if not nu.is_array_like(self.labels):
                 self.labels=[self.labels]
+                
+                
+            self.spines = dc_check(skeleton,"spines")
+            self.width_new = dc_check(skeleton,"width_new")
+            if self.width_new is None:
+                self.width_new = dict()
+            self.width_array = dc_check(skeleton,"width_array")
+            if self.width_array is None:
+                self.width_array = dict()
             return 
             
         self.skeleton=skeleton.reshape(-1,2,3)
@@ -144,7 +162,13 @@ class Branch:
         self.labels=labels
         if not nu.is_array_like(self.labels):
             self.labels=[self.labels]
+            
+        
         self.spines = None
+        self.width_new = dict()
+        self.width_array = dict()
+        
+        
         
     """
     --- Branch comparison:
@@ -276,8 +300,86 @@ class Limb:
         return nru.convert_limb_concept_network_to_neuron_skeleton(self.concept_network,
                              check_connected_component=check_connected_component)
     
+    @property
+    def concept_network_data_by_soma(self):
+        #compile a dictionary of all of the starting material
+        return_dict = dict()
+        for curr_data in self.all_concept_network_data:
+            return_dict[curr_data["starting_soma"]] = dict([(k,v) for k,v in curr_data.items() if k != "starting_soma"])
+        return return_dict
     
-    def convert_concept_network_to_directional(self,no_cycles = True):
+    def touching_somas(self):
+        return [k["starting_soma"] for k in self.all_concept_network_data]
+    
+    
+    '''    
+        def get_soma_starting_coordinate(self,starting_soma,print_flag=False):
+            """
+            This function can now be replaced by 
+            curr_limb_obj.concept_network_data_by_soma[soma_idx]["starting_coordinate"]
+
+            """
+            if starting_soma not in self.touching_somas():
+                raise Exception(f"Current limb does not touch soma {starting_soma}")
+
+            matching_concept_network_data = [k for k in self.all_concept_network_data if ((k["starting_soma"] == starting_soma) or (nru.soma_label(k["starting_soma"]) == starting_soma))]
+
+            if len(matching_concept_network_data) != 1:
+                raise Exception(f"The concept_network data for the starting soma ({starting_soma}) did not have exactly one match: {matching_concept_network_data}")
+            else:
+                return matching_concept_network_data[0]["starting_coordinate"]
+
+        '''
+    
+    def get_skeleton_soma_starting_node(self,soma,print_flag=False):
+        """
+        Purpose: from the all
+        
+        """
+        #limb_starting_coordinate = self.get_soma_starting_coordinate(soma)
+        limb_starting_coordinate = self.concept_network_data_by_soma[soma]["starting_coordinate"]
+
+        if print_flag:
+            print(f"limb_starting_coordinate = {limb_starting_coordinate}")
+        limb_skeleton_graph = sk.convert_skeleton_to_graph(self.skeleton)
+
+        sk_starting_node = xu.get_nodes_with_attributes_dict(limb_skeleton_graph,
+                                      attribute_dict=dict(coordinates=limb_starting_coordinate))
+        if len(sk_starting_node) != 1:
+            raise Exception(f"Not exactly one skeleton starting node: sk_starting_node = {sk_starting_node}")
+        return sk_starting_node[0]
+    
+    def find_branch_by_skeleton_coordinate(self,target_coordinate):
+    
+        """
+        Purpose: To be able to find the branch where the skeleton point resides
+
+        Pseudocode: 
+        For each branch:
+        1) get the skeleton
+        2) ravel the skeleton into a numpy array
+        3) searh for that coordinate:
+        - if returns a non empty list then add to list
+
+        """
+        matching_node = []
+        for n in self.concept_network.nodes():
+            curr_skeleton_points = self.concept_network.nodes[n]["data"].skeleton.reshape(-1,3)
+            row_matches = nu.matching_rows(curr_skeleton_points,target_coordinate)
+            if len(row_matches) > 0:
+                matching_node.append(n)
+
+        if len(matching_node) > 1: 
+            print(f"***Warning More than one branch skeleton matches the desired corrdinate: {matching_node}")
+        elif len(matching_node) == 1:
+            matching_node = matching_node[0]
+        else:
+            raise Exception("No matching branches found")
+
+        return matching_node
+    
+    
+    def convert_concept_network_to_directional(self,no_cycles = True,width_source=None,print_flag=False):
         """
         
         
@@ -320,9 +422,26 @@ class Limb:
             xu.get_starting_node(curr_limb_concept_network)
         
         
-        
-        node_widths = dict([(k,curr_limb_concept_network.nodes[k]["data"].width) for k in curr_limb_concept_network.nodes() ])
-        
+        if width_source is None:
+            #check to see if the mesh center width is available
+            try:
+                if "no_spine_average_mesh_center" in curr_limb_concept_network.nodes[0]["data"].width_new.keys():
+                    width_source = "no_spine_average_mesh_center"
+            except:
+                width_source = "width"
+            
+    
+        if width_source == "width":
+            if print_flag:
+                print("Using the default width")
+            node_widths = dict([(k,curr_limb_concept_network.nodes[k]["data"].width) for k in curr_limb_concept_network.nodes() ])
+        else:
+            if print_flag:
+                print(f"Using the {width_source} in width_new that was calculated")
+            node_widths = dict([(k,curr_limb_concept_network.nodes[k]["data"].width_new[width_source]) for k in curr_limb_concept_network.nodes() ])
+            
+        if print_flag:
+            print(f"node_widths= {node_widths}")
         directional_concept_network = nru.convert_concept_network_to_directional(
             curr_limb_concept_network,
             node_widths=node_widths,                                                    
@@ -331,8 +450,8 @@ class Limb:
         
         return directional_concept_network
         
-        
-    def set_concept_network_directional(self,starting_soma,print_flag=False):
+    
+    def set_concept_network_directional(self,starting_soma,print_flag=False,**kwargs):
         """
         Pseudocode: 
         1) Get the current concept_network
@@ -371,19 +490,34 @@ class Limb:
                                  arrow_size=5,
                                  scatter_size=3)
         
-        """
+        Example 8/4:
+        uncompressed_neuron_revised.concept_network.nodes["L1"]["data"].set_concept_network_directional(starting_soma=0,width_source="width",print_flag=True)
         
-        #find which the starting_coordinate and starting_node
-
-        previous_starting_node = xu.get_starting_node(self.concept_network)
-        if print_flag:
-            print(f"Deleting starting coordinate from node {previous_starting_node}")
-        del self.concept_network.nodes[previous_starting_node]["starting_coordinate"]
-
+        """
         matching_concept_network_data = [k for k in self.all_concept_network_data if ((k["starting_soma"] == starting_soma) or (nru.soma_label(k["starting_soma"]) == starting_soma))]
 
         if len(matching_concept_network_data) != 1:
             raise Exception(f"The concept_network data for the starting soma ({starting_soma}) did not have exactly one match: {matching_concept_network_data}")
+        
+        
+        
+        #find which the starting_coordinate and starting_node
+
+        previous_starting_node = xu.get_starting_node(self.concept_network,only_one=False)
+        if len(previous_starting_node) > 1:
+            print("**** Warning there were more than 1 starting nodes in concept networks"
+                 f"\nprevious_starting_node = {previous_starting_node}")
+        if len(previous_starting_node) == 0:
+            print("**** Warning there were 0 starting nodes in concept networks"
+                 f"\nprevious_starting_node = {previous_starting_node}")
+        
+        if print_flag:
+            print(f"Deleting starting coordinate from nodes: {previous_starting_node}")
+            
+        for prev_st_node in previous_starting_node:
+            del self.concept_network.nodes[prev_st_node]["starting_coordinate"]
+        
+        
 
         matching_concept_network_dict = matching_concept_network_data[0]
         curr_starting_node = matching_concept_network_dict["starting_node"]
@@ -406,10 +540,10 @@ class Limb:
         self.current_starting_soma = matching_concept_network_dict["starting_soma"]
         
         if print_flag:
-            self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True)
+            self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True,print_flag=print_flag,**kwargs)
         else:
             with su.suppress_stdout_stderr():
-                self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True)
+                self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True,print_flag=print_flag,**kwargs)
         
         
     
@@ -1295,6 +1429,10 @@ class Neuron:
     """
     def get_limb_node_names(self):
         return [k for k in self.concept_network.nodes() if "L" in k]
+    def get_branch_node_names(self,limb_idx):
+        limb_idx = nru.limb_label(limb_idx)
+        curr_limb_obj = self.concept_network.nodes[limb_idx]["data"]
+        return list(curr_limb_obj.concept_network.nodes())
     def get_soma_node_names(self):
         return [k for k in self.concept_network.nodes() if "S" in k]
     
@@ -1309,14 +1447,46 @@ class Neuron:
         
         su.save_object(self,file)
     
+    
+    def calculate_width_without_spines(self,
+                                      skeleton_segment_size = 1000,
+                                       width_segment_size=None,
+                                      width_name = "no_spine_average",
+                                      **kwargs):
+
+
+        for limb_idx in self.get_limb_node_names():
+            for branch_idx in self.get_branch_node_names(limb_idx):
+                print(f"Working on limb {limb_idx} branch {branch_idx}")
+                curr_branch_obj = self.concept_network.nodes[nru.limb_label(limb_idx)]["data"].concept_network.nodes[branch_idx]["data"]
+                if "distance_by_mesh_center" not in kwargs.keys():
+                    if "mesh_center" in width_name:
+                        distance_by_mesh_center = True
+                    else:
+                        distance_by_mesh_center = False
+                
+                
+                current_width_array,current_width = wu.calculate_width_without_spines(curr_branch_obj, 
+                                      skeleton_segment_size=skeleton_segment_size,
+                                      width_segment_size=width_segment_size, 
+                                      distance_by_mesh_center=distance_by_mesh_center,
+                                      return_average=True,
+                                      print_flag=False,
+                                    **kwargs)
+
+
+                curr_branch_obj.width_new[width_name] = current_width
+                curr_branch_obj.width_array[width_name] = current_width_array
+    
         
     def calculate_spines(self,
                         query="width > 400 and n_faces_branch>100",
                         clusters_threshold=2,
-                        smoothness_threshold=0.1,
+                        smoothness_threshold=0.08,
                         shaft_threshold=300,
                         cgal_path=Path("./cgal_temp")):
         
+        print(f"smoothness_threshold = {smoothness_threshold}")
         if type(query) == dict():
             functions_list = query["functions_list"]
             current_query = query["query"]
@@ -1328,28 +1498,41 @@ class Neuron:
                        functions_list=functions_list,
                        query=current_query)
         
-        for limb_idx,branch_list in new_branch_dict.items():
-            for branch_idx in branch_list:
-                print(f"Working on limb {limb_idx} branch {branch_idx}")
-                #calculate the spines
-                spine_submesh_split= spu.get_spine_meshes_unfiltered(current_neuron = self,
-                                                        limb_idx=limb_idx,
-                                                        branch_idx=branch_idx,
-                                                        clusters=clusters_threshold,
-                                                        smoothness=smoothness_threshold,
-                                                        cgal_folder = cgal_path,
-                                                        delete_temp_file=True,
-                                                        return_sdf=False,
-                                                        print_flag=False,
-                                                        shaft_threshold=shaft_threshold)
+        
+        for limb_idx in self.get_limb_node_names():
+            for branch_idx in self.get_branch_node_names(limb_idx):
+                curr_branch = self.concept_network.nodes[nru.limb_label(limb_idx)]["data"].concept_network.nodes[branch_idx]["data"]
+                if limb_idx in new_branch_dict.keys():
+                    if branch_idx in new_branch_dict[limb_idx]:
+                
+                        print(f"Working on limb {limb_idx} branch {branch_idx}")
+                        #calculate the spines
+                        spine_submesh_split= spu.get_spine_meshes_unfiltered(current_neuron = self,
+                                                                limb_idx=limb_idx,
+                                                                branch_idx=branch_idx,
+                                                                clusters=clusters_threshold,
+                                                                smoothness=smoothness_threshold,
+                                                                cgal_folder = cgal_path,
+                                                                delete_temp_file=True,
+                                                                return_sdf=False,
+                                                                print_flag=False,
+                                                                shaft_threshold=shaft_threshold)
 
-                spine_submesh_split_filtered = spu.filter_spine_meshes(spine_submesh_split,
-                                                                      spine_n_face_threshold=20)
+        #                 if limb_idx == "L0":
+        #                     if branch_idx == 0:
+        #                         print(f"spine_submesh_split = {spine_submesh_split}")
 
-                self.concept_network.nodes[nru.limb_label(limb_idx)]["data"].concept_network.nodes[branch_idx]["data"].spines = spine_submesh_split_filtered
+                        spine_submesh_split_filtered = spu.filter_spine_meshes(spine_submesh_split,
+                                                                              spine_n_face_threshold=20)
+        #                 if limb_idx == "L0":
+        #                     if branch_idx == 0:
+        #                         print(f"spine_submesh_split_filtered = {spine_submesh_split_filtered}")
 
-    
-    
+
+                        curr_branch.spines = spine_submesh_split_filtered
+                else:
+                    curr_branch.spines = None
+
     def plot_soma_limb_concept_network(self,
                                       soma_color="red",
                                       limb_color="blue",

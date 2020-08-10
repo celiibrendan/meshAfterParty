@@ -127,6 +127,11 @@ def split_mesh_into_spines_shaft(current_mesh,
                                              smoothness,
                                              return_sdf=True,
                                                delete_temp_file=delete_temp_file)
+    #print(f"file_to_write = {file_to_write.absolute()}")
+    if delete_temp_file:
+        #print("attempting to delete file")
+        file_to_write.unlink()
+    
     #get a look at how many groups and what distribution:
     from collections import Counter
     if print_flag:
@@ -185,10 +190,6 @@ def split_mesh_into_spines_shaft(current_mesh,
     if len(spine_meshes) == 0:
         if print_flag:
             print("No spine meshes detected")
-
-    if delete_temp_file:
-        file_to_write.unlink()
-        
 
     if return_sdf:
         return spine_meshes,spine_meshes_idx,shaft_meshes,shaft_meshes_idx,cgal_sdf_data

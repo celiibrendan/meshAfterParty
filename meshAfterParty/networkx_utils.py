@@ -54,6 +54,65 @@ def compare_endpoints(endpoints_1,endpoints_2,**kwargs):
                                 **kwargs)
 
 
+def endpoint_connectivity(endpoints_1,endpoints_2,
+                         exceptions_flag=True,
+                         print_flag=False):
+    """
+    Pupose: To determine where the endpoints of two branches are connected
+    
+    Example: 
+    end_1 = np.array([[759621., 936916., 872083.],
+       [790891., 913598., 806043.]])
+    end_2 = np.array([[790891., 913598., 806043.],
+       [794967., 913603., 797825.]])
+       
+    endpoint_connectivity(end_1,end_2)
+    >> {0: 1, 1: 0}
+    """
+    connections_dict = dict()
+    
+    stacked_endpoints = np.vstack([endpoints_1,endpoints_2])
+    endpoints_match = nu.get_matching_vertices(stacked_endpoints)
+    
+    if len(endpoints_match) == 0:
+        print_string = f"No endpoints matching: {endpoints_match}"
+        if exceptions_flag:
+            raise Exception(print_string)
+        else:
+            print(print_string)
+        return connections_dict
+    
+    if len(endpoints_match) > 1:
+        print_string = f"No endpoints matching: {endpoints_match}"
+        if exceptions_flag:
+            raise Exception(print_string)
+        else:
+            print(print_string)
+    
+    
+    #look at the first connection
+    first_match = endpoints_match[0]
+    
+    if print_flag:
+        print(f"first_match = {first_match}")
+    
+    first_endpoint_match = first_match[0]
+    
+    if 0 != first_endpoint_match and 1 != first_endpoint_match:
+        raise Exception(f"Non 0,1 matching node in first endpoint: {first_endpoint_match}")
+    else:
+        connections_dict.update({0:first_endpoint_match})
+        
+    second_endpoint_match = first_match[-1]
+    
+    if 2 != second_endpoint_match and 3 != second_endpoint_match:
+        raise Exception(f"Non 2,3 matching node in second endpoint: {second_endpoint_match}")
+    else:
+        connections_dict.update({1:second_endpoint_match-2})
+    
+    return connections_dict
+
+
 
 def combine_graphs(list_of_graphs):
     """
@@ -755,7 +814,46 @@ def compare_networks(
         return return_boolean,differences_list
     else:
         return return_boolean
-        
+    
+# -------------- 8/4 additions ----------------------- #
+"""
+How to determine upstream and downstream targets
+
+Example: 
+import networkx as nx
+import matplotlib.pyplot as plt
+G = nx.DiGraph()
+G.add_edges_from(
+    [('A', 'B'), ('A', 'C'), ('D', 'B'), ('E', 'C'), ('E', 'F'),('F','Z'),
+     ('B', 'H'), ('B', 'G'), ('B', 'F'), ('C', 'G'), ('Q', 'D')])
+
+pos = nx.spring_layout(G)
+nx.draw_networkx_nodes(G, pos, cmap=plt.get_cmap('jet'),node_size = 50)
+nx.draw_networkx_edges(G, pos, edge_color='r', arrows=True)
+nx.draw_networkx_labels(G, pos)
+plt.show()
+
+print("Downstream Edges of 'B' (just example)-->")
+print(list(nx.dfs_edges(G,'B')))
+print(downstream_edges(G,"B"))
+print(downstream_edges_neighbors(G,"B"))
+
+
+print("\nUpstream Edges of 'B' (just example)-->")
+print(list(nx.edge_dfs(G,'B', orientation='reverse')))
+print(upstream_edges(G,"B"))
+print(upstream_edges_neighbors(G,"B"))
+
+"""
+def downstream_edges(G,node):
+    return list(nx.dfs_edges(G,node))
+def downstream_edges_neighbors(G,node):
+    return [k for k in list(nx.dfs_edges(G,node)) if node in k]
+
+def upstream_edges(G,node):
+    return list(nx.edge_dfs(G,node, orientation='reverse'))
+def upstream_edges_neighbors(G,node):
+    return [k for k in list(nx.edge_dfs(G,node, orientation='reverse')) if node in k]
     
     
     

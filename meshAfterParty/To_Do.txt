@@ -1,0 +1,2 @@
+1) Add part where can just jump to suggested snip point (without annotations)
+so can check in neuroglancer

@@ -15,6 +15,9 @@ RUN pip3 install --upgrade --force-reinstall trimesh==3.6.15
 RUN pip3 install --upgrade --force-reinstall networkx==2.4
 RUN pip3 install --upgrade --force-reinstall ipyvolume==0.5.2
 
+#---- 8/7 addition --- #
+RUN pip3 install webcolors
+
 #enabling the visualization of widgets and ipyvolume
 RUN apt update
 RUN apt install curl -y

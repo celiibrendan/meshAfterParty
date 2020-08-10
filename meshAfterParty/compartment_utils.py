@@ -4,11 +4,250 @@ import networkx_utils as xu
 
 from skeleton_utils import *
 
+from tqdm_utils import tqdm
+
+
+def get_skeletal_distance_no_skipping(main_mesh,edges,
+                                 buffer=0.01,
+                                bbox_ratio=1.2,
+                               distance_threshold=3000,
+                                      distance_by_mesh_center=False,
+                                print_flag=False,
+                                edge_loop_print=True):
+    """
+    Purpose: To return the histogram of distances along a mesh subtraction process
+    so that we could evenutally find an adaptive distance threshold
+    
+    
+    """
+    #print(f"distance_by_mesh_center = {distance_by_mesh_center}")
+    main_mesh_bbox_restricted = main_mesh
+    faces_bbox_inclusion = np.arange(0,len(main_mesh.faces))
+
+    
+    start_time = time.time()
+    face_subtract_indices = []
+    
+    
+    total_distances = []
+    total_distances_std = []
+    
+    for i,ex_edge in tqdm(enumerate(edges)):
+        #print("\n------ New loop ------")
+        #print(ex_edge)
+        
+        # ----------- creating edge and checking distance ----- #
+        loop_start = time.time()
+        
+        edge_line = ex_edge[1] - ex_edge[0]
+        sum_threshold = 0.001
+        if np.sum(np.abs(edge_line)) < sum_threshold:
+            if edge_loop_print:
+                print(f"edge number {i}, {ex_edge}: has sum less than {sum_threshold} so skipping")
+            continue
+        
+        cob_edge = change_basis_matrix(edge_line)
+        
+        #get the limits of the example edge itself that should be cutoff
+        edge_trans = (cob_edge@ex_edge.T)
+        #slice_range = np.sort((cob_edge@ex_edge.T)[2,:])
+        slice_range = np.sort(edge_trans[2,:])
+
+        # adding the buffer to the slice range
+        slice_range_buffer = slice_range + np.array([-buffer,buffer])
+
+        # generate face midpoints from the triangles
+        #face_midpoints = np.mean(main_mesh_bbox_restricted.vertices[main_mesh_bbox_restricted.faces],axis=1) # Old way
+        face_midpoints = main_mesh_bbox_restricted.triangles_center
+        
+        
+        #get the face midpoints that fall within the slice (by lookig at the z component)
+        fac_midpoints_trans = cob_edge@face_midpoints.T
+        
+        slice_mask_pre_distance = ((fac_midpoints_trans[2,:]>slice_range_buffer[0]) & 
+                      (fac_midpoints_trans[2,:]<slice_range_buffer[1]))
+
+        edge_midpoint = np.mean(edge_trans.T,axis=0)
+        distance_check = np.linalg.norm((fac_midpoints_trans.T)[:,:2] - edge_midpoint[:2],axis=1) < distance_threshold
+        
+        slice_mask = slice_mask_pre_distance & distance_check
+        
+        face_list = np.arange(0,len(main_mesh_bbox_restricted.faces))[slice_mask]
+
+        #get the submesh of valid faces within the slice
+        if len(face_list)>0:
+            main_mesh_sub = main_mesh_bbox_restricted.submesh([face_list],append=True)
+        else:
+            main_mesh_sub = []
+
+        if type(main_mesh_sub) != type(trimesh.Trimesh()):
+            #print(f"total_distances = {total_distances}")
+            total_distances.append(0)
+            total_distances_std.append(0)
+            if edge_loop_print:
+                print(f"THERE WERE NO FACES THAT FIT THE DISTANCE ({distance_threshold}) and Z transform requirements")
+                print("So just skipping this edge")
+            continue
+
+
+        #get all disconnected mesh pieces of the submesh and the face indices for lookup later
+        sub_components,sub_components_face_indexes = tu.split(main_mesh_sub,only_watertight=False)
+       
+        
+        
+        if type(sub_components) != type(np.array([])) and type(sub_components) != list:
+            #print(f"meshes = {sub_components}, with type = {type(sub_components)}")
+            if type(sub_components) == type(trimesh.Trimesh()) :
+                sub_components = [sub_components]
+            else:
+                raise Exception("The sub_components were not an array, list or trimesh")
+        
+
+        #getting the indices of the submeshes whose bounding box contain the edge 
+        contains_points_results = np.array([s_comp.bounding_box.contains(ex_edge.reshape(-1,3)) for s_comp in sub_components])
+        
+        containing_indices = (np.arange(0,len(sub_components)))[np.sum(contains_points_results,axis=1) >= len(ex_edge)]
+        try:
+            if len(containing_indices) != 1: 
+                if edge_loop_print:
+                    print(f"--> Not exactly one containing mesh: {containing_indices}")
+                if len(containing_indices) > 1:
+                    sub_components_inner = sub_components[containing_indices]
+                    sub_components_face_indexes_inner = sub_components_face_indexes[containing_indices]
+                else:
+                    sub_components_inner = sub_components
+                    sub_components_face_indexes_inner = sub_components_face_indexes
+
+                #get the center of the edge
+                edge_center = np.mean(ex_edge,axis=0)
+                #print(f"edge_center = {edge_center}")
+
+                #find the distance between eacch bbox center and the edge center
+                bbox_centers = [np.mean(k.bounds,axis=0) for k in sub_components_inner]
+                #print(f"bbox_centers = {bbox_centers}")
+                closest_bbox = np.argmin([np.linalg.norm(edge_center-b_center) for b_center in bbox_centers])
+                #print(f"bbox_distance = {closest_bbox}")
+                edge_skeleton_faces = faces_bbox_inclusion[face_list[sub_components_face_indexes_inner[closest_bbox]]]
+
+
+            else:# when only one viable submesh piece and just using that sole index
+                edge_skeleton_faces = faces_bbox_inclusion[face_list[sub_components_face_indexes[containing_indices[0]]]]
+        except:
+            print(f"sub_components = {sub_components}")
+            print(f"containing_indices = {containing_indices}")
+            print(f"sub_components_face_indexes (from the split) = {sub_components_face_indexes}")
+            raise Exception("Error occured")
+
+
+        if len(edge_skeleton_faces) < 0:
+            print(f"****** Warning the edge index {i}: had no faces in the edge_skeleton_faces*******")
+        face_subtract_indices.append(edge_skeleton_faces)
+        
+        
+        #---- calculating the relevant distances ---- #
+        
+        face_midpoints = (main_mesh_bbox_restricted.triangles_center)[edge_skeleton_faces]
+        #print(f"edge_skeleton_faces.shape = {edge_skeleton_faces.shape}")
+#         print(f"cob_edge = {cob_edge}")
+#         print(f"face_midpoints = {face_midpoints.shape}")
+#         print(f"sub_components = {sub_components}")
+#         print(f"containing_indices = {containing_indices}")
+#         print(f"sub_components_face_indexes (from the split) = {sub_components_face_indexes}")
+        #Exception("failed on fac_midpoints_trans")
+        
+        fac_midpoints_trans = cob_edge@face_midpoints.T
+        
+        # Will use the mesh center when calculating the distance
+        if distance_by_mesh_center: 
+            faces_submesh = main_mesh_bbox_restricted.submesh([edge_skeleton_faces],append=True)
+            faces_submesh_center = tu.mesh_center_weighted_face_midpoints(faces_submesh)
+            faces_submesh_center = faces_submesh_center.reshape(3,1)
+            #print(f"cob_edge.shape = {cob_edge.shape}, faces_submesh_center.shape={faces_submesh_center.shape}")
+            edge_midpoint = cob_edge@faces_submesh_center
+            edge_midpoint = edge_midpoint.reshape(-1)
+        
+        #print(f"fac_midpoints_trans.shape = {fac_midpoints_trans.shape}")
+        mesh_slice_distances = np.linalg.norm((fac_midpoints_trans.T)[:,:2] - edge_midpoint[:2],axis=1)
+        #print(f"mesh_slice_distances.shape = {mesh_slice_distances.shape}")
+        
+        total_distances.append(np.mean(mesh_slice_distances))
+        total_distances_std.append(np.std(mesh_slice_distances))
+    
+    
+    #end of the edge loops
+    
+    if len(face_subtract_indices)>0:
+        all_removed_faces = np.concatenate(face_subtract_indices)
+
+        unique_removed_faces = np.array(list(set(all_removed_faces)))
+        
+        if len(unique_removed_faces) <= 1:
+            print(f"Distance of skeleton = {sk.calculate_skeleton_distance(edges)}")
+            raise Exception(f"unique_removed_faces = {unique_removed_faces}")
+            
+            
+
+        #faces_to_keep = set(np.arange(0,len(main_mesh.faces))).difference(unique_removed_faces)
+        new_submesh = main_mesh.submesh([unique_removed_faces],only_watertight=False,append=True)
+        
+        split_meshes,components_faces = tu.split(new_submesh,return_components=True)
+        
+         #don't just want to take the biggest mesh: but want to take the one that has the most of the skeleton
+        #piece corresponding to it
+        
+        """
+        Pseudocode: 
+        1) turn all of the mesh edge_skeleton_faces into meshes, have the main mesh be the whole mesh and 
+        have each of the mesh pieces be a central piece
+        2) Call the mesh_pieces_connectivity function and see how many of the periphery pieces are touching each of the submehses
+        3) Pick the mesh that has the most 
+        
+        """
+        
+        if len(split_meshes) > 1: 
+            branch_touching_number = []
+            branch_correspondence_meshes = [main_mesh.submesh([k],only_watertight=False,append=True) for k in face_subtract_indices]
+            for curr_central_piece in split_meshes:
+                touching_periphery_pieces =tu. mesh_pieces_connectivity(
+                                            main_mesh = new_submesh,
+                                            central_piece = curr_central_piece,
+                                            periphery_pieces = branch_correspondence_meshes,
+                                            return_vertices=False)
+                branch_touching_number.append(len(touching_periphery_pieces))
+                if print_flag:
+                    print(f"branch_touching_number = {branch_touching_number}")
+            
+            #find the argmax
+            most_branch_containing_piece = np.argmax(branch_touching_number)
+            if print_flag:
+                print(f"most_branch_containing_piece = {most_branch_containing_piece}")
+            
+            new_submesh = split_meshes[most_branch_containing_piece]
+            unique_removed_faces = unique_removed_faces[components_faces[most_branch_containing_piece]]
+            
+        elif len(split_meshes) == 1: 
+            new_submesh = split_meshes[0]
+            unique_removed_faces = unique_removed_faces[components_faces[0]]
+        else:
+            raise Exception("The split meshes in the mesh correspondence was 0 length")
+        
+        #need to further restric the unique_removed_faces to those of most significant piece
+    
+    else:
+        unique_removed_faces = np.array([])
+        new_submesh = trimesh.Trimesh()
+ 
+    
+    
+    return total_distances,total_distances_std,new_submesh,np.array(unique_removed_faces)
+
+
 def get_skeletal_distance(main_mesh,edges,
                                  buffer=0.01,
                                 bbox_ratio=1.2,
                                distance_threshold=3000,
-                                print_flag=False):
+                                print_flag=False,
+                                edge_loop_print=True):
     """
     Purpose: To return the histogram of distances along a mesh subtraction process
     so that we could evenutally find an adaptive distance threshold
@@ -24,7 +263,7 @@ def get_skeletal_distance(main_mesh,edges,
     start_time = time.time()
     face_subtract_indices = []
     
-    edge_loop_print=True
+    
     total_distances = []
     total_distances_std = []
     for i,ex_edge in tqdm(enumerate(edges)):
@@ -198,11 +437,13 @@ def get_skeletal_distance(main_mesh,edges,
                                             periphery_pieces = branch_correspondence_meshes,
                                             return_vertices=False)
                 branch_touching_number.append(len(touching_periphery_pieces))
-                print(f"branch_touching_number = {branch_touching_number}")
+                if print_flag:
+                    print(f"branch_touching_number = {branch_touching_number}")
             
             #find the argmax
             most_branch_containing_piece = np.argmax(branch_touching_number)
-            print(f"most_branch_containing_piece = {most_branch_containing_piece}")
+            if print_flag:
+                print(f"most_branch_containing_piece = {most_branch_containing_piece}")
             
             new_submesh = split_meshes[most_branch_containing_piece]
             unique_removed_faces = unique_removed_faces[components_faces[most_branch_containing_piece]]
@@ -226,11 +467,15 @@ def get_skeletal_distance(main_mesh,edges,
 
 def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
                                           curr_branch_mesh,
-                                         skeleton_segment_width = 1000):
+                                         skeleton_segment_width = 1000,
+                                         print_flag=False):
 
     #making the skeletons resized to 1000 widths and then can use outlier finding
     
     new_skeleton  = sk.resize_skeleton_branch(curr_branch_skeleton,segment_width = skeleton_segment_width)
+    
+    if print_flag:
+        print(f"new_skeleton.shape = {new_skeleton.shape}")
 
     (segment_skeletal_mean_distances,
      segment_skeletal_std_distances,
@@ -245,7 +490,8 @@ def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
     )
         
     if len(mesh_correspondence_indices)== 0:
-        print("empty mesh_correspondence_indices returned so returning an empty array")
+        if print_flag:
+            print("empty mesh_correspondence_indices returned so returning an empty array")
         return []
     
     #now use the new submesh to calculate the new threshold
@@ -265,15 +511,15 @@ def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
     filtered_measurements = filtered_measurements[outlier_mask]
     filtered_measurements_std = filtered_measurements_std[outlier_mask]
 
-    print(f"filtered_measurements = {filtered_measurements}")
-
-    np.mean(filtered_measurements),np.std(filtered_measurements)
+    if print_flag:
+        print(f"filtered_measurements = {filtered_measurements}")
 
     # try the mesh subtraction again 
     buffer = 100
 
     total_threshold = np.max(filtered_measurements) + 2*np.max(filtered_measurements_std)
-    print(f"new_threshold = {total_threshold}")
+    if print_flag:
+        print(f"new_threshold = {total_threshold}")
     (segment_skeletal_mean_distances_2,
      filtered_measurements_std,
      mesh_correspondence_2,
@@ -508,7 +754,7 @@ def resolve_empty_conflicting_face_labels(
     # ---- Functions that will fill in the rest of the mesh correspondence ---- #
 
     face_coloring_copy = face_coloring.copy()
-    from tqdm.notebook import tqdm
+    
     for comp in tqdm(empty_connected_components):
         face_lookup_resolved_test = waterfill_labeling(
                         #total_mesh_correspondence=face_lookup_resolved_test,

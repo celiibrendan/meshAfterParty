@@ -160,7 +160,7 @@ def process_non_dict_color_input(color_input):
     elif type(color_input) == str: #if just give a string then turn into list with string
         color_list = [color_to_rgb(color_input)]
     elif all(type(elem)==str for elem in color_input): #if just list of strings
-        color_list = [color_to_rbg(k) for k in color_input]
+        color_list = [color_to_rgb(k) for k in color_input]
     elif any(nu.is_array_like(elem) for elem in color_input): #if there is an array in the list 
         color_list = [color_to_rgb(k) if type(k)==str else k for k in  color_input]
     else:
@@ -189,5 +189,178 @@ def apply_alpha_to_color_list(color_list,alpha=0.2,print_flag=False):
         return color_list_alpha_fixed[0]
     
     return color_list_alpha_fixed
+
+
+
+import webcolors
+import numpy as np
+
+def closest_colour(requested_colour):
+    min_colours = {}
+    for key, name in webcolors.CSS3_HEX_TO_NAMES.items():
+        r_c, g_c, b_c = webcolors.hex_to_rgb(key)
+        rd = (r_c - requested_colour[0]) ** 2
+        gd = (g_c - requested_colour[1]) ** 2
+        bd = (b_c - requested_colour[2]) ** 2
+        min_colours[(rd + gd + bd)] = name
+    return min_colours[min(min_colours.keys())]
+
+def get_colour_name(requested_colour):
+    try:
+        closest_name = actual_name = webcolors.rgb_to_name(requested_colour)
+    except ValueError:
+        closest_name = closest_colour(requested_colour)
+        actual_name = None
+    return actual_name, closest_name
+
+def convert_rgb_to_name(rgb_value):
+    """
+    Example: convert_rgb_to_name(np.array([[1,0,0,0.5]]))
+    """
+    rgb_value = np.array(rgb_value)
+    if not nu.is_array_like(rgb_value[0]):
+        rgb_value = rgb_value.reshape(1,-1)
+    
+    #print(f"rgb_value.shape = {rgb_value.shape}")
+
+    output_colors = []
+    for k in rgb_value:
+        if len(k) > 3:
+            k = k[:3]
+        adjusted_color_value = np.array(k)*255
+        output_colors.append(get_colour_name(adjusted_color_value)[-1])
+    
+    if len(output_colors) == 1:
+        return output_colors[0]
+    elif len(output_colors) > 1:
+        return output_colors
+    else:
+        raise Exception("len(output_colors) == 0")
+        
+def convert_dict_rgb_values_to_names(color_dict):
+    """
+    Purpose: To convert dictonary with colors as values to the color names
+    instead of the rgb equivalents
+    
+    Application: can be used on the color dictionary returned by the 
+    neuron plotting function
+    
+    Example: 
+    import matplotlib_utils as mu
+    mu = reload(mu)
+    nviz=reload(nviz)
+
+
+    returned_color_dict = nviz.visualize_neuron(uncompressed_neuron,
+                                                visualize_type=["network"],
+                                                network_resolution="branch",
+                                                network_directional=True,
+                                                network_soma=["S1","S0"],
+                                                network_soma_color = ["black","red"],       
+                                                limb_branch_dict=dict(L1="all",
+                                                L2="all"),
+                                                node_size = 1,
+                                                arrow_size = 1,
+                                                return_color_dict=True)
+                                                
+    color_info = mu.convert_dict_rgb_values_to_names(returned_color_dict)
+    
+    
+    """
+    return dict([(k,convert_rgb_to_name(v)) for k,v in color_dict.items()])
     
 
+import matplotlib.pyplot as plt
+from matplotlib import colors as mcolors
+
+base_colors_dict = dict(mcolors.BASE_COLORS, **mcolors.CSS4_COLORS)
+
+
+def plot_color_dict(colors,sorted_names=None, 
+                    hue_sort=False,
+                    ncols = 4,
+                    figure_width = 20,
+                    figure_height = 8,
+                   print_flag=True):
+
+    """
+    Ex: 
+    
+    #how to plot the base colors
+    Examples: 
+    mu.plot_color_dict(mu.base_colors_dict,figure_height=20)
+    mu.plot_color_dict(mu.base_colors_dict,hue_sort=True,figure_height=20)
+    
+    How to plot colors returned from the plotting function:
+    import matplotlib_utils as mu
+    mu = reload(mu)
+    nviz=reload(nviz)
+
+
+    returned_color_dict = nviz.visualize_neuron(uncompressed_neuron,
+                                                visualize_type=["network"],
+                                                network_resolution="branch",
+                                                network_directional=True,
+                                                network_soma=["S1","S0"],
+                                                network_soma_color = ["black","red"],       
+                                                limb_branch_dict=dict(L1="all",
+                                                L2="all"),
+                                                node_size = 1,
+                                                arrow_size = 1,
+                                                return_color_dict=True)
+                                                
+    
+    mu.plot_color_dict(returned_color_dict,hue_sort=False,figure_height=20)
+    
+    """
+    if sorted_names is None:
+        if hue_sort:
+            # Sort colors by hue, saturation, value and then by name.
+            by_hsv = sorted((tuple(mcolors.rgb_to_hsv(mcolors.to_rgba(color)[:3])), name)
+                            for name, color in colors.items())
+            #getting the names of the 
+            sorted_names = [name for hsv, name in by_hsv]
+        else:
+            sorted_names = sorted(list(colors.keys()))
+    n = len(sorted_names)
+     #will always have 4 columns
+    nrows = n // ncols + 1
+
+    if print_flag:
+        print(f"nrows = {nrows}")
+        print(f"n-ncols*nrows = {n-ncols*nrows}")
+    #creates figure
+    fig, ax = plt.subplots(figsize=(figure_width, figure_height))
+
+    # Get height and width
+    X, Y = fig.get_dpi() * fig.get_size_inches()
+    h = Y / (nrows + 1)
+    w = X / ncols
+
+    for i, name in enumerate(sorted_names):
+        row = i % nrows
+        col = i // nrows
+        y = Y - (row * h) - h
+
+        xi_line = w * (col + 0.05)
+        xf_line = w * (col + 0.25)
+        xi_text = w * (col + 0.3)
+
+        ax.text(xi_text, y, name, fontsize=(h * 0.5),
+                horizontalalignment='left',
+                verticalalignment='center')
+
+        ax.hlines(y + h * 0.1, xi_line, xf_line,
+                  #gets the color by name
+                  color=colors[name], linewidth=(h * 0.6)
+                 #color=[1,0,0,1],linewidth=(h * 0.6)
+                 )
+
+    ax.set_xlim(0, X)
+    ax.set_ylim(0, Y)
+    ax.set_axis_off()
+
+    fig.subplots_adjust(left=0, right=1,
+                        top=1, bottom=0,
+                        hspace=0, wspace=0)
+    plt.show()

@@ -4,6 +4,7 @@ import numpy as np
 import networkx as nx
 import neuron_utils as nru
 import networkx_utils as xu
+import time
 
 def plot_concept_network(curr_concept_network,
                             arrow_size = 0.5,
@@ -165,7 +166,8 @@ def visualize_concept_map(curr_concept_network,
                             arrow_size_reciprocal = 0.5,
                           
                             show_at_end=True,
-                            append_figure=False):
+                            append_figure=False,
+                         print_flag=False):
 
     
     """
@@ -286,7 +288,8 @@ def visualize_concept_map(curr_concept_network,
     #print("***** About to do all the other scatter points ***********")
     
     #print(f"Current scatter size = {scatter_size}")
-    print(f"edge_color = {edge_color} IN SKELETON")
+    if print_flag:
+        print(f"edge_color = {edge_color} IN SKELETON")
     concept_network_skeleton = nru.convert_concept_network_to_skeleton(curr_concept_network)
     plot_ipv_skeleton(concept_network_skeleton,edge_color)
     sk.graph_skeleton_and_mesh(
@@ -433,7 +436,8 @@ def visualize_neuron(
     
     #the categories that will be visualized
     visualize_type=["mesh"],
-    limb_branch_dict="all",
+    limb_branch_dict=dict(L0=[]),
+    #limb_branch_dict=dict(L0=[]),
     
     #for the mesh type:
     mesh_configuration_dict=dict(),
@@ -484,6 +488,7 @@ def visualize_neuron(
     network_whole_neuron=False,
     network_whole_neuron_color="black",
     network_whole_neuron_alpha=0.5,
+    network_whole_neuron_node_size=0.15,
     
     # ------ specific arguments for the concept_network -----
     network_directional=True,
@@ -509,16 +514,16 @@ def visualize_neuron(
     # arguments for plotting other meshes associated with neuron #
     
     inside_pieces = False,
-    inside_pieces_color = "black",
-    inside_piece_alpha = 0.5,
+    inside_pieces_color = "red",
+    inside_pieces_alpha = 1,
     
     insignificant_limbs = False,
-    insignificant_limbs_color = "black",
-    insignificant_limbs_alpha = 0.5,
+    insignificant_limbs_color = "red",
+    insignificant_limbs_alpha = 1,
     
     non_soma_touching_meshes = False, #whether to graph the inside pieces
-    non_soma_touching_meshes_color = "black",
-    non_soma_touching_meshes_alpha = 0.5,
+    non_soma_touching_meshes_color = "red",
+    non_soma_touching_meshes_alpha = 1,
     
     
     
@@ -532,11 +537,23 @@ def visualize_neuron(
     # arguments that will help with random colorization:
     colors_to_omit= [],
     
-    print_flag = False
+    #whether to return the color dictionary in order to help
+    #locate certain colors
+    return_color_dict = False,
+    
+    
+    print_flag = False,
+    print_time = False
     
     ):
     
     """
+    ** tried to optimize for speed but did not find anything that really sped it up**
+    ipv.serialize.performance = 0/1/2 was the only thing I really found but this didn't help
+    (most of the time is spent on compiling the visualization and not on the python,
+    can see this by turning on print_time=True, which only shows about 2 seconds for runtime
+    but is really 45 seconds for large mesh)
+    
     How to plot the spines:
     nviz.visualize_neuron(uncompressed_neuron,
                       limb_branch_dict = dict(),
@@ -549,23 +566,73 @@ def visualize_neuron(
                     mesh_spines_alpha = 0.8,
                       
                      )
+    Examples: 
+    How to do a concept_network graphing: 
+    nviz=reload(nviz)
+    returned_color_dict = nviz.visualize_neuron(uncompressed_neuron,
+                                                visualize_type=["network"],
+                                                network_resolution="branch",
+                                                network_whole_neuron=True,
+                                                network_whole_neuron_node_size=1,
+                                                network_whole_neuron_alpha=0.2,
+                                                network_directional=True,
+
+                                                #network_soma=["S1","S0"],
+                                                #network_soma_color = ["black","red"],       
+                                                limb_branch_dict=dict(L1=[11,15]),
+                                                network_color=["pink","green"],
+                                                network_color_alpha=1,
+                                                node_size = 5,
+                                                arrow_size = 1,
+                                                return_color_dict=True)
+    
+    
+    
+    Cool facts: 
+    1) Can specify the soma names and not just say true so will
+    only do certain somas
+    
+    Ex: 
+    returned_color_dict = nviz.visualize_neuron(uncompressed_neuron,
+                     visualize_type=["network"],
+                     network_resolution="limb",
+                                            network_soma=["S0"],
+                    network_soma_color = ["red","black"],       
+                     limb_branch_dict=dict(L1=[],L2=[]),
+                     node_size = 5,
+                     return_color_dict=True)
+    
+    2) Can put "all" for limb_branch_dict or can put "all"
+    for the lists of each branch
+    
+    3) Can specify the somas you want to graph and their colors
+    by sending lists
+    
     
     
     """
+    total_time = time.time()
+    #print(f"print_time = {print_time}")
     import ipyvolume as ipv
     
     current_neuron = copy.deepcopy(input_neuron)
     
+    local_time = time.time()
     #To uncomment for full graphing
     if not append_figure:
         ipv.pylab.clear()
         ipv.figure(figsize=(15,15))
-    
+
+    if print_time:
+        print(f"Time for setting up figure = {time.time() - local_time}")
+        local_time = time.time()
         
     main_vertices = []
     
     #do the mesh visualization type
     for viz_type in visualize_type:
+        local_time = time.time()
+        
         print(f"\n Working on visualization type: {viz_type}")
         if viz_type=="mesh":
             current_type = "mesh"
@@ -625,6 +692,7 @@ def visualize_neuron(
             configuration_dict.setdefault("whole_neuron",network_whole_neuron)
             configuration_dict.setdefault("whole_neuron_color",network_whole_neuron_color)
             configuration_dict.setdefault("whole_neuron_alpha",network_whole_neuron_alpha)
+            configuration_dict.setdefault("whole_neuron_node_size",network_whole_neuron_node_size)
             
             # ------ specific arguments for the concept_network -----
             configuration_dict.setdefault("network_directional",network_directional)
@@ -658,10 +726,16 @@ def visualize_neuron(
         
         #handle if the limb_branch_dict is "all"
         if configuration_dict["limb_branch_dict"] is None:
+            #print("limb_branch_dict was None")
             configuration_dict["limb_branch_dict"] = limb_branch_dict
         
         if configuration_dict["limb_branch_dict"] == "all":
             configuration_dict["limb_branch_dict"] = dict([(k,"all") for k in current_neuron.get_limb_node_names()])
+            
+        
+        if print_time:
+            print(f"Extracting Dictionary = {time.time() - local_time}")
+            local_time = time.time()
         
         #------------------------- Done with collecting the parameters ------------------------
         
@@ -695,6 +769,9 @@ def visualize_neuron(
         #getting the min and max of the plot items to set the zoom later (could be empty)
         
         
+        if print_time:
+            print(f"Creating Plot Items = {time.time() - local_time}")
+            local_time = time.time()
         
         
 #         print(f"plot_items_order= {plot_items_order}")
@@ -747,6 +824,7 @@ def visualize_neuron(
         if print_flag:
             print(f"color_list = {color_list}")
             
+
             
         #now go through and add the alpha levels to those that don't have it
         color_list_alpha_fixed = mu.apply_alpha_to_color_list(color_list,alpha=configuration_dict["color_alpha"])
@@ -754,10 +832,15 @@ def visualize_neuron(
         color_list_correct_size = mu.generate_color_list_no_alpha_change(user_colors=color_list_alpha_fixed,
                                                                          n_colors=len(plot_items),
                                                                         colors_to_omit=colors_to_omit)
+        
         if print_flag:
             print(f"color_list_correct_size = {color_list_correct_size}")
             print(f"plot_items_order = {plot_items_order}")
             
+            
+        if print_time:
+            print(f"Creating Colors list = {time.time() - local_time}")
+            local_time = time.time()
         #------at this point have a list of colors for all the things to plot -------
         
         
@@ -766,10 +849,11 @@ def visualize_neuron(
         
         
         soma_names = current_neuron.get_soma_node_names()
-        if nu.is_array_like(type(configuration_dict["soma"])):
+        if nu.is_array_like(configuration_dict["soma"]):
             soma_names = [k for k in soma_names if k in configuration_dict["soma"]]
             
         if viz_type == "mesh":
+            local_time = time.time()
             #add the vertices to plot to main_vertices list
             if len(plot_items)>0:
                 min_max_vertices = np.array([[np.min(k.vertices,axis=0),np.max(k.vertices,axis=0)] for k in  plot_items]).reshape(-1,3)
@@ -777,10 +861,18 @@ def visualize_neuron(
                 max_vertices = np.max(min_max_vertices,axis=0)
                 main_vertices.append(np.array([min_vertices,max_vertices]).reshape(-1,3))
                 
+            if print_time:
+                print(f"Collecting vertices for mesh = {time.time() - local_time}")
+                local_time = time.time()
+                
             
             #Can plot the meshes now
             for curr_mesh,curr_mesh_color in zip(plot_items,color_list_correct_size):
                 plot_ipv_mesh(curr_mesh,color=curr_mesh_color)
+            
+            if print_time:
+                print(f"Plotting mesh pieces= {time.time() - local_time}")
+                local_time = time.time()
                 
             #Plot the soma if asked for it
             if configuration_dict["soma"]:
@@ -803,10 +895,14 @@ def visualize_neuron(
                 soma_colors_list_alpha = mu.apply_alpha_to_color_list(soma_colors_list,alpha=configuration_dict["soma_alpha"])
                 soma_colors_list_alpha_fixed_size = mu.generate_color_list_no_alpha_change(soma_colors_list_alpha,
                                                                                           n_colors=len(soma_meshes))
-                
+                soma_names,soma_colors_list_alpha_fixed_size
                 for curr_soma_mesh,curr_soma_color in zip(soma_meshes,soma_colors_list_alpha_fixed_size):
                     plot_ipv_mesh(curr_soma_mesh,color=curr_soma_color)
                     main_vertices.append(curr_soma_mesh.vertices)
+                
+                if print_time:
+                    print(f"plotting mesh somas= {time.time() - local_time}")
+                    local_time = time.time()
                     
             #will add the background mesh if requested
             if configuration_dict["whole_neuron"]:
@@ -817,6 +913,10 @@ def visualize_neuron(
                 plot_ipv_mesh(current_neuron.mesh,color=whole_neuron_colors_list_alpha[0])
                 main_vertices.append([np.min(current_neuron.mesh.vertices,axis=0),
                                       np.max(current_neuron.mesh.vertices,axis=0)])
+                
+                if print_time:
+                    print(f"Plotting mesh whole neuron = {time.time() - local_time}")
+                    local_time = time.time()
                 
             
             #plotting the spines
@@ -853,20 +953,31 @@ def visualize_neuron(
                     for curr_spine_mesh,curr_spine_color in zip(spine_meshes,spines_colors_list_alpha_fixed_size):
                         plot_ipv_mesh(curr_spine_mesh,color=curr_spine_color)
                         main_vertices.append(curr_spine_mesh.vertices)
+                if print_time:
+                    print(f"Plotting mesh spines= {time.time() - local_time}")
+                    local_time = time.time()
                 
             
         elif viz_type == "skeleton":
+            local_time = time.time()
             #add the vertices to plot to main_vertices list
             if len(plot_items)>0:
                 reshaped_items = np.concatenate(plot_items).reshape(-1,3)
                 min_vertices = np.min(reshaped_items,axis=0)
                 max_vertices = np.max(reshaped_items,axis=0)
                 main_vertices.append(np.array([min_vertices,max_vertices]).reshape(-1,3))
+                
+            if print_time:
+                print(f"Gathering vertices for skeleton= {time.time() - local_time}")
+                local_time = time.time()
             
             #Can plot the meshes now
             for curr_skeleton,curr_skeleton_color in zip(plot_items,color_list_correct_size):
                 plot_ipv_skeleton(curr_skeleton,color=curr_skeleton_color)
             
+            if print_time:
+                print(f"Plotting skeleton pieces = {time.time() - local_time}")
+                local_time = time.time()
             
             
             if configuration_dict["soma"]:
@@ -881,6 +992,10 @@ def visualize_neuron(
                 for curr_soma_sk,curr_soma_sk_color in zip(soma_skeletons,soma_colors_list_alpha_fixed_size):
                     sk_vertices = plot_ipv_skeleton(curr_soma_sk,color=curr_soma_sk_color)
                     main_vertices.append(sk_vertices) #adding the vertices
+                
+                if print_time:
+                    print(f"Plotting skeleton somas = {time.time() - local_time}")
+                    local_time = time.time()
             
             if configuration_dict["whole_neuron"]:
                 whole_neuron_colors_list = mu.process_non_dict_color_input(configuration_dict["whole_neuron_color"])
@@ -891,7 +1006,13 @@ def visualize_neuron(
                 main_vertices.append([np.min(sk_vertices,axis=0),
                                       np.max(sk_vertices,axis=0)])
                 
+                if print_time:
+                    print(f"Plotting skeleton whole neuron = {time.time() - local_time}")
+                    local_time = time.time()
+                
+                
         elif viz_type == "network":
+            local_time = time.time()
             """
             Pseudocode: 
             0) get the mesh_centers of all of the nodes in the concept_network sent and add to the main vertices
@@ -914,6 +1035,9 @@ def visualize_neuron(
                 max_vertices = np.max(reshaped_items,axis=0)
                 main_vertices.append(np.array([min_vertices,max_vertices]).reshape(-1,3))
                 
+            if print_time:
+                print(f"Gathering vertices for network = {time.time() - local_time}")
+                local_time = time.time()
                 
             
             #1) get the current concept network (limb or branch) based on the resolution
@@ -923,12 +1047,17 @@ def visualize_neuron(
                                                           directional= configuration_dict["network_directional"],
                                                          limb_soma_touch_dictionary = configuration_dict["limb_to_starting_soma"],
                                                          print_flag = False)
+                #2) get a list of all the nodes in the plot_items_order and assemble into a dictionary for colors (have to fix the name)
+                item_to_color_dict = dict([(f"{name[0]}_{name[1]}",col) for name,col in zip(plot_items_order,color_list_correct_size)])
             else:
+                #2) get a list of all the nodes in the plot_items_order and assemble into a dictionary for colors (have to fix the name)
                 curr_concept_network = current_neuron.concept_network
-            #print(f"plot_items_order = {plot_items_order}")
-            #2) get a list of all the nodes in the plot_items_order and assemble into a dictionary for colors (have to fix the name)
-            item_to_color_dict = dict([(f"{name[0]}_{name[1]}",col) for name,col in zip(plot_items_order,color_list_correct_size)])
-            #print(f"item_to_color_dict = {item_to_color_dict}")
+                item_to_color_dict = dict([(f"{name[0]}",col) for name,col in zip(plot_items_order,color_list_correct_size)])
+                
+            if print_time:
+                print(f"Getting whole concept network and colors = {time.time() - local_time}")
+                local_time = time.time()
+            
             
             #3) For all the somas to be added, add them to the dictionary of label to color
             if soma_names:
@@ -940,8 +1069,20 @@ def visualize_neuron(
                 for s_name,s_color in zip(soma_names,soma_colors_list_alpha_fixed_size):
                     item_to_color_dict[s_name] = s_color
                     main_vertices.append(current_neuron.concept_network.nodes[s_name]["data"].mesh_center)
+                    
+                if print_time:
+                    print(f"Adding soma items to network plotting = {time.time() - local_time}")
+                    local_time = time.time()
+                    
+            #print(f"plot_items_order = {plot_items_order}")
+            #print(f"item_to_color_dict = {item_to_color_dict}")
                 
             curr_concept_network_subgraph = nx.subgraph(curr_concept_network,list(item_to_color_dict.keys()))
+            
+            
+            if print_time:
+                print(f"Getting Subgraph of concept network = {time.time() - local_time}")
+                local_time = time.time()
             
             #4) Use that dictionary to send to the visualize_concept_map function and call the function
             #with all the other parameters in the configuration dict
@@ -967,6 +1108,10 @@ def visualize_neuron(
                             show_at_end=False,
                             append_figure=True)
             
+            if print_time:
+                print(f"Graphing concept network pieces = {time.time() - local_time}")
+                local_time = time.time()
+            
             # plot the entire thing if asked for it
             if configuration_dict["whole_neuron"]:
                 #compute the new color
@@ -980,7 +1125,7 @@ def visualize_neuron(
                 visualize_concept_map(curr_concept_network,
                             node_color=whole_neuron_network_color,
                             edge_color=whole_neuron_network_edge_color,
-                            node_size=configuration_dict["node_size"],
+                            node_size=configuration_dict["whole_neuron_node_size"],
 
                             starting_node=configuration_dict["starting_node"],
                             starting_node_size = configuration_dict["starting_node_size"],
@@ -997,11 +1142,67 @@ def visualize_neuron(
                           
                             show_at_end=False,
                             append_figure=True)
+                if print_time:
+                    print(f"Graphing whole neuron concept network = {time.time() - local_time}")
+                    local_time = time.time()
             
         else:
             raise Exception("Invalid viz_type")
         
         
+    # -------------- plotting the insignificant meshes, floating meshes and non-significant limbs ----- #
+    """
+    Pseudocode: for [inside_piece,insignificant_limbs,non_soma_touching_meshes]
+    
+    1) get whether the argument was True/False or a list
+    2) If True or list, assemble the color
+    3) for each mesh plot it with the color
+
+    """
+    local_time = time.time()
+    
+    other_mesh_dict = dict(
+        inside_pieces=inside_pieces,
+        inside_pieces_color=inside_pieces_color,
+        inside_pieces_alpha=inside_pieces_alpha,
+        
+        insignificant_limbs=insignificant_limbs,
+        insignificant_limbs_color=insignificant_limbs_color,
+        insignificant_limbs_alpha=insignificant_limbs_alpha,
+        
+        non_soma_touching_meshes=non_soma_touching_meshes,
+        non_soma_touching_meshes_color=non_soma_touching_meshes_color,
+        non_soma_touching_meshes_alpha=non_soma_touching_meshes_alpha
+    
+    
+    )
+
+    
+    other_mesh_types = ["inside_pieces","insignificant_limbs","non_soma_touching_meshes"]
+    
+    for m_type in other_mesh_types:
+        if other_mesh_dict[m_type]:
+            if type(other_mesh_dict[m_type]) is bool:
+                current_mesh_list = getattr(current_neuron,m_type)
+            elif "all" in other_mesh_dict[m_type]:
+                current_mesh_list = getattr(current_neuron,m_type)
+            else:
+                total_mesh_list = getattr(current_neuron,m_type)
+                current_mesh_list = [k for i,k in enumerate(total_mesh_list) if i in other_mesh_dict[m_type]]
+                
+            #get the color
+            curr_mesh_colors_list = mu.process_non_dict_color_input(other_mesh_dict[m_type + "_color"])
+            curr_mesh_colors_list_alpha = mu.apply_alpha_to_color_list(curr_mesh_colors_list,alpha=other_mesh_dict[m_type + "_alpha"])
+
+            #graph
+            for curr_mesh in current_mesh_list:
+                plot_ipv_mesh(curr_mesh,color=curr_mesh_colors_list_alpha)
+                main_vertices.append(curr_mesh.vertices)
+        if print_time:
+            print(f"Plotting mesh pieces of {m_type} = {time.time() - local_time}")
+            local_time = time.time()
+    
+    
         
     #To uncomment for full graphing
     
@@ -1020,6 +1221,10 @@ def visualize_neuron(
     main_vertices = np.array(main_vertices)
     volume_max = np.max(main_vertices.reshape(-1,3),axis=0)
     volume_min = np.min(main_vertices.reshape(-1,3),axis=0)
+    
+    if print_time:
+        print(f"Getting volume min/max = {time.time() - local_time}")
+        local_time = time.time()
         
     #setting the min/max of the plots
     ranges = volume_max - volume_min
@@ -1039,11 +1244,17 @@ def visualize_neuron(
             min_limits[i] = volume_min[i] - difference/2  - buffer
             max_limits[i] = volume_max[i] + difference/2 + buffer
     
+    if print_time:
+        print(f"calculating max limits = {time.time() - local_time}")
+        local_time = time.time()
     
     ipv.xlim(min_limits[0],max_limits[0])
     ipv.ylim(min_limits[1],max_limits[1])
     ipv.zlim(min_limits[2],max_limits[2])
     
+    if print_time:
+        print(f"setting ipyvolume max limits = {time.time() - local_time}")
+        local_time = time.time()
     
     ipv.style.set_style_light()
     if axis_box_off:
@@ -1052,16 +1263,64 @@ def visualize_neuron(
     else:
         ipv.style.axes_on()
         ipv.style.box_on()
-        
+    
+    if print_time:
+        print(f"Setting axis and box on/off = {time.time() - local_time}")
+        local_time = time.time()
+    
     if show_at_end:
         ipv.show()
     
+    if print_time:
+        print(f"ipv.show= {time.time() - local_time}")
+        local_time = time.time()
+    
     if html_path != "":
         ipv.pylab.save(html_path)
+    
+    if print_time:
+        print(f"saving html = {time.time() - local_time}")
+        local_time = time.time()
+    
+        
+
 
     
+    if return_color_dict:
+        #build the color dictionary
+        if len(plot_items_order) == 0 or len(color_list_correct_size)==0:
+            print("No color dictionary to return because plot_items_order or color_list_correct_size empty")
+            if print_time:
+                print(f"Total time for run = {time.time() - total_time}")
+            return dict()
+        
+        if len(plot_items_order[0]) == 1:
+            color_dict_to_return = dict([(k[0],v) for k,v in zip(plot_items_order,color_list_correct_size)])
+        elif len(plot_items_order[0]) == 2:
+            color_dict_to_return = dict([(f"{k[0]}_{k[1]}",v) for k,v in zip(plot_items_order,color_list_correct_size)])
+        else:
+            raise Exception("Length of first element in plot_items order is greater than 2 elements")
+        
+        #whether to add soma mappings to the list of colors:
+        #soma_names, soma_colors_list_alpha_fixed_size
+        try: 
+            color_dict_to_return_soma = dict([(k,v) for k,v in zip(soma_names,soma_colors_list_alpha_fixed_size)])
+            color_dict_to_return.update(color_dict_to_return_soma)
+        except:
+            pass
+        
+        if print_time:
+            print(f"Preparing color dictionary = {time.time() - local_time}")
+            local_time = time.time()
+        if print_time:
+            print(f"Total time for run = {time.time() - total_time}")
+        
+        return color_dict_to_return
+        
+        
     
-    
+    if print_time:
+        print(f"Total time for run = {time.time() - total_time}")
     return
 
 
