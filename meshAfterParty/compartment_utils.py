@@ -397,7 +397,7 @@ def get_skeletal_distance(main_mesh,edges,
         total_distances_std.append(np.std(mesh_slice_distances))
     
     
-    
+    debug = True
     
     if len(face_subtract_indices)>0:
         all_removed_faces = np.concatenate(face_subtract_indices)
@@ -412,6 +412,12 @@ def get_skeletal_distance(main_mesh,edges,
 
         #faces_to_keep = set(np.arange(0,len(main_mesh.faces))).difference(unique_removed_faces)
         new_submesh = main_mesh.submesh([unique_removed_faces],only_watertight=False,append=True)
+        if debug:
+            print()
+            print(f"main_mesh.faces.shape = {main_mesh.faces.shape}")
+            print(f"new_submesh.faces.shape = {new_submesh.faces.shape}")
+            print(f"unique_removed_faces.shape = {unique_removed_faces.shape}")
+            print(f"max(unique_removed_faces) = {max(unique_removed_faces)}")
         
         split_meshes,components_faces = tu.split(new_submesh,return_components=True)
         
@@ -429,9 +435,11 @@ def get_skeletal_distance(main_mesh,edges,
         
         if len(split_meshes) > 1: 
             branch_touching_number = []
+            #getting the mesh correspondence for each skeleton segment
             branch_correspondence_meshes = [main_mesh.submesh([k],only_watertight=False,append=True) for k in face_subtract_indices]
+            #Out of all the submesh splits, see how many of the segment mesh correspondence it is touching
             for curr_central_piece in split_meshes:
-                touching_periphery_pieces =tu. mesh_pieces_connectivity(
+                touching_periphery_pieces =tu.mesh_pieces_connectivity(
                                             main_mesh = new_submesh,
                                             central_piece = curr_central_piece,
                                             periphery_pieces = branch_correspondence_meshes,
@@ -440,17 +448,36 @@ def get_skeletal_distance(main_mesh,edges,
                 if print_flag:
                     print(f"branch_touching_number = {branch_touching_number}")
             
-            #find the argmax
+            #CONCLUSION: find the submesh split piece that is touching the most skeleton segment mesh correspondences (winning mesh)
             most_branch_containing_piece = np.argmax(branch_touching_number)
             if print_flag:
                 print(f"most_branch_containing_piece = {most_branch_containing_piece}")
             
+            #Make this the 
+            
+            
             new_submesh = split_meshes[most_branch_containing_piece]
             unique_removed_faces = unique_removed_faces[components_faces[most_branch_containing_piece]]
+            
+            if debug:
+                print()
+                print(f"main_mesh.faces.shape = {main_mesh.faces.shape}")
+                print("reassigning new_submesh to one of sub pieces")
+                print(f"new_submesh.faces.shape = {new_submesh.faces.shape}")
+                print(f"unique_removed_faces.shape = {unique_removed_faces.shape}")
+                print(f"max(unique_removed_faces) = {max(unique_removed_faces)}")
             
         elif len(split_meshes) == 1: 
             new_submesh = split_meshes[0]
             unique_removed_faces = unique_removed_faces[components_faces[0]]
+            
+            if debug:
+                print()
+                print(f"main_mesh.faces.shape = {main_mesh.faces.shape}")
+                print("Assigning submesh to the only submesh")
+                print(f"new_submesh.faces.shape = {new_submesh.faces.shape}")
+                print(f"unique_removed_faces.shape = {unique_removed_faces.shape}")
+                print(f"max(unique_removed_faces) = {max(unique_removed_faces)}")
         else:
             raise Exception("The split meshes in the mesh correspondence was 0 length")
         
@@ -536,6 +563,38 @@ def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
         print("empty mesh_correspondence_indices_2 returned so returning an empty array")
         return []
         
+        
+    """
+    segment_skeletal_mean_distances
+    segment_skeletal_std_distances,
+    mesh_correspondence,
+    mesh_correspondence_indices
+
+    segment_skeletal_mean_distances_2,
+    filtered_measurements_std,
+    mesh_correspondence_2,
+    mesh_correspondence_indices_2
+    
+    """
+    if True: 
+        print(f"\n\n segment_skeletal_mean_distances.shape = {np.array(segment_skeletal_mean_distances).shape}\n"
+              f"segment_skeletal_std_distances.shape = {np.array(segment_skeletal_std_distances).shape}\n"
+              f"mesh_correspondence.faces.shape = {mesh_correspondence.faces.shape}\n"
+              f"max(mesh_correspondence_indices)= {np.max(mesh_correspondence_indices)}\n"
+              f"mesh_correspondence_indices.shape = {np.array(mesh_correspondence_indices).shape}\n"
+
+              f"segment_skeletal_mean_distances_2.shape = {np.array(segment_skeletal_mean_distances_2).shape}\n"
+              f"filtered_measurements_std.shape = {np.array(filtered_measurements_std).shape}\n"
+              f"mesh_correspondence_2.faces.shape = {mesh_correspondence_2.faces.shape}\n"
+              f"max(mesh_correspondence_indices_2)= {np.max(mesh_correspondence_indices_2)}\n"
+              f"mesh_correspondence_indices_2.shape = {np.array(mesh_correspondence_indices_2).shape}\n")
+
+        
+    try:
+        mesh_correspondence_indices[mesh_correspondence_indices_2]
+    except:
+        print(f"mesh_correspondence_indices = {mesh_correspondence_indices}")
+        print(f"mesh_correspondence_indices_2 = {mesh_correspondence_indices_2}")
         
     #want to show the changes in mesh
 #     sk.graph_skeleton_and_mesh(other_meshes = [curr_branch_mesh.submesh([mesh_correspondence_indices],append=True)])
@@ -719,8 +778,14 @@ def resolve_empty_conflicting_face_labels(
 
 
 
-    #doing the face coloring
-    face_coloring = np.array([-1 if len(v) != 1 else v[0] for v in face_lookup.values()])
+    #doing the face coloring (OLD WAY)
+    ##face_coloring = np.array([-1 if len(v) != 1 else v[0] for v in face_lookup.values()])
+    
+    #doing the face coloring (new way if the keys are unordered)
+    face_coloring = np.full(len(curr_limb_mesh.faces),-1)
+    for k,v in face_lookup.items():
+        if len(v) == 1:
+            face_coloring[k] = v[0]
 
     # -- Need to only take the biggest piece of the non-conflicted mesh and resolve those that were eliminated--
 

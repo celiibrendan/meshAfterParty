@@ -2277,6 +2277,7 @@ def skeletonize_neuron(main_mesh_total,
 # converted into a function
 import networkx_utils as xu
 import networkx as nx
+import matplotlib.pyplot as plt
 
 def get_ordered_branch_nodes_coordinates(skeleton_graph,nodes=False,coordinates=True):
 
@@ -2293,6 +2294,8 @@ def get_ordered_branch_nodes_coordinates(skeleton_graph,nodes=False,coordinates=
     if len(enpoints) != 2:
         nx.draw(sk_graph_clean)
         print(f"sk_graph_clean.degree = {dict(sk_graph_clean.degree).items() }")
+        nx.draw(skeleton_graph,with_labels=True)
+        plt.show()
         raise Exception("The number of endpoints was not 2 for a branch")
 
     # gets the shortest path
@@ -2332,7 +2335,7 @@ def split_skeleton_into_edges(current_skeleton):
 def decompose_skeleton_to_branches(current_skeleton,
                                    max_branch_distance=-1,
                                   skip_branch_threshold=20000,
-                                  ):
+                                  return_indices=False):
     """
     Example of how to run: 
     elephant_skeleton = sk.read_skeleton_edges_coordinates("../test_neurons/elephant_skeleton.cgal")
@@ -2355,6 +2358,7 @@ def decompose_skeleton_to_branches(current_skeleton,
     seperated_branch_graph = el_sk_graph.subgraph(branch_nodes)
     
     branch_skeletons = []
+    branch_skeleton_indices = []
     max_cycle_iterations = 1000
 
     seperated_branch_graph_comp = list(nx.connected_components(seperated_branch_graph))
@@ -2411,6 +2415,7 @@ def decompose_skeleton_to_branches(current_skeleton,
         #attempting to eliminate any cycles
         branch_subgraph = xu.remove_cycle(branch_subgraph)
         branch_skeletons.append(sk.convert_graph_to_skeleton(branch_subgraph))
+        branch_skeleton_indices.append(list(branch_subgraph.nodes()))
         
     #observation: seem to be losing branches that have two high degree nodes connected to each other and no other loop around it
         
@@ -2446,11 +2451,13 @@ def decompose_skeleton_to_branches(current_skeleton,
                     
             #branch_skeletons.append(sk.convert_graph_to_skeleton(branch_subgraph)) #old way
             branch_skeletons += seperated_high_degree_edges
+            branch_skeleton_indices += list(branch_subgraph.edges())
             
             
             #check if there every was a cycle: 
             
     
+    # why is this here???
     if max_branch_distance > 0:
         for br in branch_skeletons:
             sk.resize_skeleton_branch()
@@ -2463,7 +2470,11 @@ def decompose_skeleton_to_branches(current_skeleton,
             pass
         else:
             raise Exception("There was a cycle found in the branch subgraph")
-    return branch_skeletons
+    
+    if return_indices:
+        return branch_skeletons,branch_skeleton_indices
+    else:
+        return branch_skeletons
 
 def convert_branch_graph_to_skeleton(skeleton_graph):
     """ Want an ordered skeleton that is only a line 

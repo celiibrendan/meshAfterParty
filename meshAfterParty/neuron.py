@@ -1070,7 +1070,9 @@ class Neuron:
                  segment_id=None,
                  description=None,
                  preprocessed_data=None,
+                 preprocessing_decomposition_type="meshafterparty",
                 suppress_preprocessing_print=True,
+                 somas = None,
                 ignore_warnings=True,
                 minimal_output=False):
 #                  concept_network=None,
@@ -1138,12 +1140,16 @@ class Neuron:
                     with su.suppress_stdout_stderr():
                         preprocessed_data = nru.preprocess_neuron(mesh,
                                          segment_id=segment_id,
-                                         description=description)
+                                         description=description,
+                                          decomposition_type=preprocessing_decomposition_type,
+                                          somas=somas)
                         print(f"preprocessed_data inside with = {preprocessed_data}")
                 else:
                     preprocessed_data = nru.preprocess_neuron(mesh,
                                          segment_id=segment_id,
-                                         description=description)
+                                         description=description,
+                                        decomposition_type=preprocessing_decomposition_type,
+                                         somas=somas)
 
                 print(f"--- 0) Total time for preprocessing: {time.time() - neuron_start_time}\n\n\n\n")
                 neuron_start_time = time.time()

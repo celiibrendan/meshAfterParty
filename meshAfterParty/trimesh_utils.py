@@ -272,7 +272,11 @@ def split(mesh, only_watertight=False, adjacency=None, engine=None, return_compo
             raise Exception("The sub_components were not an array, list or trimesh")
             
     #make sure they are in order from least to greatest size
-    current_array = [len(c) for c in components]
+#     current_array = [len(c) for c in components]
+#     ordered_indices = np.flip(np.argsort(current_array))
+    
+    # order according to number of faces in meshes (SO DOESN'T ERROR ANYMORE)
+    current_array = [len(c.faces) for c in meshes]
     ordered_indices = np.flip(np.argsort(current_array))
     
     
@@ -547,7 +551,129 @@ def split_mesh_into_face_groups(base_mesh,face_mapping,return_idx=True,
 
 
 
+from trimesh.ray import ray_pyembree
+def ray_trace_distance(mesh, 
+                    face_inds=None, 
+                   vertex_inds=None,
+                   ray_origins=None,
+                   ray_directions=None,
+                   max_iter=10, 
+                   rand_jitter=0.001, 
+                   verbose=False,
+                   ray_inter=None,
+                      debug=False):
+    """
+    Purpose: To calculate the distance from a vertex or face
+    midpoint to an intersecting side of the mesh
+    - To help with width calculations
+    
+    Pseudocode: 
+    1) Get the ray origins and directions
+    2) Create a mask that tells which ray origins we have
+    calculated a valid width for and an array to store the widths (start as -1)
+    3) Start an iteration loop that will only stop
+    when have a valid width for all origin points
+        a. get the indices of which points we don't have valid sdfs for
+        and restrict the run to only those 
+        b. Add some gaussian noise to the normals of these rays
+        c. Run the ray intersection to get the (multiple=False)
+            - locations of intersections (mx3)
+            - index_ray responsible for that intersection (m,)
+            - mesh face that was intersected (m,)
+        d. Update the width array for the origins that returned
+           a valid width (using the diagonal_dot instead of linalg.norm because faster )
+        e. Update the mask that shows which ray_origins have yet to be processed
+    
+    4) Return the width array
+    
+    
+    """
+    
+    if not trimesh.ray.has_embree:
+        logging.warning(
+            "calculating rays without pyembree, conda install pyembree for large speedup")
 
+    #initializing the obejct that can perform ray tracing
+    if ray_inter is None:
+        ray_inter = ray_pyembree.RayMeshIntersector(mesh)
+    
+    if not face_inds is None:
+        ray_origins = mesh.triangles_center[face_inds]
+        ray_directions = mesh.face_normals[face_inds]
+    elif not vertex_inds is None:
+        ray_origins = mesh.vertices[vertex_inds]
+        ray_directions = mesh.vertex_normals[vertex_inds]
+    elif (not ray_origins is None) and (not ray_directions is None):
+        pass
+    else:
+        raise Exception("Both the face and vertex indices")
+        
+    
+    rs = np.zeros(len(ray_origins)) #array to hold the widths when calculated
+    good_rs = np.full(len(rs), False) #mask that keeps track of how many widths have been calculated
+
+    it = 0
+    while not np.all(good_rs): #continue until all sdf widths are calculated
+        if debug:
+            print(f"\n --- Iteration = {it} -----")
+        if debug:
+            print(f"Number of non_good rs = {np.sum(~good_rs)}")
+        
+        #this is the indices of where the mask [~good_rs,:] is true
+        blank_inds = np.where(~good_rs)[0] #the vertices who still need widths calculated
+        
+        #
+        starts = ray_origins[blank_inds] - ray_directions[blank_inds]
+        
+        #gets the opposite of the vertex normal so is pointing inwards
+        #then adds jitter that gets bigger and bigger
+        ray_directions_with_jitter = -ray_directions[blank_inds] \
+            + (1.2**it)*rand_jitter*np.random.rand(* #the * is to expand out the shape tuple
+                                                   ray_directions[blank_inds].shape)
+        
+        #computes the locations, index_ray and index of hit mesh
+        intersect_locations,intersect_ray_index,intersect_mesh_index = ray_inter.intersects_location(starts, ray_directions_with_jitter, multiple_hits=False)
+        
+        if debug:
+            print(f"len(intersect_locations) = {len(intersect_locations)}")
+            
+        if len(intersect_locations) > 0:
+            
+            #rs[blank_inds[intersect_ray_index]] = np.linalg.norm(starts[intersect_ray_index]-intersect_locations,axis=1)
+            depths = trimesh.util.diagonal_dot(intersect_locations - starts[intersect_ray_index],
+                                      ray_directions_with_jitter[intersect_ray_index])
+            if debug:
+                print(f"Number of dephts that are 0 = {len(np.where(depths == 0)[0])}")
+            rs[blank_inds[intersect_ray_index]] = depths
+            
+            if debug:
+                print(f"Number of rs == 0: {len(np.where(rs==0)[0]) }")
+                print(f"np.sum(~good_rs) BEFORE UPDATE= {np.sum(~good_rs) }")
+                if len(depths)<400:
+                    print(f"depths = {depths}")
+                    print(f"blank_inds[intersect_ray_index] = {blank_inds[intersect_ray_index]}")
+                    print(f"np.where(rs==0)[0] = {np.where(rs==0)[0]}")
+            good_rs[blank_inds[intersect_ray_index]] = True
+            if debug:
+                print(f"np.sum(~good_rs) AFTER UPDATE = {np.sum(~good_rs) }")
+            
+        if debug: 
+            print(f"np.all(good_rs) = {np.all(good_rs)}")
+        it += 1
+        if it > max_iter:
+            if verbose:
+                print(f"hit max iterations {max_iter}")
+            break
+    return rs
+        
+    
+    
+    
+    
+    
+    
+    
+    
 """    
 An algorithm that could be used to find sdf values    
     
