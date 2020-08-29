@@ -550,7 +550,53 @@ def split_mesh_into_face_groups(base_mesh,face_mapping,return_idx=True,
         return total_submeshes
 
 
+ 
+"""
+https://github.com/GPUOpen-LibrariesAndSDKs/RadeonProRenderUSD/issues/2
 
+
+apt-get update
+apt-get install -y wget
+
+#explains why has to do this so can see the shared library: 
+#https://stackoverflow.com/questions/1099981/why-cant-python-find-shared-objects-that-are-in-directories-in-sys-path
+echo 'export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH' >> ~/.bashrc 
+source ~/.bashrc
+
+
+
+https://github.com/embree/embree#linux-and-macos (for the dependencies)
+
+#for the dependencies
+sudo apt-get install -y cmake-curses-gui
+sudo apt-get install -y libtbb-dev
+sudo apt-get install -y libglfw3-dev
+
+Then run the following bash script (bash embree.bash)
+
+trimesh bash file
+
+---------------------------
+set -xe
+​
+# Fetch the archive from GitHub releases.
+wget https://github.com/embree/embree/releases/download/v2.17.7/embree-2.17.7.x86_64.linux.tar.gz -O /tmp/embree.tar.gz -nv
+echo "2c4bdacd8f3c3480991b99e85b8f584975ac181373a75f3e9675bf7efae501fe  /tmp/embree.tar.gz" | sha256sum --check
+tar -xzf /tmp/embree.tar.gz --strip-components=1 -C /usr/local
+# remove archive
+rm -rf /tmp/embree.tar.gz
+​
+# Install python bindings for embree (and upstream requirements).
+pip3 install --no-cache-dir numpy cython
+pip3 install --no-cache-dir https://github.com/scopatz/pyembree/releases/download/0.1.6/pyembree-0.1.6.tar.gz
+
+-------------------------------
+
+
+
+
+
+"""    
 from trimesh.ray import ray_pyembree
 def ray_trace_distance(mesh, 
                     face_inds=None, 

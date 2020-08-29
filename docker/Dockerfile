@@ -27,6 +27,30 @@ RUN n stable
 RUN jupyter labextension install @jupyter-widgets/jupyterlab-manager
 RUN jupyter labextension install ipyvolume
 
+#----------------#enabling the pyembree module-----------------------
+RUN apt-get update
+RUN apt-get install -y wget
+
+#explains why has to do this so can see the shared library: 
+#https://stackoverflow.com/questions/1099981/why-cant-python-find-shared-objects-that-are-in-directories-in-sys-path
+#------------- MAY NEED TO FIX THIS --------------- #
+ENV LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH}"
+
+ADD ./CGAL/cgal_skeleton_param /src/CGAL/cgal_skeleton_param 
+
+#https://github.com/embree/embree#linux-and-macos (for the dependencies)
+#for the dependencies
+RUN apt-get install -y cmake-curses-gui
+RUN apt-get install -y libtbb-dev
+RUN apt-get install -y libglfw3-dev
+
+
+#Then run the following bash script (bash embree.bash)
+#trimesh bash file: https://github.com/mikedh/trimesh/blob/master/docker/builds/embree.bash
+ADD ./ptyon_bash_files/embree.bash /src/embree.bash
+#may need to change this
+RUN chmod +x /src/embree.bash && /src/embree.bash 
+
 #creating starting folder as the root
 WORKDIR /
 
