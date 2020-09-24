@@ -47,7 +47,7 @@ RUN apt-get install -y libglfw3-dev
 
 #Then run the following bash script (bash embree.bash)
 #trimesh bash file: https://github.com/mikedh/trimesh/blob/master/docker/builds/embree.bash
-ADD ./ptyon_bash_files/embree.bash /src/embree.bash
+ADD ./python_bash_files/embree.bash /src/embree.bash
 #may need to change this
 RUN chmod +x /src/embree.bash && /src/embree.bash 
 
