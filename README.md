@@ -11,7 +11,9 @@ If cloning using git and on a Windows computer, if you want to run the docker en
 you must prevent the conversion of line ending formats to Windows, to do this: 
 
 git config --global core.autocrlf false #ensures no auto-conversion will occur
+
 git clone [____] #clones the repo
+
 git config --global core.autocrlf true #returns the git behavior to auto-conversion
 
 ** 
