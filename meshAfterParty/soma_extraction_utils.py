@@ -417,6 +417,7 @@ def extract_soma_center(segment_id,
         if backtrack_soma_mesh_to_original:
             print("Performing Soma Mesh Backtracking to original mesh")
             soma_mesh_poisson = deepcopy(soma_mesh)
+            
             try:
                 #print("About to find original mesh")
                 soma_mesh = original_mesh_soma(

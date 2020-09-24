@@ -61,6 +61,8 @@ WORKDIR /meshlab/src
 RUN qmake -qt=5 meshlab_mini.pro $QMAKE_FLAGS && make $MAKE_FLAGS
 
 
+#fixing the trimesh version
+RUN pip3 install --upgrade --force-reinstall trimesh==3.8.1
 
 #creating starting folder as the root
 WORKDIR /
