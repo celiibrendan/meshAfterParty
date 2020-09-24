@@ -140,7 +140,7 @@ def bbox_mesh_restriction(curr_mesh,bbox_upper_corners,
     faces_bbox_inclusion = (np.arange(0,len(sum_totals)))[sum_totals]
     
     try:
-        curr_mesh_bbox_restriction = curr_mesh.submesh([faces_bbox_inclusion],append=True)
+        curr_mesh_bbox_restriction = curr_mesh.submesh([faces_bbox_inclusion],append=True,repair=False)
         return curr_mesh_bbox_restriction,faces_bbox_inclusion
     except:
         #print(f"faces_bbox_inclusion = {faces_bbox_inclusion}")
@@ -152,7 +152,8 @@ def bbox_mesh_restriction(curr_mesh,bbox_upper_corners,
     
 
 # main mesh cancellation
-
+import numpy as  np
+import system_utils as su
 def split_significant_pieces(new_submesh,
                             significance_threshold=100,
                             print_flag=False,
@@ -164,8 +165,11 @@ def split_significant_pieces(new_submesh,
     
     if print_flag:
         print("------Starting the mesh filter for significant outside pieces-------")
-
-    mesh_pieces = new_submesh.split(only_watertight=False)
+#     import system_utils as su
+#     su.compressed_pickle(new_submesh,f"new_submesh_{np.random.randint(10,1000)}")
+    mesh_pieces = new_submesh.split(only_watertight=False,repair=False)
+    if print_flag:
+        print(f"Finished splitting mesh_pieces into = {mesh_pieces}")
     if type(mesh_pieces) not in [type(np.ndarray([])),type(np.array([])),list]:
         mesh_pieces = [mesh_pieces]
     
@@ -200,6 +204,12 @@ def split_significant_pieces(new_submesh,
         return sorted_significant_pieces
 
 
+"""
+******* 
+The submesh function if doesn't have repair = False might
+end up adding on some faces that you don't want!
+*******
+"""
     
 from trimesh.graph import *
 def split(mesh, only_watertight=False, adjacency=None, engine=None, return_components=True, **kwargs):
@@ -245,14 +255,19 @@ def split(mesh, only_watertight=False, adjacency=None, engine=None, return_compo
         min_len = 4
     else:
         min_len = 1
+        
+    #print(f"only_watertight = {only_watertight}")
 
     components = connected_components(
         edges=adjacency,
         nodes=np.arange(len(mesh.faces)),
         min_len=min_len,
         engine=engine)
+    
+    #print(f"components = {[c.shape for c in components]}")
     meshes = mesh.submesh(
-        components, only_watertight=only_watertight, **kwargs)
+        components, only_watertight=only_watertight, repair=False, **kwargs)
+    #print(f"meshes = {meshes}")
     
     """ 6 19, old way of doing checking that did not resolve anything
     if type(meshes) != type(np.array([])):
@@ -324,10 +339,13 @@ def compare_meshes_by_face_midpoints_list(mesh1_list,mesh2_list,**kwargs):
 
 def compare_meshes_by_face_midpoints(mesh1,mesh2,match_threshold=0.001,print_flag=False):
     #0) calculate the face midpoints of each of the faces for original and submesh
+    debug = False
     global_start = time.time()
-    total_faces_greater_than_treshold = dict()
+    total_faces_greater_than_threshold = dict()
     starting_meshes = [mesh1,mesh2]
-    for i in range(0,2):
+    if debug:
+        print(f"mesh1.faces.shape = {mesh1.faces.shape},mesh2.faces.shape = {mesh2.faces.shape}")
+    for i in range(0,len(starting_meshes)):
         
         original_mesh_midpoints = starting_meshes[i].triangles_center
         submesh_midpoints = starting_meshes[np.abs(i-1)].triangles_center
@@ -339,18 +357,22 @@ def compare_meshes_by_face_midpoints(mesh1,mesh2,match_threshold=0.001,print_fla
         distances,closest_node = submesh_mesh_kdtree.query(original_mesh_midpoints)
 
         faces_greater_than_treshold = (np.arange(len(original_mesh_midpoints)))[distances >= match_threshold]
-        total_faces_greater_than_treshold[i] = faces_greater_than_treshold
+        total_faces_greater_than_threshold[i] = faces_greater_than_treshold
     
     if print_flag:
         print(f"Total time for mesh mapping: {time.time() - global_start}")
     
     
-    if len(total_faces_greater_than_treshold[0])>0 or len(total_faces_greater_than_treshold[1])>0:
+    if len(total_faces_greater_than_threshold[0])>0 or len(total_faces_greater_than_threshold[1])>0:
         if print_flag:
-            print(f"{len(total_faces_greater_than_treshold[0])} face midpoints of mesh1 were farther than {match_threshold} "
+            print(f"{len(total_faces_greater_than_threshold[0])} face midpoints of mesh1 were farther than {match_threshold} "
                   f"from the face midpoints of mesh2")
-            print(f"{len(total_faces_greater_than_treshold[1])} face midpoints of mesh2 were farther than {match_threshold} "
+            
+            print(f"{len(total_faces_greater_than_threshold[1])} face midpoints of mesh2 were farther than {match_threshold} "
                   f"from the face midpoints of mesh1")
+        if debug:
+            mesh1.export("mesh1_failed.off")
+            mesh2.export("mesh2_failed.off")
         return False
     else:
         if print_flag:
@@ -362,6 +384,7 @@ def original_mesh_faces_map(original_mesh, submesh,
                            matching=True,
                            print_flag=False,
                            match_threshold = 0.001,
+                            exact_match=False,
                            return_mesh=False):
     """
     PUrpose: Given a base mesh and mesh that was a submesh of that base mesh
@@ -404,34 +427,55 @@ def original_mesh_faces_map(original_mesh, submesh,
     original_mesh_midpoints = original_mesh.triangles_center
     submesh_midpoints = submesh.triangles_center
     
-    #1) Put the submesh face midpoints into a KDTree
-    submesh_mesh_kdtree = KDTree(submesh_midpoints)
-    #2) Query the fae midpoints of submesh against KDTree
-    distances,closest_node = submesh_mesh_kdtree.query(original_mesh_midpoints)
+    if not exact_match:
+        #This was the old way which was switching the order the new faces were found
+        #1) Put the submesh face midpoints into a KDTree
+        submesh_mesh_kdtree = KDTree(submesh_midpoints)
+        #2) Query the fae midpoints of submesh against KDTree
+        distances,closest_node = submesh_mesh_kdtree.query(original_mesh_midpoints)
     
-    if print_flag:
-        print(f"Total time for mesh mapping: {time.time() - global_start}")
-    
-    #3) Only keep those that correspond to the faces or do not correspond to the faces
-    #based on the parameter setting
-    if matching:
-        return_faces = (np.arange(len(original_mesh_midpoints)))[distances < match_threshold]
+
+        if print_flag:
+            print(f"Total time for mesh mapping: {time.time() - global_start}")
+
+        #3) Only keep those that correspond to the faces or do not correspond to the faces
+        #based on the parameter setting
+        if matching:
+            return_faces = (np.arange(len(original_mesh_midpoints)))[distances < match_threshold]
+
+        else:
+            return_faces = (np.arange(len(original_mesh_midpoints)))[distances >= match_threshold]
+    else:        
+        #1) Put the submesh face midpoints into a KDTree
+        original_mesh_kdtree = KDTree(original_mesh_midpoints)
+        #2) Query the fae midpoints of submesh against KDTree
+        distances,closest_node = original_mesh_kdtree.query(submesh_midpoints)
         
-    else:
-        return_faces = (np.arange(len(original_mesh_midpoints)))[distances >= match_threshold]
+        #check that all of them matched below the threshold
+        if np.any(distances> match_threshold):
+            raise Exception(f"There were {np.sum(distances> match_threshold)} faces that did not have an exact match to the original mesh")
         
+        if print_flag:
+            print(f"Total time for mesh mapping: {time.time() - global_start}")
+        
+        if matching:
+            return_faces = closest_node
+
     if return_mesh:
         return original_mesh.submesh([return_faces],append=True)
     else:
         return return_faces
-    
+   
+   
     
 def mesh_pieces_connectivity(
                 main_mesh,
                 central_piece,
                 periphery_pieces,
                 return_vertices=False,
-                return_central_faces=False):
+                return_central_faces=False,
+                print_flag=False,
+                merge_vertices=False):
     """
     purpose: function that will determine if certain pieces of mesh are touching in reference
     to a central mesh
@@ -459,17 +503,52 @@ def mesh_pieces_connectivity(
     Application: For finding connectivity to the somas
 
 
+    Example: How to use merge vertices option
+    import time
+
+    start_time = time.time()
+
+    #0) Getting the Soma border
+
+    tu = reload(tu)
+    new_mesh = tu.combine_meshes(touching_limbs_meshes + [curr_soma_mesh])
+
+    soma_idx = 1
+    curr_soma_mesh = current_neuron[nru.soma_label(soma_idx)].mesh
+    touching_limbs = current_neuron.get_limbs_touching_soma(soma_idx)
+    touching_limb_objs = [current_neuron[k] for k in touching_limbs]
+
+    touching_limbs_meshes = [k.mesh for k in touching_limb_objs]
+    touching_pieces,touching_vertices = tu.mesh_pieces_connectivity(main_mesh=new_mesh,
+                                            central_piece = curr_soma_mesh,
+                                            periphery_pieces = touching_limbs_meshes,
+                                                             return_vertices=True,
+                                                            return_central_faces=False,
+                                                                    print_flag=False,
+                                                                    merge_vertices=True,
+                                                                                     )
+    limb_to_soma_border = dict([(k,v) for k,v in zip(np.array(touching_limbs)[touching_pieces],touching_vertices)])
+    limb_to_soma_border
+
+    print(time.time() - start_time)
+
     """
     
     """
     # 7-8 change: wanted to adapt so could give face ids as well instead of just meshes
     """
+    if merge_vertices:
+        main_mesh.merge_vertices()
+    
     #1) Get the original faces of the central_piece and the periphery_pieces
     if type(central_piece) == type(trimesh.Trimesh()):
         central_piece_faces = original_mesh_faces_map(main_mesh,central_piece)
     else:
         #then what was passed were the face ids
         central_piece_faces = central_piece.copy()
+        
+    if print_flag:
+        print(f"central_piece_faces = {central_piece_faces}")
     
     periphery_pieces_faces = []
     #periphery_pieces_faces = [original_mesh_faces_map(main_mesh,k) for k in periphery_pieces]
@@ -481,6 +560,9 @@ def mesh_pieces_connectivity(
         else:
             #print("just using face idxs")
             periphery_pieces_faces.append(k)
+    
+    if print_flag:
+        print(f"periphery_pieces_faces = {periphery_pieces_faces}")
     
     #2) For each periphery piece, find if touching the central piece at all
     touching_periphery_pieces = []
@@ -494,6 +576,8 @@ def mesh_pieces_connectivity(
         curr_p_verts = np.unique(main_mesh.faces[curr_p_faces].ravel())
         
         intersecting_vertices = np.intersect1d(central_p_verts,curr_p_verts)
+        if print_flag:
+            print(f"intersecting_vertices = {intersecting_vertices}")
         
         if len(np.intersect1d(central_p_verts,curr_p_verts)) > 0:
             touching_periphery_pieces.append(j)
@@ -535,9 +619,9 @@ def split_mesh_into_face_groups(base_mesh,face_mapping,return_idx=True,
         faces = np.where(face_mapping==lab)[0]
         total_submeshes_idx[lab] = faces
         if not check_connect_comp:
-            total_submeshes[lab] = base_mesh.submesh([faces],append=True,only_watertight=False)
+            total_submeshes[lab] = base_mesh.submesh([faces],append=True,only_watertight=False,repair=False)
         else: 
-            curr_submeshes = base_mesh.submesh([faces],append=False,only_watertight=False)
+            curr_submeshes = base_mesh.submesh([faces],append=False,only_watertight=False,repair=False)
             #print(f"len(curr_submeshes) = {len(curr_submeshes)}")
             if len(curr_submeshes) == 1:
                 total_submeshes[lab] = curr_submeshes[0]
@@ -650,9 +734,11 @@ def ray_trace_distance(mesh,
         ray_origins = mesh.vertices[vertex_inds]
         ray_directions = mesh.vertex_normals[vertex_inds]
     elif (not ray_origins is None) and (not ray_directions is None):
-        pass
+        passs
     else:
-        raise Exception("Both the face and vertex indices")
+        face_inds = np.arange(0,len(mesh.faces))
+        ray_origins = mesh.triangles_center[face_inds]
+        ray_directions = mesh.face_normals[face_inds]
         
     
     rs = np.zeros(len(ray_origins)) #array to hold the widths when calculated
@@ -713,12 +799,297 @@ def ray_trace_distance(mesh,
     return rs
         
     
+
+def vertices_to_faces(current_mesh,vertices,
+                     concatenate_unique_list=False):
+    """
+    Purpose: If have a list of vertex indices, to get the face indices associated with them
+    """
+    
+    intermediate_face_list = current_mesh.vertex_faces[vertices]
+    faces_list = [k[k!=-1] for k in intermediate_face_list]
+    if concatenate_unique_list:
+        return np.unique(np.concatenate(faces_list))
+    else:
+        return faces_list
+
+import numpy_utils as nu
+def vertices_coordinates_to_faces(current_mesh,vertex_coordinates):
+    """
+    
+    Purpose: If have a list of vertex coordinates, to get the face indices associated with them
+    
+    Example: To check that it worked well with picking out border
+    sk.graph_skeleton_and_mesh(other_meshes=[curr_branch.mesh,curr_branch.mesh.submesh([unique_border_faces],append=True)],
+                              other_meshes_colors=["red","black"],
+                              mesh_alpha=1)
+
     
     
+    """
+    border_vertices_idx = [nu.matching_rows(current_mesh.vertices,v)[0] for v in vertex_coordinates]
+    border_faces = vertices_to_faces(current_mesh,vertices=border_vertices_idx)
+    unique_border_faces = np.unique(np.concatenate(border_faces))
+    return unique_border_faces
+
+
+import networkx as nx
+import networkx_utils as xu
+def mesh_vertex_graph(mesh):
+    """
+    Purpose: Creates a weighted connectivity graph from the vertices and edges
+    
+    """
+    curr_weighted_edges = np.hstack([mesh.edges_unique,mesh.edges_unique_length.reshape(-1,1)])
+    vertex_graph = nx.Graph()  
+    vertex_graph.add_weighted_edges_from(curr_weighted_edges)
+    return vertex_graph
+
+# ------------ Algorithms used for checking the spines -------- #
+
+from trimesh.grouping import *
+def waterfilling_face_idx(mesh,
+                      starting_face_idx,
+                      n_iterations=10,
+                         return_submesh=False):
+    """
+    Will extend certain faces by infecting neighbors 
+    for a certain number of iterations:
+    
+    Example:
+    curr_border_faces = tu.find_border_faces(curr_branch.mesh)
+    expanded_border_mesh = tu.waterfilling_face_idx(curr_branch.mesh,
+                                                    curr_border_faces,
+                                                     n_iterations=10,
+                                                    return_submesh=True)
+    sk.graph_skeleton_and_mesh(other_meshes=[curr_branch.mesh,expanded_border_mesh],
+                              other_meshes_colors=["black","red"])
+    """
+    #0) Turn the mesh into a graph
+    total_mesh_graph = nx.from_edgelist(mesh.face_adjacency)
+    
+    #1) set the starting faces
+    final_faces = starting_face_idx
+    
+    #2) expand the faces
+    for i in range(n_iterations):
+        final_faces = np.unique(np.concatenate([xu.get_neighbors(total_mesh_graph,k) for k in final_faces]))
+    
+    if return_submesh:
+        return mesh.submesh([final_faces],append=True,repair=False)
+    else:
+        return final_faces
     
     
+def find_border_vertices(mesh):
+    if len(mesh.faces) < 3:
+        return []
+
+    if mesh.is_watertight:
+        return []
+
+    # we know that in a watertight mesh every edge will be included twice
+    # thus every edge which appears only once is part of a hole boundary
+    boundary_groups = group_rows(
+        mesh.edges_sorted, require_count=1)
+
+    return mesh.edges_sorted[boundary_groups].ravel()
+
+def find_border_faces(mesh):
+    border_verts = find_border_vertices(mesh)
+    border_faces = np.unique(np.concatenate(vertices_to_faces(mesh,find_border_vertices(mesh).ravel())))
+    return border_faces
+
+
+def find_border_face_groups(mesh):
+    """
+    Will return all borders as faces and grouped together
+    """
+    if len(mesh.faces) < 3:
+        return []
+
+    if mesh.is_watertight:
+        return []
+
+    # we know that in a watertight mesh every edge will be included twice
+    # thus every edge which appears only once is part of a hole boundary
+    boundary_groups = group_rows(
+        mesh.edges_sorted, require_count=1)
+
+    # mesh is not watertight and we have too few edges
+    # edges to do a repair
+    # since we haven't changed anything return False
+    if len(boundary_groups) < 3:
+        return []
+
+    boundary_edges = mesh.edges[boundary_groups]
+    index_as_dict = [{'index': i} for i in boundary_groups]
+
+    # we create a graph of the boundary edges, and find cycles.
+    g = nx.from_edgelist(
+        np.column_stack((boundary_edges,
+                         index_as_dict)))
+    border_edge_groups = list(nx.connected_components(g))
+
+    """
+    Psuedocode on converting list of edges to 
+    list of faces
+
+    """
+    border_face_groups = [vertices_to_faces(mesh,list(j),concatenate_unique_list=True) for j in border_edge_groups]
+    return border_face_groups
+
+def expand_border_faces(mesh,n_iterations=10,return_submesh=True):
+    curr_border_faces_groups = find_border_face_groups(mesh)
+    expanded_border_face_groups = []
+    for curr_border_faces in curr_border_faces_groups:
+        expanded_border_mesh = waterfilling_face_idx(mesh,
+                                                    curr_border_faces,
+                                                     n_iterations=n_iterations,
+                                                    return_submesh=return_submesh)
+        expanded_border_face_groups.append(expanded_border_mesh)
+    return expanded_border_face_groups
+    
+def mesh_with_ends_cutoff(mesh,n_iterations=5,
+                         return_largest_mesh=True,
+                         significance_threshold=100,
+                         verbose=False):
+    """
+    Purpose: Will return a mesh with the ends with a border
+    that are cut off by finding the border, expanding the border
+    and then removing these faces and returning the largest piece
+    
+    Pseudocode:
+    1) Expand he border meshes
+    2) Get a submesh without the border faces
+    3) Split the mesh into significants pieces
+    3b) Error if did not find any significant meshes
+    4) If return largest mesh is True, only return the top one
+    
+    """
+    #1) Expand he border meshes
+    curr_border_faces = expand_border_faces(mesh,n_iterations=n_iterations,return_submesh=False)
+    
+    #2) Get a submesh without the border faces
+    if verbose:
+        print(f"Removing {len(curr_border_faces)} border meshes of sizes: {[len(k) for k in curr_border_faces]} ")
+    faces_to_keep = np.setdiff1d(np.arange(len(mesh.faces)),np.concatenate(curr_border_faces))
+    leftover_submesh = mesh.submesh([faces_to_keep],append=True,repair=False)
+
+    if verbose:
+        printf("Leftover submesh size: {leftover_submesh}")
+        
+    #3) Split the mesh into significants pieces
+    sig_leftover_pieces = split_significant_pieces(leftover_submesh,significance_threshold=significance_threshold)
+    
+    #3b) Error if did not find any significant meshes
+    if len(sig_leftover_pieces) <= 0:
+        raise Exception("No significant leftover pieces were detected after border subtraction")
+        
+    #4) If return largest mesh is True, only return the top one
+    if return_largest_mesh:
+        return sig_leftover_pieces[0]
+    else:
+        return sig_leftover_pieces
+    
+
+from pykdtree.kdtree import KDTree
+def filter_away_border_touching_submeshes(
+                            mesh,
+                            submesh_list,
+                            border_percentage_threshold=0.5,#would make 0.00001 if wanted to enforce nullification if at most one touchedss
+                            verbose = False,
+                            return_meshes=True,
+                            ):
+    """
+    Purpose: Will return submeshes or indices that 
+    do not touch a border edge of the parenet mesh
+
+    Pseudocode:
+    1) Get the border vertices of mesh
+    2) For each submesh
+    - do KDTree between submesh vertices and border vertices
+    - if one of distances is equal to 0 then nullify
+
+    Ex: 
+    
+    return_value = filter_away_border_touching_submeshes(
+                                mesh = eraser_branch.mesh,
+                                submesh_list = eraser_branch.spines,
+                                verbose = True,
+                                return_meshes=True)
+    sk.graph_skeleton_and_mesh(main_mesh_verts=mesh.vertices,
+                           main_mesh_faces=mesh.faces,
+                            other_meshes=eraser_branch.spines,
+                                                  other_meshes_colors="red")
+    sk.graph_skeleton_and_mesh(main_mesh_verts=mesh.vertices,
+                           main_mesh_faces=mesh.faces,
+                            other_meshes=return_value,
+                                other_meshes_colors="red")
+    """
+
+    #1) Get the border vertices of mesh
+    border_verts_idx = find_border_vertices(mesh)
+    if len(border_verts_idx) == 0:
+        if verbose:
+            print("There were no border edges for the main mesh")
+        passed_idx = np.arange(len(submesh_list))
+    else:
+        
+
+        passed_idx = []
+        for i,subm in enumerate(submesh_list):
+            spine_kdtree = KDTree(subm.vertices)
+            dist,closest_vert_idx = spine_kdtree.query(mesh.vertices[border_verts_idx])
+            
+            if len(dist[dist == 0])/len(border_verts_idx) < border_percentage_threshold:
+                passed_idx.append(i)
+
+
+        passed_idx = np.array(passed_idx)
+
+    if return_meshes:
+        return [k for i,k in enumerate(submesh_list) if i in passed_idx]
+    else:
+        return passed_idx
     
     
+def max_distance_betwee_mesh_vertices(mesh_1,mesh_2,
+                                      verbose=False,
+                                     max_distance_threshold=None):
+    """
+    Purpose: Will calculate the maximum distance between vertices of two meshes
+    
+    Application: Can be used to see how well a poisson reconstruction
+    estimate of a soma and the actual soma that was backtracked to 
+    the mesh are in order to identify true somas and not
+    get fooled by the glia / neural error checks
+    
+    Pseudocode:
+    1) Make a KDTree from the new backtracked soma
+    2) Do a query of the poisson soma vertices
+    3) If a certain distance is too far then fail
+    
+    """
+    
+    #print(f"mesh_1={mesh_1},mesh_2 = {mesh_2}")
+    #1) Make a KDTree from the new backtracked soma
+    backtrack_mesh_kdtree = KDTree(mesh_1.vertices)
+    #2) Do a query of the poisson soma vertices
+    check_mesh_distances,closest_nodes = backtrack_mesh_kdtree.query(mesh_2.vertices)
+    #print(f"check_mesh_distances = {check_mesh_distances}")
+    max_dist = np.max(check_mesh_distances)
+    
+    if verbose:
+        print(f"maximum distance from mesh_2 vertices to mesh_1 vertices is = {max_dist}")
+    
+    if max_distance_threshold is None:
+        return max_dist
+    else:
+        if max_dist > max_distance_threshold:
+            return False
+        else:
+            return True
     
 """    
 An algorithm that could be used to find sdf values    

@@ -755,6 +755,7 @@ def mesh_subtraction_by_skeleton(main_mesh,edges,
                                                          significance_threshold,
                                                          print_flag=False)
 
+
     return significant_pieces
 
 """ ------------------- End of Mesh Subtraction ------------------------------------"""
@@ -825,11 +826,15 @@ import random
 #     return final_skeleton
 
 
-def generate_surface_skeleton(vertices,
+def generate_surface_skeleton_slower(vertices,
                               faces, 
                               surface_samples=1000,
                               n_surface_downsampling=0,
                           print_flag=False):
+    """
+    Purpose: Generates a surface skeleton without using
+    the root method and instead just samples points
+    """
     
     #return surface_with_poisson_skeleton,path_length
     
@@ -891,6 +896,93 @@ def generate_surface_skeleton(vertices,
         final_skeleton = downsample_skeleton(final_skeleton)
 
     return final_skeleton
+
+import meshparty
+
+from meshparty_skeletonize import *
+def setup_root(mesh, is_soma_pt=None, soma_d=None, is_valid=None):
+    """ function to find the root index to use for this mesh
+    
+    Purpose: The output will be used to find the path for a 
+    surface skeletonization (aka: longest shortest path)
+    
+    The output:
+    1) root: One of the end points
+    2) target: The other endpoint:
+    3) root_ds: (N,) matrix of distances from root to all other vertices
+    4) : predecessor matrix for root to shortest paths of all other vertices
+    --> used to find surface path
+    5) valid: boolean mask (NOT USED)
+    
+    """
+    if is_valid is not None:
+        valid = np.copy(is_valid)
+    else:
+        valid = np.ones(len(mesh.vertices), np.bool)
+    assert(len(valid) == mesh.vertices.shape[0])
+
+    root = None
+    # soma mode
+    if is_soma_pt is not None:
+        # pick the first soma as root
+        assert(len(soma_d) == mesh.vertices.shape[0])
+        assert(len(is_soma_pt) == mesh.vertices.shape[0])
+        is_valid_root = is_soma_pt & valid
+        valid_root_inds = np.where(is_valid_root)[0]
+        if len(valid_root_inds) > 0:
+            min_valid_root = np.nanargmin(soma_d[valid_root_inds])
+            root = valid_root_inds[min_valid_root]
+            root_ds, pred = sparse.csgraph.dijkstra(mesh.csgraph,
+                                                    directed=False,
+                                                    indices=root,
+                                                    return_predecessors=True)
+        else:
+            start_ind = np.where(valid)[0][0]
+            root, target, pred, dm, root_ds = utils.find_far_points(mesh,
+                                                                    start_ind=start_ind)
+        valid[is_soma_pt] = False
+
+    if root is None:
+        # there is no soma close, so use far point heuristic
+        start_ind = np.where(valid)[0][0]
+        root, target, pred, dm, root_ds = utils.find_far_points(
+            mesh, start_ind=start_ind)
+    valid[root] = False
+    assert(np.all(~np.isinf(root_ds[valid])))
+    return root, target,root_ds, pred, valid
+
+def generate_surface_skeleton(vertices,
+                              faces, 
+                              surface_samples=1000,
+                              n_surface_downsampling=0,
+                          print_flag=False):
+    """
+    Purpose: To generate a surface skeleton
+    
+    Specifics: New implementation that uses meshparty 
+    method of finding root that optimally finds 
+    longest shortest path
+    
+    """
+    
+    meshparty_skeleton_time = time.time()
+    branch_obj_tr_io  = meshparty.trimesh_io.Mesh(vertices = vertices,
+                                   faces=faces)
+    
+    root, target,root_ds, root_pred, valid = setup_root(branch_obj_tr_io)
+
+    current_path = utils.get_path(root,target,root_pred)
+
+    surface_sk_edges = np.vstack([current_path[:-1],current_path[1:]]).T
+    meshparty_surface_skeleton = branch_obj_tr_io.vertices[surface_sk_edges]
+    
+    if print_flag: 
+        print(f"Total time for surface skeletonization = {time.time() - meshparty_skeleton_time}")
+    
+    for i in range(n_surface_downsampling):
+        meshparty_surface_skeleton = downsample_skeleton(meshparty_surface_skeleton)
+    
+    return meshparty_surface_skeleton
 
 
 def downsample_skeleton(current_skeleton):
@@ -1414,6 +1506,10 @@ def clean_skeleton(G,
                    distance_func,
                   min_distance_to_junction = 3,
                   return_skeleton=True,
+                   soma_border_vertices=None, #should be list of soma vertices
+                   distance_to_ignore_end_nodes_close_to_soma_border=5000,
+                   skeleton_mesh=None,
+                   endpoints_must_keep = None, #must be the same size as soma_border_vertices
                   print_flag=False):
     """
     Example of how to use: 
@@ -1517,7 +1613,102 @@ def clean_skeleton(G,
     
     
     end_nodes = np.array([k for k,n in dict(G.degree()).items() if n == 1])
-    #print(f"len(end_nodes) = {len(end_nodes)}")
+    """ 9/16 Addition: Will ignore certain end nodes whose distance is too close to soma border"""
+    if not soma_border_vertices is None: #assuming that has the correct length
+        if len(end_nodes) > 0:
+
+
+            """
+            OLD METHOD THAT DID NOT TRAVERSE ACROSS MESH GRAPH 
+            
+            Pseducode:
+            1) Get the coordinates for all of the end nodes
+            2) Put the soma border vertices in a KDTree
+            3) Query the KDTree with the node endpoints coordinates
+            4) Filter endpoints for only those farther than distance_to_ignore_end_nodes_close_to_soma_border
+            
+            
+            print(f"Number of end_nodes BEFORE filtering = {len(end_nodes)}")
+            end_nodes_coordinates = xu.get_node_attributes(G,node_list=end_nodes)
+            soma_KD = KDTree(soma_border_vertices)
+            distances,closest_nodes = soma_KD.query(end_nodes_coordinates)
+            end_nodes = end_nodes[distances>distance_to_ignore_end_nodes_close_to_soma_border]
+            print(f"Number of end_nodes AFTER filtering = {len(end_nodes)}")
+        
+            """
+            print(f"Going to ignore certain endnodes that are {distance_to_ignore_end_nodes_close_to_soma_border} nm close to soma border vertices")
+            #New method that traverses across mesh graph
+            if skeleton_mesh is None:
+                raise Exception("Skeleton_mesh is None when trying to account for soma_border_vertices in cleaning")
+                
+            print(f"Number of end_nodes BEFORE filtering = {len(end_nodes)}")
+            end_nodes_coordinates = xu.get_node_attributes(G,node_list=end_nodes)
+            
+            #0) Get the mesh vertices and create a KDTree from them
+            mesh_KD = KDTree(skeleton_mesh.vertices)
+            
+            #3) Create Weighted Graph from vertex edges
+            vertex_graph = tu.mesh_vertex_graph(skeleton_mesh)
+            
+            all_single_nodes_to_eliminate = []
+            
+            if endpoints_must_keep is None:
+                endpoints_must_keep = [[]]*len(soma_border_vertices)
+            for sm_idx, sbv in soma_border_vertices.items():
+                # See if there is a node for use to keep
+                end_k = endpoints_must_keep[sm_idx]
+                if not end_k is None:
+                    end_node_must_keep = xu.get_nodes_with_attributes_dict(G,dict(coordinates=end_k))[0]
+                    end_node_must_keep_idx = np.where(end_nodes==end_node_must_keep)[0][0]
+                    all_single_nodes_to_eliminate.append(end_node_must_keep_idx)
+                    print(f"Using an already specified end node: {end_node_must_keep} with index {end_node_must_keep_idx}"
+                         f"checking was correct node end_nodes[index] = {end_nodes[end_node_must_keep_idx]}")
+                    continue
+            
+                #1) Map the soma border vertices to the mesh vertices
+                soma_border_distances,soma_border_closest_nodes = mesh_KD.query(sbv[0].reshape(-1,3))
+
+                #2) Map the endpoints to closest mesh vertices
+                end_nodes_distances,end_nodes_closest_nodes = mesh_KD.query(end_nodes_coordinates)
+
+
+
+                #4) For each endpoint, find shortest distance from endpoint to a soma border along graph
+                # for en,en_mesh_vertex in zip(end_nodes,end_nodes_closest_nodes):
+                #     #find the shortest path to a soma border vertex
+                node_idx_to_keep = []
+                node_idx_to_eliminate = []
+                node_idx_to_eliminate_len = []
+                for en_idx,en in enumerate(end_nodes_closest_nodes):
+                    try:
+                        path_len, path = nx.single_source_dijkstra(vertex_graph,
+                                                                   source = en,
+                                                                   target=soma_border_closest_nodes[0],
+                                                                   cutoff=distance_to_ignore_end_nodes_close_to_soma_border
+                                                                  )
+                    except:
+                        node_idx_to_keep.append(en_idx)
+                    else: #a valid path was found
+                        node_idx_to_eliminate.append(en_idx)
+                        node_idx_to_eliminate_len.append(path_len)
+                        print(f"May Eliminate end_node {en_idx}: {end_nodes[en_idx]} because path_len to soma border was {path_len}")
+
+                if len(node_idx_to_eliminate_len) > 0:
+                    #see if there matches a node that we must keep
+                    
+                    
+                    single_node_idx_to_eliminate = node_idx_to_eliminate[np.argmin(node_idx_to_eliminate_len)]
+                    print(f"single_node_to_eliminate = {single_node_idx_to_eliminate}")
+                    all_single_nodes_to_eliminate.append(single_node_idx_to_eliminate)
+                else:
+                    print("No close endpoints to choose from for elimination")
+            
+            print(f"all_single_nodes_to_eliminate = {all_single_nodes_to_eliminate}")
+            new_end_nodes = np.array([k for i,k in enumerate(end_nodes) if i not in all_single_nodes_to_eliminate])
+
+            #doing the reassigning
+            end_nodes = new_end_nodes
+            
     #clean_time = time.time()
     paths_to_j = [end_node_path_to_junciton(G,n) for n in end_nodes]
     #print(f"Total time for node path to junction = {time.time() - clean_time}")
@@ -1533,6 +1724,10 @@ def clean_skeleton(G,
         #no end nodes so need to return 
         print("no small end nodes to get rid of so returning whole skeleton")
     else:
+        
+        
+        
+        
         current_end_node = end_nodes[np.argmin(end_nodes_dist_to_j)]
         #print(f"Ordering the nodes = {time.time() - clean_time}")
         clean_time = time.time()
@@ -1577,6 +1772,161 @@ def clean_skeleton(G,
         return convert_graph_to_skeleton(G)
     else:
         return G
+    
+import copy
+def combine_close_branch_points(skeleton,combine_threshold = 700,
+                               print_flag=False):
+    """
+    Purpose: To take a skeleton or graph and return a skelton/graph 
+    where close branch points are combined
+    
+    
+    Example Code of how could get the orders: 
+    # How could potentially get the edge order we wanted
+    endpoint_neighbors_to_order_map = dict()
+    for k in endpoint_neighbors:
+        total_orders = []
+        total_orders_neighbors = []
+        for j in p:
+            try:
+                total_orders.append(curr_sk_graph[j][k]["order"])
+                total_orders_neighbors.append(j)
+            except:
+                pass
+        order_index = np.argmin(total_orders)
+        endpoint_neighbors_to_order_map[(k,total_orders_neighbors[order_index])] = total_orders[order_index]
+    endpoint_neighbors_to_order_map
+    
+    
+    
+    Ex: 
+    sk = reload(sk)
+    import numpy_utils as nu
+    nu = reload(nu)
+    branch_skeleton_data_cleaned = []
+    for i,curr_sk in enumerate(branch_skeleton_data):
+        print(f"\n----- Working on skeleton {i} ---------")
+        new_sk = sk.combine_close_branch_points(curr_sk,print_flag=True)
+        print(f"Original Sk = {curr_sk.shape}, Cleaned Sk = {new_sk.shape}")
+        branch_skeleton_data_cleaned.append(new_sk)
+        
+        
+        
+    """
+    
+    convert_back_to_skeleton = False
+    #1) convert the skeleton to a graph
+    
+    if nu.is_array_like(skeleton):
+        curr_sk_graph = sk.convert_skeleton_to_graph(skeleton)
+        convert_back_to_skeleton=True
+    else:
+        curr_sk_graph = skeleton
+
+    #2) Get all of the high degree nodes
+    high_degree_nodes = np.array(xu.get_nodes_greater_or_equal_degree_k(curr_sk_graph,3))
+    
+    """
+    Checked that thes high degree nodes were correctly retrieved
+    high_degree_coordinates = xu.get_node_attributes(curr_sk_graph,node_list = high_degree_nodes)
+    sk.graph_skeleton_and_mesh(other_skeletons=[curr_sk],
+                              other_scatter=[high_degree_coordinates])
+
+    """
+    
+    #3) Get paths between all of them high degree nodes
+    valid_paths = []
+    valid_path_lengths = []
+    for s in high_degree_nodes:
+        degree_copy = high_degree_nodes[high_degree_nodes != s]
+
+        for t in degree_copy:
+            try:
+                path_len, path = nx.single_source_dijkstra(curr_sk_graph,source = s,target=t,cutoff=combine_threshold)
+            except:
+                continue
+            else: #a valid path was found
+                degree_no_endpoints = degree_copy[degree_copy != t]
+
+                if len(set(degree_no_endpoints).intersection(set(path))) > 0:
+                    continue
+                else:
+                    match_path=False
+                    for v_p in valid_paths:
+                        if set(v_p) == set(path):
+                            match_path = True
+                            break
+                    if not match_path:
+                        valid_paths.append(np.sort(path))
+                        valid_path_lengths.append(path_len)
+                        
+                    
+                    
+#                     sorted_path = np.sort(path)
+#                     try:
+                        
+                        
+#                         if len(nu.matching_rows(valid_paths,sorted_path)) > 0:
+#                             continue
+#                         else:
+#                             valid_paths.append(sorted_path)
+#                     except:
+#                         print(f"valid_paths = {valid_paths}")
+#                         print(f"sorted_path = {sorted_path}")
+#                         print(f"nu.matching_rows(valid_paths,sorted_path) = {nu.matching_rows(valid_paths,sorted_path)}")
+#                         raise Exception()
+
+    if print_flag:
+        print(f"Found {len(valid_paths)} valid paths to replace")
+        print(f"valid_paths = {(valid_paths)}")
+        print(f"valid_path_lengths = {valid_path_lengths}")
+                        
+    if len(valid_paths) == 0:
+        if print_flag:
+            print("No valid paths found so just returning the original")
+        return skeleton
+    
+    # Need to combine paths if there is any overlapping:
+    valid_paths
+
+    """
+    # --------------If there were valid paths found -------------
+    
+    5) For the paths that past the thresholding:
+    With a certain path
+    a. take the 2 end high degree nodes and get all of their neighbors
+    a2. get the coordinates of the endpoints and average them for new node
+    b. Create a new node with all the neighbors and averaged coordinate
+    c. replace all of the other paths computed (if they had the 2 end high degree nodes) replace with the new node ID
+    d. Delete the old high degree ends and all nodes on the path
+    Go to another path
+    """
+    curr_sk_graph_cp = copy.deepcopy(curr_sk_graph)
+    for p in valid_paths:
+        #a. take the 2 end high degree nodes and get all of their neighbors
+        endpoint_neighbors = np.unique(np.concatenate([xu.get_neighbors(curr_sk_graph_cp,k) for k in p]))
+        #a2. get the coordinates of the endpoints and average them for new node
+        endpoint_coordinates = np.vstack([xu.get_node_attributes(curr_sk_graph_cp,node_list=k) for k in p])
+        average_endpoints = np.mean(endpoint_coordinates,axis=0)
+        #b. Create a new node with all the neighbors and averaged coordinate
+        new_node_id = np.max(curr_sk_graph_cp.nodes()) + 1
+        curr_sk_graph_cp.add_node(new_node_id,coordinates=average_endpoints)
+        #c. replace all of the other paths computed (if they had the 2 end high degree nodes) replace with the new node ID
+        print(f"endpoint_neighbors = {endpoint_neighbors}")
+        curr_sk_graph_cp.add_weighted_edges_from([(new_node_id,k,
+                    np.linalg.norm(curr_sk_graph_cp.nodes[k]["coordinates"] - average_endpoints)) for k in endpoint_neighbors])
+    #d. Delete the old high degree ends and all nodes on the path
+    concat_valid_paths = np.unique(np.concatenate(valid_paths))
+    print(f"Concatenating all paths and deleting: {concat_valid_paths}")
+    
+    curr_sk_graph_cp.remove_nodes_from(concat_valid_paths)
+    
+    if convert_back_to_skeleton:
+        return sk.convert_graph_to_skeleton(curr_sk_graph_cp)
+    else:
+        return curr_sk_graph_cp
+
+    
     
     
 # ---------------------- Full Skeletonization Function --------------------- #
@@ -1648,13 +1998,17 @@ def skeletonize_connected_branch(current_mesh,
                         delete_temp_files=True,
                         name="None",
                         surface_reconstruction_size=50,
+                        surface_reconstruction_width = 250,
                         n_surface_downsampling = 1,
                         n_surface_samples=1000,
                         skeleton_print=False,
                         mesh_subtraction_distance_threshold=3000,
                         mesh_subtraction_buffer=50,
                         max_stitch_distance = 18000,
-                        current_min_edge = 200
+                        current_min_edge = 200,
+                        close_holes=True,
+                        limb_name=None,
+                                 
                         ):
     """
     Purpose: To take a mesh and construct a full skeleton of it
@@ -1706,8 +2060,19 @@ def skeletonize_connected_branch(current_mesh,
                                      faces=current_mesh.faces,
                                     mesh_filename=name + ".off",
                                      return_mesh=True,
-                                     delete_temp_files=False,
+                                     delete_temp_files=delete_temp_files,
                                     )
+        if close_holes: 
+            print("Using the close holes feature")
+            FillHoles_obj = meshlab.FillHoles(output_folder,overwrite=True)
+
+            new_mesh,output_subprocess_obj = FillHoles_obj(   
+                                                vertices=new_mesh.vertices,
+                                                 faces=new_mesh.faces,
+                                                 return_mesh=True,
+                                                 delete_temp_files=delete_temp_files,
+                                                )
+        
         print(f"-----Time for Screened Poisson= {time.time()-skeleton_start}")
             
         #2) Filter away for largest_poisson_piece:
@@ -1743,12 +2108,16 @@ def skeletonize_connected_branch(current_mesh,
             print("     Starting Calcification")
             for zz,piece in enumerate(mesh_pieces):
                 current_mesh_path = output_folder / f"{name}_{zz}"
-                
+                if skeleton_print:
+                    print(f"current_mesh_path = {current_mesh_path}")
                 written_path = write_neuron_off(piece,current_mesh_path)
                 
                 #print(f"Path sending to calcification = {written_path[:-4]}")
                 returned_value, sk_file_name = calcification(written_path,
                                                                min_edge_length = current_min_edge)
+                if skeleton_print:
+                    print(f"returned_value = {returned_value}")
+                    print(f"sk_file_name = {sk_file_name}")
                 #print(f"Time for skeletonizatin = {time.time() - skeleton_start}")
                 skeleton_files.append(sk_file_name)
                 
@@ -1774,12 +2143,50 @@ def skeletonize_connected_branch(current_mesh,
 
                 # *****adding another significance threshold*****
                 leftover_meshes_sig = [k for k in mesh_pieces_leftover if len(k.faces) > 50]
+                
+                
+                #want to filter these significant pieces for only those below a certain width
+                if not surface_reconstruction_width is None and len(leftover_meshes_sig) > 0:
+                    if skeleton_print:
+                        print("USING THE SDF WIDTHS TO FILTER SURFACE SKELETONS")
+                        print(f"leftover_meshes_sig before filtering = {len(leftover_meshes_sig)}")
+                    leftover_meshes_sig_new = []
+                    from trimesh.ray import ray_pyembree
+                    ray_inter = ray_pyembree.RayMeshIntersector(current_mesh)
+                    """
+                    Pseudocode:
+                    For each leftover significant mesh
+                    1) Map the leftover piece back to the original face
+                    2) Get the widths fo the piece
+                    3) get the median of the non-zero values
+                    4) if greater than the surface_reconstruction_width then add to list
+                    
+                    """
+                    for lm in leftover_meshes_sig:
+                        face_indices_leftover_0 = tu.original_mesh_faces_map(current_mesh,lm)
+                        curr_width_distances = tu.ray_trace_distance(mesh=current_mesh,
+                          face_inds=face_indices_leftover_0,
+                                                 ray_inter=ray_inter
+                        )
+                        filtered_widths = curr_width_distances[curr_width_distances>0]
+                        if len(filtered_widths) == 0:
+                            continue
+                        if np.mean(filtered_widths) < surface_reconstruction_width:
+                            leftover_meshes_sig_new.append(lm)
+                            
+                    leftover_meshes_sig = leftover_meshes_sig_new
+                    if skeleton_print:
+                        print(f"leftover_meshes_sig AFTER filtering = {len(leftover_meshes_sig)}")
+                    
                 leftover_meshes = combine_meshes(leftover_meshes_sig)
             else:
                 print("No recorded skeleton so skiipping"
                      " to surface skeletonization")
                 leftover_meshes_sig = [current_mesh]
-    
+            if skeleton_print:
+                print(f"len(leftover_meshes_sig) = {leftover_meshes_sig}")
+                for zz,curr_m in enumerate(leftover_meshes_sig):
+                    tu.write_neuron_off(curr_m,f"./leftover_test/limb_{limb_name}_{zz}.off")
             leftover_meshes_sig_surf_sk = []
             for m in tqdm(leftover_meshes_sig):
                 surf_sk = generate_surface_skeleton(m.vertices,
@@ -2470,6 +2877,8 @@ def decompose_skeleton_to_branches(current_skeleton,
             pass
         else:
             raise Exception("There was a cycle found in the branch subgraph")
+        
+    branch_skeletons = [b.reshape(-1,2,3) for b in branch_skeletons]
     
     if return_indices:
         return branch_skeletons,branch_skeleton_indices
@@ -3016,7 +3425,87 @@ def check_skeleton_one_component(curr_skeleton):
     if cleaned_branch_components > 1:
         raise Exception(f"Skeleton is not one component: n_components = {cleaned_branch_components}")
     
+
+# ---------------- 9/17: Will help with creating branch points extending towards soma if not already exist ---
+from pykdtree.kdtree import KDTree
+import networkx_utils as xu
+
+def create_soma_extending_branches(
+    current_skeleton, #current skeleton that was created
+    skeleton_mesh, #mesh that was skeletonized
+    soma_to_piece_touching_vertices,#dictionary mapping a soma it is touching to the border vertices,
+    return_endpoints_must_keep=True,
+                                    ):
+    endpoints_must_keep = dict()
+    for s_index,v in soma_to_piece_touching_vertices.items():
+
+        #0) Create a graph of the mesh from the vertices and edges and a KDTree
+        vertex_graph = tu.mesh_vertex_graph(skeleton_mesh)
+        mesh_KD = KDTree(skeleton_mesh.vertices)
+
+        #1)  Project all skeleton points and soma boundary vertices onto the mesh
+        all_skeleton_points = np.unique(current_skeleton.reshape(-1,3),axis=0)
+        sk_points_distances,sk_points_closest_nodes = mesh_KD.query(all_skeleton_points)
+
+        sbv = soma_to_piece_touching_vertices[s_index]
+        soma_border_distances,soma_border_closest_nodes = mesh_KD.query(sbv[0].reshape(-1,3))
+
+        #2) Find the closest skeleton point to the soma border (for that soma), find shortest path from many to many
+        path,closest_sk_point,closest_soma_border_point = xu.shortest_path_between_two_sets_of_nodes(vertex_graph,sk_points_closest_nodes,soma_border_closest_nodes)
+
+        #3) Find closest skeleton point
+        closest_sk_pt = np.where(sk_points_closest_nodes==closest_sk_point)[0][0]
+        closest_sk_pt_coord = all_skeleton_points[closest_sk_pt]
+        sk_graph = sk.convert_skeleton_to_graph(current_skeleton)
+        #find the node that has the desired vertices and its' degree
+        sk_node = xu.get_nodes_with_attributes_dict(sk_graph,dict(coordinates=closest_sk_pt_coord))[0]
+        sk_node_degree = sk_graph.degree()[sk_node]
+
+        if sk_node_degree == 0:
+            raise Exception("Found 0 degree node in skeleton")
+        elif sk_node_degree == 1: #3a) If it is a node of degree 1 --> do nothing
+            print(f"skipping soma {s_index} because closest skeleton node was already end node")
+            endpoints_must_keep[s_index]=closest_sk_pt_coord
+            continue
+        else:
+            #3b) If Not endpoint:
+            #Add an edge from the closest skeleton point coordinate to vertex average of all soma boundaries
+            print("Adding new branch to skeleton")
+            border_average_coordinate = np.mean(sbv,axis=0)
+            new_branch_sk = np.vstack([closest_sk_pt_coord,border_average_coordinate]).reshape(-1,2,3)
+            current_skeleton = sk.stack_skeletons([current_skeleton,new_branch_sk])
+            endpoints_must_keep[s_index] = border_average_coordinate
+        
+    if return_endpoints_must_keep:
+        return current_skeleton,endpoints_must_keep
+    else:
+        return current_skeleton
+
+import numpy_utils as nu
+def find_branch_skeleton_with_specific_coordinate(divded_skeleton,current_coordinate):
+    """
+    Purpose: From list of skeletons find the ones that have a certain coordinate
     
+    Example: 
+    curr_limb = current_neuron[0]
+    branch_names = curr_limb.get_branch_names(return_int=True)
+    curr_limb_divided_skeletons = [curr_limb[k].skeleton for k in branch_names]
+    ideal_starting_endpoint = curr_limb.current_starting_coordinate
+    
+    sk = reload(sk)
+    sk.find_branch_skeleton_with_specific_coordinate(curr_limb_divided_skeletons,ideal_starting_endpoint)
+
+    """
+    matching_branch = []
+    for b_idx,b_sk in enumerate(divded_skeleton):
+        match_result = nu.matching_rows(b_sk.reshape(-1,3),current_coordinate)
+        print(f"match_result = {match_result}")
+        if len(match_result)>0:
+            matching_branch.append(b_idx)
+    
+    return matching_branch
+
+
 
 ''' #Old way that does not account for there being branches with the same endpoints
 def branches_to_concept_graph(curr_branch_skeletons,

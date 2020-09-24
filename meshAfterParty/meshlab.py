@@ -568,3 +568,193 @@ class Poisson(Meshlab):
         if self.mls_script_obj.exists():
             self.mls_script_obj.unlink()
         
+        
+class FilterBase(Meshlab):
+    """
+    Base Class that can be extended to implement different 
+    meshlabserver filters
+
+
+    Use like so:
+        ```python
+        # Preprocessing
+        temp_folder = 'decimation_temp'
+        mls_func = Decimator(0.05, temp_folder, overwrite=True)
+        
+        # Processing
+        decimated_mesh = mls_func(mesh.vertices, mesh.faces, mesh.segment_id)        
+        
+        
+        #Alternative way where don't have to read in and out files
+        temp_folder = "poisson_temp"
+        my_Poisson = Poisson(temp_folder,overwrite=True)
+        #how to run an actual decimation
+        input_mesh_path = "./107738877133006848/107738877133006848_soma_3.off"
+        new_mesh_decimated = my_Poisson(input_mesh_path=input_mesh_path,
+                                       delete_temp_files=False,
+                                       return_mesh=True)
+        
+    """
+    
+    def __init__(self, temp_folder,script_filters, name="filter",overwrite=False, **kwargs):
+        self.filter_name=name
+        self.script_filters=script_filters
+        #makes the output folder if it doesn't already exist
+        mls_script_path, folder_obj = self.preprocessing(
+            temp_folder=temp_folder,
+            overwrite=overwrite,
+            **kwargs
+        )
+        self.temp_folder_obj = Path(temp_folder).absolute()
+        
+        
+        super().__init__(mls_script_path) #sets the path of the mls script
+    
+    # @staticmethod
+    # def initialize_script_filters():
+    #     default_filters = {
+    #         'Close Holes': {
+    #             'MaxHoleSize': dict(type='RichInt', value='1000'),
+    #             'Selected': dict(type='RichBool', value='false'),
+    #             'NewFaceSelected': dict(type='RichBool', value='false'),
+    #             'SelfIntersection': dict(type='RichBool', value='true'),
+    #         },
+
+    #     }
+    #     return default_filters
+    
+    #@classmethod
+    def create_filter_script(self,folder_path,output_path=None, overwrite=False, **custom_filters):
+        """
+        Actually writes the decimation script to file
+        """
+        if output_path is None:
+            output_path_folder = Path(folder_path)
+            if not output_path_folder.exists():
+                output_path_folder.mkdir()
+            output_path = output_path_folder / f'{self.filter_name}_{random.randint(0,999999)}.mls'
+        
+         #sending the filters to the Scripter
+        poisson_mls = Scripter(self.script_filters)
+        
+        #added extra custom filters
+        if len(custom_filters) > 0:
+            poisson_mls.add_filters(custom_filters) 
+
+        poisson_mls.to_file(output_path, overwrite=overwrite)
+        
+        return output_path
+    
+    #@classmethod
+    def preprocessing(self, temp_folder='.', **kwargs):
+        folder_obj = Path(temp_folder)
+        
+        #makes the folder if doesn't already exist
+        if not folder_obj.exists():
+            folder_obj.mkdir()
+
+        #creates the decimation script
+        mls_script_path = self.create_filter_script(str(folder_obj.absolute()),**kwargs)
+
+        return mls_script_path, folder_obj
+    
+    def __call__(self, vertices=[], faces=[], segment_id=None,
+                 return_mesh= True,
+                 input_mesh_path="",
+                 mesh_filename="",
+                 printout=True, delete_temp_files=True,**kwargs):
+        
+        if len(input_mesh_path) <= 0:
+            if len(mesh_filename)<=0:
+                mesh_filename = 'neuron_{}.off'.format(segment_id)
+            input_mesh_path = self.mesh_to_off(vertices, faces, output_path=(self.temp_folder_obj / mesh_filename))
+        
+        input_obj = Path(input_mesh_path).absolute()
+        if not input_obj.exists():
+            raise FileNotFoundError('input file for poission not found') 
+        
+        try_counter = 10
+        for i in range(try_counter):
+            print('IN INPUT FILE VALIDATION LOOP')
+            try:
+                input_mesh = self.fetch_mesh_from_off(input_mesh_path)
+                print('LEAVING LOOP, MESH VALIDATED')
+                break
+            except Exception as e:
+                print('VALIDATION ERROR (sleepin): ' + str(e))
+                time.sleep(2)
+            
+            if (i + 1) >= try_counter:
+                raise ValueError('MESH VALIDATION TRIES EXCEEDED')
+        
+        output_obj = self.temp_folder_obj / '{}_{}{}'.format(input_obj.stem, self.filter_name,input_obj.suffix)
+        
+        subprocess_result = super().__call__(
+            input_mesh_path=input_obj,
+            output_mesh_path=output_obj,
+            printout=printout,**kwargs
+        )
+        
+        if subprocess_result.returncode != 0:
+            raise Exception('neuron {} did not finish filter{}:{} '.format(segment_id,self.filter_name,subprocess_result.stdout.decode())) 
+#         if str(subprocess_result)[-13:] != "returncode=0)":
+#             raise Exception('neuron {} did not fix the manifold edges (meshlab script failed)'.format(segment_id))
+        if return_mesh:
+            current_mesh = self.fetch_mesh_from_off(str(output_obj))
+        
+        if delete_temp_files:
+            if input_obj.is_file():
+                os.remove(input_obj)
+                print('removed temporary input file: {}'.format(input_obj))
+            if output_obj.is_file():
+                os.remove(output_obj)
+                print('removed temporary output file: {}'.format(output_obj))
+        
+        if return_mesh:
+            return current_mesh,output_obj
+        else:
+            return output_obj
+    def __enter__(self): 
+        return self
+  
+    def __exit__(self,exception_type, exception_value, traceback): 
+        #delete the Poisson file
+        print(f"{str(self.mls_script_obj)} is being deleted....")
+        if self.mls_script_obj.exists():
+            self.mls_script_obj.unlink()
+
+
+
+class FillHoles(FilterBase):
+    """
+    Class that will apply hole filling filters to meshes
+    """
+    
+    def initialize_script_filters(self,
+                                  max_hole_size = 2000,
+                                  self_itersect_faces=True):
+        default_filters = {
+            'Remove Duplicate Vertices': {},
+            'Remove Faces from Non Manifold Edges':{},
+            'Close Holes': {
+                'MaxHoleSize': dict(type='RichInt', value=str(max_hole_size)),
+                'Selected': dict(type='RichBool', value='false'),
+                'NewFaceSelected': dict(type='RichBool', value='false'),
+                'SelfIntersection': dict(type='RichBool', value=str(self_itersect_faces).lower()),
+            },
+
+        }
+        return default_filters
+
+    def __init__(self,temp_folder="./temp",
+                 max_hole_size=2000,
+                 self_itersect_faces=True,
+                 overwrite=False, **kwargs):
+        print(f"self_itersect_faces = {self_itersect_faces}")
+        #calling the super script:
+        current_script_filters = self.initialize_script_filters(max_hole_size,self_itersect_faces)
+        print(f"current_script = {current_script_filters}")
+        super().__init__(temp_folder=temp_folder,
+            script_filters=current_script_filters, 
+            name="fill_holes",overwrite=overwrite, **kwargs)
+

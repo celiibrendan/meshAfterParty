@@ -281,6 +281,13 @@ class Limb:
     c. Put the branches as "data" in the network
     d. Get all of the starting coordinates and starting edges and put as member attributes in the limb
     """
+    def get_branch_names(self,ordered=True,return_int=True):
+        node_names = np.sort(self.concept_network.nodes())
+        if return_int:
+            return node_names.astype("int")
+        else:
+            return node_names
+    
     def get_skeleton(self,check_connected_component=True):
         """
         Purpose: Will return the entire skeleton of all the branches
@@ -299,6 +306,16 @@ class Limb:
         """
         return nru.convert_limb_concept_network_to_neuron_skeleton(self.concept_network,
                              check_connected_component=check_connected_component)
+    
+    def get_concept_network_data_by_soma(self,soma_idx=None):
+        #compile a dictionary of all of the starting material
+        return_dict = dict()
+        for curr_data in self.all_concept_network_data:
+            return_dict[curr_data["starting_soma"]] = dict([(k,v) for k,v in curr_data.items() if k != "starting_soma"])
+        if not soma_idx is None:
+            return return_dict[soma_idx]
+        else:
+            return return_dict
     
     @property
     def concept_network_data_by_soma(self):
@@ -336,6 +353,9 @@ class Limb:
         Purpose: from the all
         
         """
+        if type(soma) == str:
+            soma = int(soma[1:])
+        
         #limb_starting_coordinate = self.get_soma_starting_coordinate(soma)
         limb_starting_coordinate = self.concept_network_data_by_soma[soma]["starting_coordinate"]
 
@@ -348,6 +368,17 @@ class Limb:
         if len(sk_starting_node) != 1:
             raise Exception(f"Not exactly one skeleton starting node: sk_starting_node = {sk_starting_node}")
         return sk_starting_node[0]
+    
+    def get_starting_branch_by_soma(self,soma,print_flag=False):
+        """
+        Purpose: from the all
+        
+        """
+        if type(soma) == str:
+            soma = int(soma[1:])
+        
+        return self.concept_network_data_by_soma[soma]["starting_node"]
+    
     
     def find_branch_by_skeleton_coordinate(self,target_coordinate):
     
@@ -498,6 +529,8 @@ class Limb:
         uncompressed_neuron_revised.concept_network.nodes["L1"]["data"].set_concept_network_directional(starting_soma=0,width_source="width",print_flag=True)
         
         """
+        debug = False
+        
         matching_concept_network_data = [k for k in self.all_concept_network_data if ((k["starting_soma"] == starting_soma) or (nru.soma_label(k["starting_soma"]) == starting_soma))]
 
         if len(matching_concept_network_data) != 1:
@@ -520,28 +553,40 @@ class Limb:
             
         for prev_st_node in previous_starting_node:
             del self.concept_network.nodes[prev_st_node]["starting_coordinate"]
+            del self.concept_network.nodes[prev_st_node]["touching_soma_vertices"]
         
         
 
         matching_concept_network_dict = matching_concept_network_data[0]
         curr_starting_node = matching_concept_network_dict["starting_node"]
         curr_starting_coordinate= matching_concept_network_dict["starting_coordinate"]
+        curr_touching_soma_vertices = matching_concept_network_dict["touching_soma_vertices"]
+        
+        if debug:
+            print("Applying the set_directional change!!!!")
+            print(f"curr_touching_soma_vertices = {curr_touching_soma_vertices}")
 
         #set the starting coordinate in the concept network
-        attrs = {curr_starting_node:{"starting_coordinate":curr_starting_coordinate}}
+        attrs = {curr_starting_node:{"starting_coordinate":curr_starting_coordinate,
+                                    "touching_soma_vertices":curr_touching_soma_vertices}}
         if print_flag:
             print(f"attrs = {attrs}")
         xu.set_node_attributes_dict(self.concept_network,attrs)
+        
+        if debug:
+            print(f'self.concept_network.nodes[curr_starting_node] = {self.concept_network.nodes[curr_starting_node] }')
 
         #make sure only one starting coordinate
         new_starting_coordinate = xu.get_starting_node(self.concept_network)
         if print_flag:
             print(f"New starting coordinate at node {new_starting_coordinate}")
+            
         
         self.current_starting_coordinate = matching_concept_network_dict["starting_coordinate"]
         self.current_starting_node = matching_concept_network_dict["starting_node"]
         self.current_starting_endpoints = matching_concept_network_dict["starting_endpoints"]
         self.current_starting_soma = matching_concept_network_dict["starting_soma"]
+        self.current_touching_soma_vertices = matching_concept_network_dict["touching_soma_vertices"]
         
         if print_flag:
             self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True,print_flag=print_flag,**kwargs)
@@ -593,6 +638,11 @@ class Limb:
             self.current_starting_endpoints = dc(mesh.current_starting_endpoints)
             self.current_starting_node = dc(mesh.current_starting_node)
             
+            if hasattr(mesh,"current_touching_soma_vertices"):
+                self.current_touching_soma_vertices = dc(mesh.current_touching_soma_vertices)
+            else:
+                self.current_touching_soma_vertices = None
+            
             self.current_starting_soma = dc(mesh.current_starting_soma)
             self.labels = dc(mesh.labels)
             if not nu.is_array_like(self.labels):
@@ -600,10 +650,13 @@ class Limb:
             self.mesh = dc(mesh.mesh)
             self.mesh_center = dc(mesh.mesh_center)
             self.mesh_face_idx = dc(mesh.mesh_face_idx)
+            self._index = -1
+            
+            
             return 
         
         
-        
+        self._index = -1
         self.mesh=mesh
         
         #checking that some of arguments aren't None
@@ -622,16 +675,22 @@ class Limb:
         self.current_starting_coordinate=None
         self.concept_network = None
         self.all_concept_network_data = None
+        
+        #print(f"Inside the Limb constructor and concept_network_dict = {concept_network_dict}")
+        
+        print(f"concept_network_dict = {concept_network_dict}")
         if len(concept_network_dict) > 0:
             concept_network_data = nru.get_starting_info_from_concept_network(concept_network_dict)
-            
+            #print(f"concept_network_data = {concept_network_data}")
             current_concept_network = concept_network_data[0]
             
             self.current_starting_coordinate = current_concept_network["starting_coordinate"]
             self.current_starting_node = current_concept_network["starting_node"]
             self.current_starting_endpoints = current_concept_network["starting_endpoints"]
             self.current_starting_soma = current_concept_network["starting_soma"]
+            self.current_touching_soma_vertices = current_concept_network["touching_soma_vertices"]
             self.concept_network = concept_network_dict[self.current_starting_soma]
+            
             self.all_concept_network_data = concept_network_data
         
         #get all of the starting coordinates an
@@ -675,7 +734,54 @@ class Limb:
                             )
             
         self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True)
+        
+        
+        
+    # ----------------- 9/2 To help with compression ------------------------- #
+    def get_attribute_dict(self,attribute_name):
+        attribute_dict = dict()
+        for branch_idx,curr_branch in enumerate(self):
+            if attribute_name == "spines":
+                if not curr_branch.spines is None:
+                    attribute_dict[branch_idx] = [tu.original_mesh_faces_map(curr_branch.mesh,k) for k in curr_branch.spines]
+                else:
+                    attribute_dict[branch_idx] = None
+            else:
+                attribute_dict[branch_idx] = getattr(curr_branch,attribute_name)
+            
+        return attribute_dict
     
+    def set_attribute_dict(self,attribute_name,attribute_dict):
+        for branch_idx,curr_branch in enumerate(self):
+            
+            if attribute_name == "spines":
+                print(f"     Branch {branch_idx}")
+                if not attribute_dict[branch_idx] is None:
+                    print(f"curr_branch.mesh = {curr_branch.mesh}")
+                    curr_branch.spines = [curr_branch.mesh.submesh([k],append=True,repair=False) for k in attribute_dict[branch_idx]]
+                else:
+                    curr_branch.spines = None
+            else:
+                setattr(curr_branch,attribute_name,attribute_dict[branch_idx])
+        
+    # Defining some useful built in functions
+    def __getitem__(self,key):
+        return self.concept_network.nodes[key]["data"]
+    def __setitem__(self,key,newvalue):
+        self.concept_network.nodes[key]["data"] = newvalue
+    def __len__(self):
+        return len(list(self.concept_network.nodes()))
+    #for the iterable
+    def __iter__(self):
+        return self
+    def __next__(self):
+        self._index += 1
+        #print(f"Limb self._index = {self._index}")
+        if self._index >= len(self):
+            self._index = -1
+            raise StopIteration
+        else:
+            return self[self._index]
     
     def __eq__(self,other):
         """
@@ -998,23 +1104,9 @@ class Soma:
         #print(f"self.__eq__(other) = {self.__eq__(other)}")
         return not self.__eq__(other)
     
-                               
-                               
-# def preprocess_neuron(current_neuron,segment_id=None,
-#                      description=None):
-#     if segment_id is None:
-#         #pick a random segment id
-#         segment_id = np.random.randint(100000000)
-#         print(f"picking a random 7 digit segment id: {segment_id}")
-#     if description is None:
-#         description = "no_description"
-    
-#     raise Exception("prprocessing pipeline not finished yet")
-    
 
-    
 
-from neuron_utils import preprocess_neuron
+import preprocess_neuron as pn
 
 class Neuron:
     """
@@ -1052,6 +1144,91 @@ class Neuron:
     c. Put the branches as "data" in the network
     d. Get all of the starting coordinates and starting edges and put as member attributes in the limb
 
+    Example 1:
+    How you could generate completely from mesh to help with debugging:
+    
+    # import trimesh_utils as tu
+    # mesh_file_path = Path("/notebooks/test_neurons/multi_soma_example.off")
+    # mesh_file_path.exists()
+    # current_neuron_mesh = tu.load_mesh_no_processing(str(mesh_file_path.absolute()))
+
+    # # picking a random segment id
+    # segment_id = 12345
+    # description = "double_soma_meshafterparty"
+
+    # # --------------------- Processing the Neuron ----------------- #
+    # import soma_extraction_utils as sm
+
+    # somas = sm.extract_soma_center(segment_id,
+    #                              current_neuron_mesh.vertices,
+    #                              current_neuron_mesh.faces)
+
+    # import time
+    # meshparty_time = time.time()
+    # import compartment_utils as cu
+    # cu = reload(cu)
+
+    # import meshparty_skeletonize as m_sk
+    # import preprocess_neuron as pn
+    # pn = reload(pn)
+    # m_sk = reload(m_sk)
+
+    # somas = somas
+
+    # nru = reload(nru)
+    # neuron = reload(neuron)
+    # current_neuron = neuron.Neuron(
+    #     mesh=current_neuron_mesh,
+    #     segment_id=segment_id,
+    #     description=description,
+    #     decomposition_type="meshafterparty",
+    #     somas = somas,
+    #     #branch_skeleton_data=branch_skeleton_data,
+    #     suppress_preprocessing_print=False,
+    # )
+    # print(f"Total time for processing: {time.time() - meshparty_time}")
+
+
+    # # ----------------- Calculating the Spines and Width ----------- #
+    # current_neuron.calculate_spines(print_flag=True)
+    # #nviz.plot_spines(current_neuron)
+
+    # current_neuron.calculate_new_width(no_spines=False,
+    #                                        distance_by_mesh_center=True)
+
+    # current_neuron.calculate_new_width(no_spines=False,
+    #                                        distance_by_mesh_center=True,
+    #                                        summary_measure="median")
+
+    # current_neuron.calculate_new_width(no_spines=True,
+    #                                        distance_by_mesh_center=True,
+    #                                        summary_measure="mean")
+
+    # current_neuron.calculate_new_width(no_spines=True,
+    #                                        distance_by_mesh_center=True,
+    #                                        summary_measure="median")
+
+    # # ------------------ Saving off the Neuron --------------- #
+    # current_neuron.save_compressed_neuron(output_folder=Path("/notebooks/test_neurons/meshafterparty_processed/"),
+    #                                      export_mesh=True)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     """
     def get_total_n_branches(self):
@@ -1061,18 +1238,155 @@ class Neuron:
         return nru.get_whole_neuron_skeleton(self,
                                  check_connected_component=check_connected_component)
     
+    def get_attribute_dict(self,attribute_name):
+        attribute_dict = dict()
+        for limb_idx,curr_limb in enumerate(self):
+            attribute_dict[limb_idx] = curr_limb.get_attribute_dict(attribute_name)
+            
+        return attribute_dict
+    
+    def set_attribute_dict(self,attribute_name,attribute_dict):
+        for limb_idx,curr_limb in enumerate(self):
+            print(f"Working on Limb {limb_idx}:")
+            curr_limb.set_attribute_dict(attribute_name,attribute_dict[limb_idx])
+            
+    def set_computed_attribute_data(self,computed_attribute_data,print_flag=False):
+        start_time = time.time()
+        
+        if computed_attribute_data is None:
+            return
+        
+        for k,v in computed_attribute_data.items():
+            self.set_attribute_dict(k,v)
+
+        """  
+        # Old way 1 of Setting 
+        width_array_lookup = dict()
+        width_new_lookup = dict()
+        spines_lookup = dict()
+        
+        for limb_idx,ex_limb in self:
+            width_array_lookup = 
+
+        sorted_limb_labels = np.sort(self.get_limb_node_names())
+        for limb_idx in sorted_limb_labels:
+            ex_limb = self.concept_network.nodes[limb_idx]["data"]
+
+            sorted_branch_labels = np.sort(ex_limb.concept_network.nodes())
+            for branch_idx in sorted_branch_labels:
+                if print_flag:
+                    print(f"---- Working on limb {limb_idx} branch {branch_idx} ------")
+                ex_branch = ex_limb.concept_network.nodes[branch_idx]["data"]
+
+                ex_branch.width_array = width_array_lookup[limb_idx][branch_idx] 
+                
+                if not spines_lookup[limb_idx][branch_idx] is None:
+                    ex_branch.spines = [ex_branch.submesh([k],append=True,repair=False) for k in spines_lookup[limb_idx][branch_idx]]
+                else:
+                    ex_branch.spines = None
+                
+                ex_branch.width_new = width_new_lookup[limb_idx][branch_idx]
+        
+        
+        # Old Way 2: 
+                
+        width_array_lookup = spine_width_data["width_array_lookup"]
+        width_new_lookup = spine_width_data["width_new_lookup"]
+        spines_lookup = spine_width_data["spines_lookup"]
+        
+        set_attribute_dict("width_array",width_array_lookup)
+        set_attribute_dict("width_new",width_new_lookup)
+        set_attribute_dict("spines",spines_lookup)
+        
+        """
+        
+        if print_flag:
+            print(f"Total time for spine/width compression = {time.time() - start_time}")
+    
+    def get_computed_attribute_data(self,
+                                    attributes = ["width_array","width_new","spines","labels"],
+                                    one_dict=True,
+                                    print_flag=False):
+        start_time = time.time()
+        
+        lookup_values = []
+        lookup_dict = dict()
+        for a in attributes: 
+            current_lookup_value = self.get_attribute_dict(a)
+            lookup_values.append(current_lookup_value)
+            if one_dict:
+                lookup_dict[a] = current_lookup_value
+
+        if print_flag:
+            print(f"Total time for spine/width compression = {time.time() - start_time}")
+        
+        """  
+        # OLD WAY 1: OF DOING THIS WITHOUT ITERABLE
+        width_array_lookup = dict()
+        width_new_lookup = dict()
+        spines_lookup = dict()
+
+        sorted_limb_labels = np.sort(self.get_limb_node_names())
+        for limb_idx in sorted_limb_labels:
+            ex_limb = self.concept_network.nodes[limb_idx]["data"]
+
+            spines_lookup[limb_idx] = dict()
+            width_array_lookup[limb_idx] = dict()
+            width_new_lookup[limb_idx] = dict()
+
+            sorted_branch_labels = np.sort(ex_limb.concept_network.nodes())
+            for branch_idx in sorted_branch_labels:
+                if print_flag:
+                    print(f"---- Working on limb {limb_idx} branch {branch_idx} ------")
+                ex_branch = ex_limb.concept_network.nodes[branch_idx]["data"]
+
+                width_array_lookup[limb_idx][branch_idx] = ex_branch.width_array
+                if not ex_branch.spines is None:
+                    spines_lookup[limb_idx][branch_idx] = [tu.original_mesh_faces_map(ex_branch.mesh,k) for k in ex_branch.spines]
+                else:
+                    spines_lookup[limb_idx][branch_idx] = None
+                width_new_lookup[limb_idx][branch_idx] = ex_branch.width_new
+                
+        # Old Way #2: where not generic
+        width_array_lookup = self.get_attribute_dict("width_array")
+        width_new_lookup = self.get_attribute_dict("width_new")
+        spines_lookup = self.get_attribute_dict("spines")
+        
+        spine_width_data = dict(
+                width_array_lookup = width_array_lookup,
+                width_new_lookup = width_new_lookup,
+                spines_lookup = spines_lookup
+               )
+        """
+
+        if one_dict:
+            return lookup_dict
+        else:
+            return lookup_values
+    
     @property
     def skeleton(self,check_connected_component=False):
         return nru.get_whole_neuron_skeleton(self,
                                  check_connected_component=check_connected_component)
     
+
+    
     def __init__(self,mesh,
                  segment_id=None,
                  description=None,
                  preprocessed_data=None,
-                 preprocessing_decomposition_type="meshafterparty",
+                 decomposition_type="meshafterparty",
+                 mesh_correspondence="meshparty", #meshafterparty_adaptive
+                 distance_by_mesh_center=True, #how the distance is calculated for mesh correspondence
+                 meshparty_segment_size = 0,
+                 meshparty_n_surface_downsampling = 0,
+                 meshparty_adaptive_correspondence_after_creation=False,
                 suppress_preprocessing_print=True,
+                 computed_attribute_dict=None,
                  somas = None,
+                 branch_skeleton_data=None,
+                 combine_close_skeleton_nodes = True,
+                combine_close_skeleton_nodes_threshold=700,
                 ignore_warnings=True,
                 minimal_output=False):
 #                  concept_network=None,
@@ -1101,6 +1415,7 @@ class Neuron:
                 print("Recieved another instance of Neuron class in init -- so just copying data")
                 self.segment_id=dc(mesh.segment_id)
                 self.description = dc(mesh.description)
+                
                 self.preprocessed_data = dc(mesh.preprocessed_data)
                 self.mesh = dc(mesh.mesh)
                 self.concept_network = copy_concept_network(mesh.concept_network)
@@ -1110,12 +1425,23 @@ class Neuron:
                 self.insignificant_limbs = dc(mesh.insignificant_limbs)
                 self.non_soma_touching_meshes = dc(mesh.non_soma_touching_meshes)
                 
+                if hasattr(mesh,"decomposition_type"):
+                    self.decomposition_type = dc(mesh.decomposition_type)
+                else:
+                    self.decomposition_type = None
+                    
+                #in order to become an iterable
+                self._index = -1
+                
                 return 
                 
                 
-
+        
             if ignore_warnings: 
                 su.ignore_warnings()
+                
+            #in order to become an iterable
+            self._index = -1
 
             self.mesh = mesh
 
@@ -1131,6 +1457,7 @@ class Neuron:
 
             self.segment_id = segment_id
             self.description = description
+            self.decomposition_type = decomposition_type
 
 
             neuron_start_time =time.time()
@@ -1138,18 +1465,32 @@ class Neuron:
                 print("--- 0) Having to preprocess the Neuron becuase no preprocessed data\nPlease wait this could take a while.....")
                 if suppress_preprocessing_print:
                     with su.suppress_stdout_stderr():
-                        preprocessed_data = nru.preprocess_neuron(mesh,
+                        preprocessed_data = pn.preprocess_neuron(mesh,
                                          segment_id=segment_id,
                                          description=description,
-                                          decomposition_type=preprocessing_decomposition_type,
-                                          somas=somas)
+                                          decomposition_type=decomposition_type,
+                                            mesh_correspondence=mesh_correspondence,
+                                            distance_by_mesh_center=distance_by_mesh_center,
+                                            meshparty_segment_size =meshparty_segment_size,
+                                             meshparty_n_surface_downsampling = meshparty_n_surface_downsampling,
+                                          somas=somas,
+                                                                branch_skeleton_data=branch_skeleton_data,
+                                                                combine_close_skeleton_nodes = combine_close_skeleton_nodes,
+                                                                combine_close_skeleton_nodes_threshold=combine_close_skeleton_nodes_threshold)
                         print(f"preprocessed_data inside with = {preprocessed_data}")
                 else:
-                    preprocessed_data = nru.preprocess_neuron(mesh,
+                    preprocessed_data = pn.preprocess_neuron(mesh,
                                          segment_id=segment_id,
                                          description=description,
-                                        decomposition_type=preprocessing_decomposition_type,
-                                         somas=somas)
+                                        decomposition_type=decomposition_type,
+                                        mesh_correspondence=mesh_correspondence,
+                                            distance_by_mesh_center=distance_by_mesh_center,
+                                            meshparty_segment_size =meshparty_segment_size,
+                                             meshparty_n_surface_downsampling = meshparty_n_surface_downsampling,
+                                         somas=somas,
+                                                            branch_skeleton_data=branch_skeleton_data,
+                                                            combine_close_skeleton_nodes = combine_close_skeleton_nodes,
+                                                            combine_close_skeleton_nodes_threshold=combine_close_skeleton_nodes_threshold)
 
                 print(f"--- 0) Total time for preprocessing: {time.time() - neuron_start_time}\n\n\n\n")
                 neuron_start_time = time.time()
@@ -1258,7 +1599,7 @@ class Neuron:
 
 
 
-
+                print(f"curr_limb_concept_networks= {curr_limb_concept_networks}")
                 Limb_obj = Limb(
                                  mesh=curr_limb_mesh,
                                  curr_limb_correspondence=curr_limb_correspondence,
@@ -1278,11 +1619,48 @@ class Neuron:
                 xu.set_node_data(self.concept_network,node_name=soma_name,curr_data=Soma_obj,curr_data_label="data")
 
             print(f"--- 4) Finshed generating Limb objects and adding them to concept graph: {time.time() - neuron_start_time}")
-            neuron_start_time =time.time()
+            
 
+            if decomposition_type == "meshparty" and meshparty_adaptive_correspondence_after_creation:
+                neuron_start_time =time.time()
+                print(f"--- 5) Doing the adaptive mesh correspondence on the meshparty preprocessing ---")
+                nru.apply_adaptive_mesh_correspondence_to_neuron(self)
+                print(f"--- 5) Finished Doing the adaptive mesh correspondence on the meshparty preprocessing: {time.time() - neuron_start_time}")
+            else:
+                print(f"--- 5) SKIPPING Doing the adaptive mesh correspondence on the meshparty preprocessing ---")
+            
+            if not computed_attribute_dict is None:
+                neuron_start_time =time.time()
+                print(f"--- 6) Using the computed_attribute_dict to populate neuron attributes ---")
+                self.set_computed_attribute_data(computed_attribute_dict)
+                print(f"--- 6) FINISHED Using the computed_attribute_dict to populate neuron attributes: {time.time() - neuron_start_time}")
+            else:
+                print(f"--- 6) SKIPPING Using the computed_attribute_dict to populate neuron attributes ---")
+                
+            
+            
         print(f"Total time for neuron instance creation = {time.time() - neuron_creation_time}")
+
+    #------------------ some useful built in functions ------------------ 
+    def __getitem__(self,key):
+        if type(key) == int:
+            key = f"L{key}"
+        return self.concept_network.nodes[key]["data"]
+    def __setitem__(self,key,newvalue):
+        self.concept_network.nodes[key]["data"] = newvalue
+    def __len__(self):
+        return len(list(self.get_limb_node_names()))
+    def __iter__(self):
+        return self
+    def __next__(self):
+        self._index += 1
+        #print(f"Neuron self._index = {self._index}")
+        if self._index >= len(self):
+            self._index = -1
+            raise StopIteration
+        else:
+            return self[self._index]
         
-    
     
     #Overloading the Comparison 
     def __eq__(self,other):
@@ -1437,14 +1815,85 @@ class Neuron:
     Want to give back the colors with the names of the things if did random
 
     """
-    def get_limb_node_names(self):
-        return [k for k in self.concept_network.nodes() if "L" in k]
+    def get_somas(self):
+        """
+        Gives the same output that running the soma identifier would
+        
+        Retunrs: a list containing the following elements
+        1) list of soma meshes (N)
+        2) scalar value of time it took to process (dummy 0)
+        3) list of soma sdf values (N)
+        
+        """
+        soma_meshes = [self.concept_network.nodes[k]["data"].mesh for k in sorted(self.get_soma_node_names())]
+        somas_sdfs = [self.concept_network.nodes[k]["data"].sdf for k in sorted(self.get_soma_node_names())]
+        somas =[soma_meshes,0,somas_sdfs]
+        return somas
+    
+    
+    def get_limb_node_names(self,return_int=False):
+        with_l_names = [k for k in self.concept_network.nodes() if "L" in k]
+        if return_int:
+            sorted_numbers = np.sort([int(k[1:]) for k in with_l_names])
+            return [int(k) for k in sorted_numbers]
+        else:
+            return with_l_names
+        
     def get_branch_node_names(self,limb_idx):
         limb_idx = nru.limb_label(limb_idx)
         curr_limb_obj = self.concept_network.nodes[limb_idx]["data"]
         return list(curr_limb_obj.concept_network.nodes())
-    def get_soma_node_names(self):
-        return [k for k in self.concept_network.nodes() if "S" in k]
+    def get_soma_node_names(self,int_label=False):
+        soma_names = [k for k in self.concept_network.nodes() if "S" in k]
+        if int_label:
+            return [int(k[1:]) for k in soma_names]
+        else:
+            return soma_names
+    
+    def get_limbs_touching_soma(self,soma_idx):
+        """
+        Purpose: To get all of the limb names contacting a certain soma
+        
+        Example:
+        current_neuron.get_limbs_touching_soma(0)
+        
+        """
+        return xu.get_neighbors(self.concept_network,nru.soma_label(soma_idx),int_label=False)
+    
+    def get_somas_touching_limbs(self,limb_idx,return_int=True):
+        """
+        Purpose: To get all of the limb names contacting a certain soma
+        
+        Example:
+        current_neuron.get_limbs_touching_soma(0)
+        
+        """
+        soma_neighbors = xu.get_neighbors(self.concept_network,nru.limb_label(limb_idx),int_label=False)
+        if return_int:
+            return [int(k[1:]) for k in soma_neighbors]
+        else:
+            return soma_neighbors
+    
+    # --------------------- For saving the neuron -------------------- #
+    def save_compressed_neuron(self,output_folder,file_name="",return_file_path=False,export_mesh=False):
+        """
+        Will save the neuron in a compressed format:
+        
+        
+        Ex: How to save compressed neuron
+        double_neuron_preprocessed.save_compressed_neuron("/notebooks/test_neurons/preprocessed_neurons/meshafterparty/",export_mesh=True,
+                                         file_name=f"{double_neuron_preprocessed.segment_id}_{double_neuron_preprocessed.description}_meshAfterParty",
+                                         return_file_path=True)
+        
+        Ex: How to reload compressed neuron
+        nru.decompress_neuron(filepath="/notebooks/test_neurons/preprocessed_neurons/meshafterparty/12345_double_soma_meshAfterParty",
+                     original_mesh='/notebooks/test_neurons/preprocessed_neurons/meshafterparty/12345_double_soma_meshAfterParty')
+        """
+        nru.save_compressed_neuron(self,
+                                   output_folder=output_folder,
+                                   file_name=file_name,
+                                   return_file_path=return_file_path,
+                                   export_mesh=export_mesh)
     
     #how to save neuron object
     def save_neuron_object(self,
@@ -1456,6 +1905,80 @@ class Neuron:
         print(f"Saving Object at: {file.absolute()}")
         
         su.save_object(self,file)
+    
+    def calculate_new_width(self,
+                          skeleton_segment_size = 1000,
+                           width_segment_size=None,
+                          width_name = "mean",
+                            distance_by_mesh_center=True,
+                           no_spines=True,
+                            summary_measure="mean",
+                            
+                          **kwargs):
+        """
+        Purpose: To calculate new width definitions based on if
+        1) Want to use skeleton center or mesh center
+        2) Want to include spines or not
+        
+        Examples:
+        current_neuron.calculate_new_width(no_spines=False,
+                                               distance_by_mesh_center=True)
+                                               
+        current_neuron.calculate_new_width(no_spines=False,
+                                       distance_by_mesh_center=True,
+                                       summary_measure="median")
+                                       
+        current_neuron.calculate_new_width(no_spines=True,
+                                       distance_by_mesh_center=True,
+                                       summary_measure="mean")
+        
+        current_neuron.calculate_new_width(no_spines=True,
+                                       distance_by_mesh_center=True,
+                                       summary_measure="median")
+        
+        """
+
+        if summary_measure != "mean":
+            width_name = width_name.replace("mean",summary_measure)
+            if summary_measure not in width_name:
+                width_name = f"{width_name}_{summary_measure}"
+        if ("no_spine" not in width_name) and (no_spines):
+            width_name = f"no_spine_{width_name}"
+        if ("mesh_center" not in width_name) and (distance_by_mesh_center):
+            width_name = f"{width_name}_mesh_center"
+        
+        
+        for limb_idx in self.get_limb_node_names():
+            for branch_idx in self.get_branch_node_names(limb_idx):
+                print(f"Working on limb {limb_idx} branch {branch_idx}")
+                curr_branch_obj = self.concept_network.nodes[nru.limb_label(limb_idx)]["data"].concept_network.nodes[branch_idx]["data"]
+                
+                if "mesh_center" in width_name:
+                    distance_by_mesh_center = True
+                else:
+                    distance_by_mesh_center = False
+                
+                if "no_spine" in width_name:
+                    no_spines=True
+                else:
+                    no_spine=False
+                
+                
+                print(f"Before width call: distance_by_mesh_center"
+                      f" = {distance_by_mesh_center}, no_spines = {no_spines}")
+                current_width_array,current_width = wu.calculate_new_width(curr_branch_obj, 
+                                      skeleton_segment_size=skeleton_segment_size,
+                                      width_segment_size=width_segment_size, 
+                                      distance_by_mesh_center=distance_by_mesh_center,
+                                      no_spines=no_spines,
+                                      summary_measure=summary_measure,
+                                      return_average=True,
+                                      print_flag=False,
+                                    **kwargs)
+
+
+                curr_branch_obj.width_new[width_name] = current_width
+                curr_branch_obj.width_array[width_name] = current_width_array
     
     
     def calculate_width_without_spines(self,
@@ -1476,7 +1999,7 @@ class Neuron:
                         distance_by_mesh_center = False
                 
                 
-                current_width_array,current_width = wu.calculate_width_without_spines(curr_branch_obj, 
+                current_width_array,current_width = wu.calculate_new_width(curr_branch_obj, 
                                       skeleton_segment_size=skeleton_segment_size,
                                       width_segment_size=width_segment_size, 
                                       distance_by_mesh_center=distance_by_mesh_center,
@@ -1488,34 +2011,57 @@ class Neuron:
                 curr_branch_obj.width_new[width_name] = current_width
                 curr_branch_obj.width_array[width_name] = current_width_array
     
-        
+    
+    
     def calculate_spines(self,
-                        query="width > 400 and n_faces_branch>100",
+                        #query="width > 400 and n_faces_branch>100",
+                         query="median_mesh_center > 200 and n_faces_branch>100",
                         clusters_threshold=2,
                         smoothness_threshold=0.08,
                         shaft_threshold=300,
-                        cgal_path=Path("./cgal_temp")):
-        
+                        cgal_path=Path("./cgal_temp"),
+                        print_flag=False,
+                        filter_out_border_spines=True):
+        print(f"query = {query}")
         print(f"smoothness_threshold = {smoothness_threshold}")
         if type(query) == dict():
             functions_list = query["functions_list"]
             current_query = query["query"]
         else:
-            functions_list = ["width","n_faces_branch"]
+            functions_list = ["median_mesh_center","n_faces_branch"]
             current_query = query
+            
+        
+        #check that have calculated the median mesh center if required
+        if "median_mesh_center" in functions_list:
+            if "median_mesh_center" not in self[0][0].width_new.keys():
+                print("The median_mesh_center was requested but has not already been calculated so calculating now.... ")
+                
+                self.calculate_new_width(no_spines=False,
+                                       distance_by_mesh_center=True,
+                                       summary_measure="median")
+            else:
+                print("The median_mesh_center was requested and HAS already been calculated")
 
         new_branch_dict = ns.query_neuron(self,
                        functions_list=functions_list,
                        query=current_query)
+        if print_flag:
+            print(f"new_branch_dict = {new_branch_dict}")
+ 
         
         
-        for limb_idx in self.get_limb_node_names():
-            for branch_idx in self.get_branch_node_names(limb_idx):
-                curr_branch = self.concept_network.nodes[nru.limb_label(limb_idx)]["data"].concept_network.nodes[branch_idx]["data"]
+        self._index = -1
+        for limb_idx,curr_limb in enumerate(self):
+            limb_idx = f"L{limb_idx}"
+            curr_limb._index = -1
+            for branch_idx,curr_branch in enumerate(curr_limb):
                 if limb_idx in new_branch_dict.keys():
+                    #print(f"new_branch_dict[{limb_idx}] = {new_branch_dict[limb_idx]}")
+                    #print(f"branch_idx = {branch_idx}")
                     if branch_idx in new_branch_dict[limb_idx]:
-                
-                        print(f"Working on limb {limb_idx} branch {branch_idx}")
+                        if print_flag:
+                            print(f"Working on limb {limb_idx} branch {branch_idx}")
                         #calculate the spines
                         spine_submesh_split= spu.get_spine_meshes_unfiltered(current_neuron = self,
                                                                 limb_idx=limb_idx,
@@ -1527,6 +2073,19 @@ class Neuron:
                                                                 return_sdf=False,
                                                                 print_flag=False,
                                                                 shaft_threshold=shaft_threshold)
+                        #print(f"curr_branch.mesh = {curr_branch.mesh}")
+#                         spine_submesh_split = spu.get_spine_meshes_unfiltered_from_mesh(curr_branch.mesh,
+#                                                                 segment_name=f"{limb_idx}_{branch_idx}",
+#                                                                 clusters=clusters_threshold,
+#                                                                 smoothness=smoothness_threshold,
+#                                                                 cgal_folder = cgal_path,
+#                                                                 delete_temp_file=True,
+#                                                                 return_sdf=False,
+#                                                                 print_flag=False,
+#                                                                 shaft_threshold=shaft_threshold)
+                        
+                        if print_flag:
+                            print(f"--> n_spines found before filtering = {len(spine_submesh_split)}")
 
         #                 if limb_idx == "L0":
         #                     if branch_idx == 0:
@@ -1537,9 +2096,17 @@ class Neuron:
         #                 if limb_idx == "L0":
         #                     if branch_idx == 0:
         #                         print(f"spine_submesh_split_filtered = {spine_submesh_split_filtered}")
+        
+                        if filter_out_border_spines:
+                            spine_submesh_split_filtered = spu.filter_out_border_spines(self[limb_idx][branch_idx].mesh,
+                                                                                        spine_submesh_split_filtered)
+                
 
-
+                        if print_flag:
+                            print(f"--> n_spines found = {len(spine_submesh_split_filtered)}")
                         curr_branch.spines = spine_submesh_split_filtered
+                    else:
+                        curr_branch.spines = None
                 else:
                     curr_branch.spines = None
 
@@ -1548,7 +2115,8 @@ class Neuron:
                                       limb_color="blue",
                                       node_size=500,
                                       font_color="white",
-                                      node_colors=dict()):
+                                      node_colors=dict(),
+                                      **kwargs):
         """
         Purpose: To plot the connectivity of the soma and the meshes in the neuron
         
@@ -1563,20 +2131,15 @@ class Neuron:
         
         """
         
-        node_list = xu.get_node_list(self.concept_network)
-        node_list_colors = []
-        for n in node_list:
-            if n in list(node_colors.keys()):
-                curr_color = node_colors[n]
-            else:
-                if "S" in n:
-                    curr_color = soma_color
-                else:
-                    curr_color = limb_color
-            node_list_colors.append(curr_color)
-        #node_list_colors = [soma_color if "S" in n else limb_color for n in node_list]
-        nx.draw(self.concept_network,with_labels=True,node_color=node_list_colors,
-               font_color=font_color,node_size=node_size)
+        nviz.plot_soma_limb_concept_network(self,
+                                              soma_color=soma_color,
+                                              limb_color=limb_color,
+                                              node_size=node_size,
+                                              font_color=font_color,
+                                              node_colors=node_colors,
+                                              **kwargs
+                                            
+                                           )
         
     def plot_limb_concept_network(self,
                                   limb_name="",

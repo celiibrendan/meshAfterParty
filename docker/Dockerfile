@@ -51,6 +51,17 @@ ADD ./ptyon_bash_files/embree.bash /src/embree.bash
 #may need to change this
 RUN chmod +x /src/embree.bash && /src/embree.bash 
 
+# This will add in the meshlabserver functionality for cleaning
+ARG QMAKE_FLAGS="-spec linux-g++ CONFIG+=release CONFIG+=qml_release CONFIG+=c++11 QMAKE_CXXFLAGS+=-fPIC QMAKE_CXXFLAGS+=-std=c++11 QMAKE_CXXFLAGS+=-fpermissive INCLUDEPATH+=/usr/include/eigen3 LIBS+=-L/meshlab/src/external/lib/linux-g++"
+
+ARG MAKE_FLAGS="-j"
+
+ADD ./meshlab_patch_files/meshlab_mini.pro /meshlab/src/meshlab_mini.pro
+WORKDIR /meshlab/src
+RUN qmake -qt=5 meshlab_mini.pro $QMAKE_FLAGS && make $MAKE_FLAGS
+
+
+
 #creating starting folder as the root
 WORKDIR /
 

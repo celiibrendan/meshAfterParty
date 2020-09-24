@@ -37,7 +37,7 @@ def compare_endpoints(endpoints_1,endpoints_2,**kwargs):
     
     Ex: 
     import networkx_utils as xu
-    xu = reload(xu)
+    xu = reload(xu)mess
     end_1 = np.array([[2,3,4],[1,4,5]])
     end_2 = np.array([[1,4,5],[2,3,4]])
 
@@ -197,9 +197,12 @@ def get_nodes_with_attributes_dict(G,attribute_dict):
 def get_all_nodes_with_certain_attribute_key(G,attribute_name):
     return nx.get_node_attributes(G,attribute_name)
 
+import numpy_utils as nu
 def get_node_attributes(G,attribute_name="coordinates",node_list=[],
                        return_array=True):
     #print(f"attribute_name = {attribute_name}")
+    if not nu.is_array_like(node_list):
+        node_list = [node_list]
     attr_dict = nx.get_node_attributes(G,attribute_name)
     #print(f"attr_dict= {attr_dict}")
     if len(node_list)>0:
@@ -227,6 +230,12 @@ def get_neighbors(G,node,int_label=True):
 
 def get_nodes_of_degree_k(G,degree_choice):
     return [k for k,v in dict(G.degree).items() if v == degree_choice]
+
+def get_nodes_greater_or_equal_degree_k(G,degree_choice):
+    return [k for k,v in dict(G.degree).items() if v >= degree_choice]
+
+def get_nodes_less_or_equal_degree_k(G,degree_choice):
+    return [k for k,v in dict(G.degree).items() if v <= degree_choice]
 
 
 def set_node_attributes_dict(G,attrs):
@@ -296,6 +305,24 @@ def get_all_attributes_for_edges(G1,edges_list=[],return_dict=False):
         return attributes_list
 
 
+def get_edges_with_attributes_dict(G,attribute_dict):
+    if type(attribute_dict) != dict:
+        raise Exception("Did not recieve dictionary for searching")
+    total_edges = []
+    total_searching_keys = list(attribute_dict.keys())
+    for (u,v) in G.edges():
+        if len(set(total_searching_keys).intersection(set(list(G[u][v])))) < len(total_searching_keys):
+            continue
+        else:
+            match = True
+            for k in total_searching_keys:
+                if G[u][v][k] !=  attribute_dict[k]:
+                    match = False
+                    break
+            if match:
+                total_edges.append((u,v))
+    return total_edges
+               
 
 
 def get_edge_attributes(G,attribute="order",edge_list=[],undirected=True):
@@ -856,7 +883,153 @@ def upstream_edges_neighbors(G,node):
     return [k for k in list(nx.edge_dfs(G,node, orientation='reverse')) if node in k]
     
     
+# --------------------- 8/31 -------------------------- #
+import random
+
+
+def hierarchy_pos(G, root=None, width=1., vert_gap = 0.2, vert_loc = 0, xcenter = 0.5,width_min = 0.3,width_noise_ampl=0.2):
+
+    \
+    '''
     
+    Old presets: 
+    width=1., vert_gap = 0.2, vert_loc = 0, xcenter = 0.5
+    
+    
+    From Joel's answer at https://stackoverflow.com/a/29597209/2966723.  
+    Licensed under Creative Commons Attribution-Share Alike 
+
+    If the graph is a tree this will return the positions to plot this in a 
+    hierarchical layout.
+
+    G: the graph (must be a tree)
+
+    root: the root node of current branch 
+    - if the tree is directed and this is not given, 
+      the root will be found and used
+    - if the tree is directed and this is given, then 
+      the positions will be just for the descendants of this node.
+    - if the tree is undirected and not given, 
+      then a random choice will be used.
+
+    width: horizontal space allocated for this branch - avoids overlap with other branches
+
+    vert_gap: gap between levels of hierarchy
+
+    vert_loc: vertical location of root
+
+    xcenter: horizontal location of root
+    '''
+    if not nx.is_tree(G):
+        raise TypeError('cannot use hierarchy_pos on a graph that is not a tree')
+
+    if root is None:
+        if isinstance(G, nx.DiGraph):
+            root = next(iter(nx.topological_sort(G)))  #allows back compatibility with nx version 1.11
+        else:
+            root = random.choice(list(G.nodes))
+
+    def _hierarchy_pos(G, root, width=1., vert_gap = 0.2, vert_loc = 0, xcenter = 0.5, pos = None, parent = None):
+        '''
+        see hierarchy_pos docstring for most arguments
+
+        pos: a dict saying where all nodes go if they have been assigned
+        parent: parent of this branch. - only affects it if non-directed
+
+        '''
+        
+        if np.abs(width) < width_min:
+            width = np.sign(width)*(width_min + width_noise_ampl*np.random.rand(1)[0])
+            #width = width_min 
+            #print(f"width_noise_ampl = {width_noise_ampl}")
+        
+        #print(f"root {root}: inside _hierarchy_pos: width = {width}, xcenter={xcenter}")
+
+        if pos is None:
+            pos = {root:(xcenter,vert_loc)} #if no previous position then start dictioanry
+        else:
+            pos[root] = (xcenter, vert_loc) #if dictionary already exists then add position to dictionary
+        children = list(G.neighbors(root)) #get all children of current root
+        if not isinstance(G, nx.DiGraph) and parent is not None:
+            children.remove(parent) #remove parent from possible neighbors (so only get ones haven't used) 
+        if len(children)!=0: #if have children to graph
+            dx = width/len(children)  #take whole width and allocates for how much each child gets
+            nextx = xcenter - width/2 - dx/2
+            for child in children:
+                nextx += dx
+                """
+                How recursive call works: 
+                1) the dx allocated for each child becomes the next width
+                2) same vertical gap
+                3) New vertical location is original but stepped down vertical gap
+                3) New x location is the nextx
+                
+                """
+                pos = _hierarchy_pos(G,child, width = dx, vert_gap = vert_gap, 
+                                    vert_loc = vert_loc-vert_gap, xcenter=nextx,
+                                    pos=pos, parent = root)
+        return pos
+
+
+    return _hierarchy_pos(G, root, width, vert_gap, vert_loc, xcenter)
+    
+    
+# --------- 9/17 Addition ----------------------- #
+from copy import deepcopy
+def shortest_path_between_two_sets_of_nodes(G,node_list_1,node_list_2,
+                                           return_node_pairs=True):
+    """
+    Algorithm that will find the shortest path from a set of one
+    list of nodes on a graph and another set of nodes:
+    
+    Returns: The shortest path, the nodes from each set that were paired
+    
+    Things to think about:
+    - could possibly have non-overlapping groups
+    
+    Pseudocode:
+    0) Make a copy of the graph
+    1) Add a new node to graph that is connected to all nodes in node_list_1 (s)
+    2) Add a new node to graph that is connected to all nodes in node_list_2 (t)
+    3) Find shortest path from s to t
+    4) remove s and t from path and return the two endpoints of path as node pair
+    
+    Example: 
+    import networkx as nx
+    G = nx.path_graph(10)
+    node_list_1 = [1,2]
+    node_list_2 = [9,5]
+    
+    shortest_path_between_two_sets_of_nodes(G,node_list_1,node_list_2,
+                                           return_node_pairs=True)
+    
+    will return [ 2, 3, 4, 5],2,5
+    """
+    #0) Make a copy of the graph
+    G_copy = deepcopy(G)
+    node_number_max = np.max(G.nodes())
+
+    #1) Add a new node to graph that is connected to all nodes in node_list_1 (s)
+    s = node_number_max + 1
+    G_copy.add_edges_from([(s,k) for k in node_list_1])
+
+    #2) Add a new node to graph that is connected to all nodes in node_list_2 (t)
+    t = node_number_max + 2
+    G_copy.add_edges_from([(t,k) for k in node_list_2])
+
+    #3) Find shortest path from s to t
+    shortest_path = nx.shortest_path(G_copy,s,t)
+    
+
+    #node_pair
+    curr_shortest_path = shortest_path[1:-1]
+    end_node_1 = shortest_path[1]
+    end_node_2 = shortest_path[-2]
+    
+    if return_node_pairs:
+        return curr_shortest_path,end_node_1,end_node_2
+    else:
+        return curr_shortest_path
     
     
     

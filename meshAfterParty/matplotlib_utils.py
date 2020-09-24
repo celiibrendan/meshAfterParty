@@ -1,5 +1,6 @@
 from matplotlib import colors
 import numpy as np
+import numpy_utils as nu
 
 """
 Notes on other functions: 
@@ -24,11 +25,33 @@ graph_color_list = ["blue","green","red","cyan","magenta",
 
 
 
-def generate_random_color(print_flag=False):
-    rand_color = np.random.choice(graph_color_list,1)
+def generate_random_color(print_flag=False,colors_to_omit=[]):
+    if not nu.is_array_like(colors_to_omit):
+        colors_to_omit = [colors_to_omit]
+    current_color_list = [k for k in graph_color_list if k not in colors_to_omit]
+    rand_color = np.random.choice(current_color_list,1)
     if print_flag:
         print(f"random color chosen = {rand_color}")
     return colors.to_rgba(rand_color[0])
+
+def generate_unique_random_color_list(n_colors,print_flag=False,colors_to_omit=[]):
+    total_colors = []
+    
+    for i in range(n_colors):
+        found_color=False
+        while not found_color:
+            if not nu.is_array_like(colors_to_omit):
+                colors_to_omit = [colors_to_omit]
+            current_color_list = [k for k in graph_color_list if k not in colors_to_omit]
+            rand_color = np.random.choice(current_color_list,1)
+            if rand_color not in total_colors:
+                if print_flag:
+                    print(f"random color chosen = {rand_color}")
+                total_colors.append(colors.to_rgba(rand_color[0]))
+                found_color = True
+    return total_colors
+        
+            
 
 def generate_color_list(
                         user_colors=[], #if user sends a prescribed list

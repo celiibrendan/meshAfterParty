@@ -7,6 +7,201 @@ import networkx_utils as xu
 import time
 
 
+def plot_soma_limb_concept_network(neuron_obj,
+                                  soma_color="red",
+                                  limb_color="blue",
+                                  node_size=500,
+                                  font_color="white",
+                                  node_colors=dict(),
+                                  **kwargs):
+    """
+    Purpose: To plot the connectivity of the soma and the meshes in the neuron
+
+    How it was developed: 
+
+    import networkx_utils as xu
+    xu = reload(xu)
+    node_list = xu.get_node_list(my_neuron.concept_network)
+    node_list_colors = ["red" if "S" in n else "blue" for n in node_list]
+    nx.draw(my_neuron.concept_network,with_labels=True,node_color=node_list_colors,
+           font_color="white",node_size=500)
+
+    """
+
+    node_list = xu.get_node_list(neuron_obj.concept_network)
+    node_list_colors = []
+    for n in node_list:
+        if n in list(node_colors.keys()):
+            curr_color = node_colors[n]
+        else:
+            if "S" in n:
+                curr_color = soma_color
+            else:
+                curr_color = limb_color
+        node_list_colors.append(curr_color)
+    nx.draw(neuron_obj.concept_network,with_labels=True,node_color=node_list_colors,
+           font_color=font_color,node_size=node_size)
+    
+from copy import deepcopy
+import neuron
+import matplotlib.pyplot as plt
+def plot_limb_concept_network_2D(neuron_obj,
+                                 limb_name=None,
+                                 somas=None,
+                                  node_colors=dict(),
+                                 default_color = "green",
+                                  node_size=2000,
+                                  font_color="white",
+                                 font_size=30,
+                                 directional=True,
+                                 print_flag=False,
+                                 plot_somas=True,
+                                 soma_color="red",
+                                 pos=None,
+                                 pos_width = 3,
+                                 width_min = 0.3,
+                                 width_noise_ampl=0.2,
+                                 pos_vertical_gap=0.05,
+                                 fig_width=40,
+                                 fig_height=20,
+                                  **kwargs):
+    """
+    Purpose: To plot the concept network as a 2D networkx graph
+    
+    Pseudocode: 
+    0) If passed a neuron object then use the limb name to get the limb object
+    - make copy of limb object
+    1) Get the somas that will be used for concept network
+    2) Assemble the network by concatenating (directional or undirectional)
+    3) Assemble the color list to be used for the coloring of the nodes. Will take:
+    a. dictionary
+    b. List
+    c. Scalar value for all nodes
+    
+    4) Add on the soma to the graphs if asked for it
+    5) Generate a hierarchical positioning for graph if position argument not specified
+    
+    for all the starting somas
+    4) Use the nx.draw function
+    
+    Ex: 
+    nviz = reload(nviz)
+    xu = reload(xu)
+    limb_idx = "L3"
+    nviz.plot_limb_concept_network_2D(neuron_obj=uncompressed_neuron,
+                                     limb_name=limb_idx,
+                                     node_colors=color_dictionary)
+    """
+    
+    #0) If passed a neuron object then use the limb name to get the limb object
+    #- make copy of limb object
+    
+    if str(type(neuron_obj)) == str(neuron.Neuron):
+        if not limb_name is None:
+            limb_obj = deepcopy(neuron_obj.concept_network.nodes[limb_name]["data"])
+        else:
+            raise Exception("Neuron object recieved but no limb name specified")
+    elif str(type(neuron_obj)) == str(neuron.Limb):
+        limb_obj = deepcopy(neuron_obj)
+    else:
+        raise Exception(f"Non Limb or Neuron object recieved: {type(neuron_obj)}")
+    
+    #1) Get the somas that will be used for concept network
+    if somas is None:
+        somas = limb_obj.touching_somas()
+        somas = [somas[0]]
+    
+    #2) Assemble the network by concatenating (directional or undirectional)
+    # (COULD NOT END UP CONCATENATING AND JUST USE ONE SOMA AS STARTING POINT)
+    if directional:
+        graph_list = []
+        for s in somas:
+            limb_obj.set_concept_network_directional(starting_soma=s)
+            graph_list.append(limb_obj.concept_network_directional)
+        full_concept_network = xu.combine_graphs(graph_list)
+    else:
+        full_concept_network = limb_obj.concept_network
+
+    
+    #3) Assemble the color list to be used for the coloring of the nodes. Will take:
+    #a. dictionary
+    #b. List
+    #c. Scalar value for all nodes
+    color_list = []
+    node_list = xu.get_node_list(full_concept_network)
+    
+    if type(node_colors) == dict:
+        #check to see if it is a limb_branch_dict
+        L_check = np.any(["L" in k for k in node_colors.keys()])
+        
+        if L_check:
+            if limb_name is None:
+                raise Exception("Limb_branch dictionary given for node_colors but no limb name given to specify color mappings")
+            node_colors = dict([(int(float(k.split("_")[-1])),v) for k,v in node_colors.items() if limb_name in k])
+        
+        if set(list(node_colors.keys())) != set(node_list):
+            if print_flag:
+                print(f"Node_colors dictionary does not have all of the same keys so using default color ({default_color}) for missing nodes")
+        for n in node_list:
+            if n in node_colors.keys():
+                color_list.append(node_colors[n])
+            else:
+                color_list.append(default_color)
+    elif type(node_colors) == list:
+        if len(node_list) != len(node_colors):
+            raise Exception(f"List of node_colors {(len(node_colors))} passed does not match list of ndoes in limb graph {(len(node_list))}")
+        else:
+            color_list = node_colors
+    elif type(node_colors) == str:
+        color_list = [node_colors]*len(node_list)
+    else:
+        raise Exception(f"Recieved invalid node_list type of {type(node_colors)}")
+    
+    #4) Add on the soma to the graphs if asked for it
+    if plot_somas:
+        #adding the new edges
+        new_edge_list = []
+        for k in limb_obj.all_concept_network_data:
+            curr_soma = k["starting_soma"]
+            if curr_soma == limb_obj.current_starting_soma:
+                new_edge_list.append((f'S{k["starting_soma"]}',k["starting_node"]))
+            else:
+                new_edge_list.append((k["starting_node"],f'S{k["starting_soma"]}'))
+        #new_edge_list = [(f'S{k["starting_soma"]}',k["starting_node"]) for k in limb_obj.all_concept_network_data]
+        full_concept_network.add_edges_from(new_edge_list)
+        #adding the new colors
+        color_list += [soma_color]*len(new_edge_list)
+    
+    #5) Generate a hierarchical positioning for graph if position argument not specified
+    if pos is None:
+        if plot_somas:
+            starting_hierarchical_node = f"S{limb_obj.current_starting_soma}"
+        else:
+            starting_hierarchical_node = {limb_obj.current_starting_node}
+        #print(f"full_concept_network.nodes() = {full_concept_network.nodes()}")
+        pos = xu.hierarchy_pos(full_concept_network,starting_hierarchical_node,
+                              width=pos_width,width_min=width_min,width_noise_ampl=width_noise_ampl, vert_gap = pos_vertical_gap, vert_loc = 0, xcenter = 0.5)    
+        #print(f"pos = {pos}")
+    
+    if print_flag:
+        print(f"node_colors = {node_colors}")
+        
+    #6) Use the nx.draw function
+    #print(f"pos={pos}")
+    
+    
+    plt.figure(1,figsize=(fig_width,fig_height))
+    nx.draw(full_concept_network,
+            pos=pos,
+            with_labels=True,
+            node_color=color_list,
+           font_color=font_color,
+            node_size=node_size,
+            font_size=font_size,
+           **kwargs)
+    
+
+
 def plot_concept_network(curr_concept_network,
                             arrow_size = 0.5,
                             arrow_color = "maroon",
@@ -546,7 +741,7 @@ def visualize_neuron(
     
     #whether to return the color dictionary in order to help
     #locate certain colors
-    return_color_dict = False,
+    return_color_dict = False, #if return this then can use directly with plot_color_dict to visualize the colors of certain branches
     
     
     print_flag = False,
@@ -615,6 +810,20 @@ def visualize_neuron(
     3) Can specify the somas you want to graph and their colors
     by sending lists
     
+    
+    Ex 3: How to specifically color just one branch and fill color the rest of limb
+    limb_idx = "L0"
+    ex_limb = uncompressed_neuron.concept_network.nodes[limb_idx]["data"]
+    branch_idx = 3
+    ex_branch = ex_limb.concept_network.nodes[2]["data"]
+
+    nviz.visualize_neuron(double_neuron_processed,
+                          visualize_type=["mesh"],
+                         limb_branch_dict=dict(L0="all"),
+                          mesh_color=dict(L1={3:"red"}),
+                          mesh_fill_color="green"
+
+                         )
     
     
     """

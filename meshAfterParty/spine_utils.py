@@ -74,8 +74,8 @@ import neuron_utils as nru
 import networkx_utils as xu
 
 def cgal_segmentation(written_file_location,
-                      clusters,
-                      smoothness,
+                      clusters=2,
+                      smoothness=0.03,
                       return_sdf=True,
                      print_flag=False,
                      delete_temp_file=True):
@@ -104,6 +104,8 @@ def cgal_segmentation(written_file_location,
     
     if return_sdf:
         return cgal_data,cgal_sdf_data
+    else:
+        return cgal_data
 
 def split_mesh_into_spines_shaft(current_mesh,
                            segment_name="",
@@ -195,26 +197,29 @@ def split_mesh_into_spines_shaft(current_mesh,
         return spine_meshes,spine_meshes_idx,shaft_meshes,shaft_meshes_idx,cgal_sdf_data
     else:
         return spine_meshes,spine_meshes_idx,shaft_meshes,shaft_meshes_idx
-
-def get_spine_meshes_unfiltered(current_neuron,
-                 limb_idx,
-                branch_idx,
-                clusters=2,
-                smoothness=0.05,
-                cgal_folder = Path("./cgal_temp"),
-                delete_temp_file=True,
-                return_sdf=False,
-                print_flag=False,
-                shaft_threshold=300):
     
     
-    current_mesh = current_neuron.concept_network.nodes[nru.limb_label(limb_idx)]["data"].concept_network.nodes[branch_idx]["data"].mesh
+import numpy as np
+def get_spine_meshes_unfiltered_from_mesh(current_mesh,
+                                          segment_name=None,
+                                        clusters=2,
+                                        smoothness=0.05,
+                                        cgal_folder = Path("./cgal_temp"),
+                                        delete_temp_file=True,
+                                        return_sdf=False,
+                                        print_flag=False,
+                                        shaft_threshold=300):
+    
+    if segment_name is None:
+        segment_name = f"{np.random.randint(10,1000)}_{np.random.randint(10,1000)}"
+        
+    
     (spine_meshes,
      spine_meshes_idx,
      shaft_meshes,
      shaft_meshes_idx,
     cgal_sdf_data) = spine_data_returned= split_mesh_into_spines_shaft(current_mesh,
-                               segment_name=f"{limb_idx}_{branch_idx}",
+                               segment_name=segment_name,
                                clusters=clusters,
                               smoothness=smoothness,
                               cgal_folder = cgal_folder,
@@ -324,6 +329,31 @@ def get_spine_meshes_unfiltered(current_neuron,
         else:
             return spines_greatest_to_least
 
+
+def get_spine_meshes_unfiltered(current_neuron,
+                 limb_idx,
+                branch_idx,
+                clusters=2,
+                smoothness=0.05,
+                cgal_folder = Path("./cgal_temp"),
+                delete_temp_file=True,
+                return_sdf=False,
+                print_flag=False,
+                shaft_threshold=300):
+    
+    get_spine_meshes_unfiltered
+    current_mesh = current_neuron.concept_network.nodes[nru.limb_label(limb_idx)]["data"].concept_network.nodes[branch_idx]["data"].mesh
+    
+    return get_spine_meshes_unfiltered_from_mesh(current_mesh,
+                                        segment_name=f"{limb_idx}_{branch_idx}",
+                                        clusters=clusters,
+                                        smoothness=smoothness,
+                                        cgal_folder = cgal_folder,
+                                        delete_temp_file=delete_temp_file,
+                                        return_sdf=return_sdf,
+                                        print_flag=print_flag,
+                                        shaft_threshold=shaft_threshold)
+    
         
         
 """
@@ -360,3 +390,9 @@ def surface_area_to_volume(current_mesh):
 def filter_spine_meshes(spine_meshes,
                         spine_n_face_threshold=20):
     return [k for k in spine_meshes if len(k.faces)>=spine_n_face_threshold]
+
+
+#------------ 9/23 Addition -------------- #
+import trimesh_utils as tu
+def filter_out_border_spines(mesh,spine_submeshes):
+    return tu.filter_away_border_touching_submeshes(mesh,spine_submeshes)

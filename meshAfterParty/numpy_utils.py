@@ -174,9 +174,14 @@ that gives the distance
 
 """
 
-def matching_rows(vals,row):
+def matching_rows(vals,row,print_flag=False):
+
     if len(vals) == 0:
         return np.array([])
+    vals = np.array(vals)
+    if print_flag:
+        print(f"vals = {vals}")
+        print(f"row = {row}")
     return np.where((np.array(vals) == np.array(row)).all(axis=1))[0]
 
 # ----------- made when developing the neuron class ------------- #
@@ -213,3 +218,8 @@ def sort_multidim_array_by_rows(edge_array,order_row_items=False):
     sorted_edge_array = np.array(sorted(edge_array , key=sorting_func))
     
     return sorted_edge_array
+
+
+# --------- Functions pulled from trimesh.grouping ---------- #
+
+

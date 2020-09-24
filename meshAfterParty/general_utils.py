@@ -1,6 +1,7 @@
 import numpy_utils as nu
 import numpy as np
-def invert_mapping(my_map):
+import itertools
+def invert_mapping(my_map,total_keys=None):
     """
     Will invert a dictionary mapping that is not unique
     (Also considers an array of a mapping of the indices to the value)
@@ -11,12 +12,15 @@ def invert_mapping(my_map):
     """
     if type(my_map) == dict:
         pass
-    if nu.is_array_like(my_map):
+    elif nu.is_array_like(my_map):
         my_map = dict([(i,k) for i,k in enumerate(my_map)])
     else:
         raise Exception("Non dictionary or array type recieved")
-
-    inv_map = {}
+        
+    if total_keys is None:
+        inv_map = {}
+    else:
+        inv_map = dict([(k,[]) for k in total_keys])
     
     #handling the one-dimensional case where dictionary just maps to numbers
     if np.isscalar(list(my_map.values())[0]):
@@ -28,3 +32,12 @@ def invert_mapping(my_map):
                 inv_map[v] = inv_map.get(v, []) + [k]
         
     return inv_map
+
+def get_unique_values_dict_of_lists(dict_of_lists):
+    """
+    Purpose: If have a dictionary that maps the keys to lists,
+    this function will give the unique values of all the elements of all the lists
+    
+    
+    """
+    return set(list(itertools.chain.from_iterable(list(dict_of_lists.values()))))

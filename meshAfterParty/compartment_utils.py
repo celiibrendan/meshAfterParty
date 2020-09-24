@@ -176,12 +176,14 @@ def get_skeletal_distance_no_skipping(main_mesh,edges,
     
     #end of the edge loops
     
-    if len(face_subtract_indices)>0:
+    if len(face_subtract_indices)>1:
         all_removed_faces = np.concatenate(face_subtract_indices)
 
         unique_removed_faces = np.array(list(set(all_removed_faces)))
         
-        if len(unique_removed_faces) <= 1:
+        if len(unique_removed_faces) < 1:
+            print(f"face_subtract_indices = {face_subtract_indices}")
+            print(f"unique_removed_faces = {unique_removed_faces}")
             print(f"Distance of skeleton = {sk.calculate_skeleton_distance(edges)}")
             raise Exception(f"unique_removed_faces = {unique_removed_faces}")
             
@@ -246,6 +248,7 @@ def get_skeletal_distance(main_mesh,edges,
                                  buffer=0.01,
                                 bbox_ratio=1.2,
                                distance_threshold=3000,
+                               distance_by_mesh_center=True,
                                 print_flag=False,
                                 edge_loop_print=True):
     """
@@ -254,6 +257,8 @@ def get_skeletal_distance(main_mesh,edges,
     
     
     """
+    print(f"INSIDE GET SKELETAL DISTANCE distance_by_mesh_center = {distance_by_mesh_center}")
+    debug=False
 
     
     main_mesh_bbox_restricted = main_mesh
@@ -320,11 +325,14 @@ def get_skeletal_distance(main_mesh,edges,
                 print("So just skipping this edge")
             continue
 
-
+        if debug:
+            print(f"face_list = {face_list}")    
+            
         #get all disconnected mesh pieces of the submesh and the face indices for lookup later
         sub_components,sub_components_face_indexes = tu.split(main_mesh_sub,only_watertight=False)
        
-        
+        if debug:
+            print(f"sub_components = {sub_components}")
         
         if type(sub_components) != type(np.array([])) and type(sub_components) != list:
             #print(f"meshes = {sub_components}, with type = {type(sub_components)}")
@@ -333,11 +341,19 @@ def get_skeletal_distance(main_mesh,edges,
             else:
                 raise Exception("The sub_components were not an array, list or trimesh")
         
+        if debug:
+            print(f"sub_components = {sub_components}")
+            print(f"sub_components_face_indexes = {sub_components_face_indexes}")
+        
 
         #getting the indices of the submeshes whose bounding box contain the edge 
         contains_points_results = np.array([s_comp.bounding_box.contains(ex_edge.reshape(-1,3)) for s_comp in sub_components])
         
         containing_indices = (np.arange(0,len(sub_components)))[np.sum(contains_points_results,axis=1) >= len(ex_edge)]
+        
+        if debug:
+            print(f"containing_indices = {containing_indices}")
+            
         try:
             if len(containing_indices) != 1: 
                 if edge_loop_print:
@@ -363,6 +379,8 @@ def get_skeletal_distance(main_mesh,edges,
 
             else:# when only one viable submesh piece and just using that sole index
                 edge_skeleton_faces = faces_bbox_inclusion[face_list[sub_components_face_indexes[containing_indices[0]]]]
+                if debug:
+                    print(f"edge_skeleton_faces = {edge_skeleton_faces}")
         except:
             print(f"sub_components = {sub_components}")
             print(f"containing_indices = {containing_indices}")
@@ -388,6 +406,14 @@ def get_skeletal_distance(main_mesh,edges,
         
         fac_midpoints_trans = cob_edge@face_midpoints.T
         
+        if distance_by_mesh_center: 
+            faces_submesh = main_mesh_bbox_restricted.submesh([edge_skeleton_faces],append=True)
+            faces_submesh_center = tu.mesh_center_weighted_face_midpoints(faces_submesh)
+            faces_submesh_center = faces_submesh_center.reshape(3,1)
+            #print(f"cob_edge.shape = {cob_edge.shape}, faces_submesh_center.shape={faces_submesh_center.shape}")
+            edge_midpoint = cob_edge@faces_submesh_center
+            edge_midpoint = edge_midpoint.reshape(-1)
+        
             
         #print(f"fac_midpoints_trans.shape = {fac_midpoints_trans.shape}")
         mesh_slice_distances = np.linalg.norm((fac_midpoints_trans.T)[:,:2] - edge_midpoint[:2],axis=1)
@@ -396,30 +422,44 @@ def get_skeletal_distance(main_mesh,edges,
         total_distances.append(np.mean(mesh_slice_distances))
         total_distances_std.append(np.std(mesh_slice_distances))
     
+    debug = False
     
-    debug = True
+    if debug:
+        print(f"face_subtract_indices = {face_subtract_indices}")
     
     if len(face_subtract_indices)>0:
         all_removed_faces = np.concatenate(face_subtract_indices)
 
         unique_removed_faces = np.array(list(set(all_removed_faces)))
         
-        if len(unique_removed_faces) <= 1:
+        if len(unique_removed_faces) < 1:
             print(f"Distance of skeleton = {sk.calculate_skeleton_distance(edges)}")
             raise Exception(f"unique_removed_faces = {unique_removed_faces}")
             
-            
+        if debug:
+            print(f"unique_removed_faces = {unique_removed_faces}")  
 
         #faces_to_keep = set(np.arange(0,len(main_mesh.faces))).difference(unique_removed_faces)
         new_submesh = main_mesh.submesh([unique_removed_faces],only_watertight=False,append=True)
         if debug:
-            print()
+            print("--------------------- Starting new trial --------------------")
             print(f"main_mesh.faces.shape = {main_mesh.faces.shape}")
             print(f"new_submesh.faces.shape = {new_submesh.faces.shape}")
             print(f"unique_removed_faces.shape = {unique_removed_faces.shape}")
             print(f"max(unique_removed_faces) = {max(unique_removed_faces)}")
         
         split_meshes,components_faces = tu.split(new_submesh,return_components=True)
+        
+        if debug:
+            current_random_number = np.random.randint(10,10000)
+            print()
+            print("After the split has been called")
+            print(f"split_meshes = {split_meshes}")
+            print(f"components_faces = {[np.array(k).shape for k in components_faces]}")
+            main_mesh.export(f"main_mesh_{len(main_mesh.faces)}.off")
+            new_submesh.export(f"new_submesh_{len(new_submesh.faces)}.off")
+            np.savez(f"unique_removed_faces_{unique_removed_faces.shape[0]}.npz",unique_removed_faces=unique_removed_faces)
+            
         
          #don't just want to take the biggest mesh: but want to take the one that has the most of the skeleton
         #piece corresponding to it
@@ -462,7 +502,7 @@ def get_skeletal_distance(main_mesh,edges,
             if debug:
                 print()
                 print(f"main_mesh.faces.shape = {main_mesh.faces.shape}")
-                print("reassigning new_submesh to one of sub pieces")
+                print("reassigning new_submesh to one of many sub pieces")
                 print(f"new_submesh.faces.shape = {new_submesh.faces.shape}")
                 print(f"unique_removed_faces.shape = {unique_removed_faces.shape}")
                 print(f"max(unique_removed_faces) = {max(unique_removed_faces)}")
@@ -486,8 +526,9 @@ def get_skeletal_distance(main_mesh,edges,
     else:
         unique_removed_faces = np.array([])
         new_submesh = trimesh.Trimesh()
- 
-    
+        
+    if debug:
+        print(f"new_submesh = {new_submesh}")
     
     return total_distances,total_distances_std,new_submesh,np.array(unique_removed_faces)
 
@@ -495,12 +536,15 @@ def get_skeletal_distance(main_mesh,edges,
 def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
                                           curr_branch_mesh,
                                          skeleton_segment_width = 1000,
+                                          distance_by_mesh_center = True,
                                          print_flag=False):
-
+    
+    debug=False
     #making the skeletons resized to 1000 widths and then can use outlier finding
     
     new_skeleton  = sk.resize_skeleton_branch(curr_branch_skeleton,segment_width = skeleton_segment_width)
-    
+    if debug:
+        print(f"new_skeleton = {new_skeleton}")
     if print_flag:
         print(f"new_skeleton.shape = {new_skeleton.shape}")
 
@@ -513,8 +557,16 @@ def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
                         buffer=100,
                         bbox_ratio=1.2,
                         distance_threshold=3000,
+                        distance_by_mesh_center=distance_by_mesh_center,
                         print_flag=False
     )
+    debug=False
+    if debug:
+        print("\n After first skeletal distance call")
+        print(f"segment_skeletal_mean_distances = {segment_skeletal_mean_distances}")
+        print(f"segment_skeletal_std_distances = {segment_skeletal_std_distances}")
+        print(f"mesh_correspondence = {mesh_correspondence}")
+        print(f"mesh_correspondence_indices = {mesh_correspondence_indices}")
         
     if len(mesh_correspondence_indices)== 0:
         if print_flag:
@@ -534,7 +586,7 @@ def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
 
     #filter out the other outliers: do anything higher than 150% of median should be discounted
     median_value = np.median(filtered_measurements)
-    outlier_mask = filtered_measurements < median_value*1.5
+    outlier_mask = filtered_measurements <= median_value*1.5
     filtered_measurements = filtered_measurements[outlier_mask]
     filtered_measurements_std = filtered_measurements_std[outlier_mask]
 
@@ -545,8 +597,12 @@ def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
     buffer = 100
 
     total_threshold = np.max(filtered_measurements) + 2*np.max(filtered_measurements_std)
-    if print_flag:
+    
+    
+    
+    if debug:
         print(f"new_threshold = {total_threshold}")
+        
     (segment_skeletal_mean_distances_2,
      filtered_measurements_std,
      mesh_correspondence_2,
@@ -556,12 +612,20 @@ def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
                         buffer=100,
                         bbox_ratio=1.2,
                         distance_threshold=total_threshold,
+                        distance_by_mesh_center=distance_by_mesh_center,
                         print_flag=False
     )
     
+    if debug:
+        print("\n After 2nd skeletal distance call")
+        print(f"segment_skeletal_mean_distances_2 = {segment_skeletal_mean_distances_2}")
+        print(f"filtered_measurements_std = {filtered_measurements_std}")
+        print(f"mesh_correspondence_2 = {mesh_correspondence_2}")
+        print(f"mesh_correspondence_indices_2 = {mesh_correspondence_indices_2}")
+    
     if len(mesh_correspondence_indices_2) == 0:
-        print("empty mesh_correspondence_indices_2 returned so returning an empty array")
-        return []
+        print("empty mesh_correspondence_indices_2 returned so returning original mesh correspondence")
+        return mesh_correspondence_indices,np.mean(segment_skeletal_mean_distances) + 2*np.max(segment_skeletal_std_distances)
         
         
     """
@@ -576,7 +640,8 @@ def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
     mesh_correspondence_indices_2
     
     """
-    if True: 
+    debug = False
+    if debug: 
         print(f"\n\n segment_skeletal_mean_distances.shape = {np.array(segment_skeletal_mean_distances).shape}\n"
               f"segment_skeletal_std_distances.shape = {np.array(segment_skeletal_std_distances).shape}\n"
               f"mesh_correspondence.faces.shape = {mesh_correspondence.faces.shape}\n"
@@ -721,7 +786,9 @@ def waterfill_labeling(
 def resolve_empty_conflicting_face_labels(
                      curr_limb_mesh,
                      face_lookup,
-                     no_missing_labels = []):
+                     no_missing_labels = [],
+                    max_submesh_threshold=50000,
+                    max_color_filling_iterations=10):
     
     """
     Input: 
@@ -789,25 +856,41 @@ def resolve_empty_conflicting_face_labels(
 
     # -- Need to only take the biggest piece of the non-conflicted mesh and resolve those that were eliminated--
 
-    face_coloring = filter_face_coloring_to_connected_components(curr_limb_mesh,face_coloring)
+    for i in range(0,max_color_filling_iterations):
+        
+        face_coloring = filter_face_coloring_to_connected_components(curr_limb_mesh,face_coloring)
 
-    # ----fixing if there were any missing labels --- **** this still has potential for erroring ****
+        # ----fixing if there were any missing labels --- **** this still has potential for erroring ****
 
-    leftover_labels = np.unique(face_coloring)
-    missing_labels = set(np.setdiff1d(no_missing_labels.copy(), leftover_labels))
+        leftover_labels = np.unique(face_coloring)
+        missing_labels = set(np.setdiff1d(no_missing_labels.copy(), leftover_labels))
 
-    for curr_label in missing_labels:
-        labels_idx = [k for k,v in face_lookup.items() if curr_label in v]
-        face_coloring[labels_idx] = curr_label
+        for curr_label in missing_labels:
+            labels_idx = [k for k,v in face_lookup.items() if curr_label in v]
+            face_coloring[labels_idx] = curr_label
 
-    #filter the faces again: 
-    face_coloring = filter_face_coloring_to_connected_components(curr_limb_mesh,face_coloring)
+        #filter the faces again: 
+        face_coloring = filter_face_coloring_to_connected_components(curr_limb_mesh,face_coloring)
 
-    leftover_labels = np.unique(face_coloring)
-    missing_labels = set(np.setdiff1d(no_missing_labels.copy(), leftover_labels))
-
+        leftover_labels = np.unique(face_coloring)
+        missing_labels = set(np.setdiff1d(no_missing_labels.copy(), leftover_labels))
+        if len(missing_labels) == 0:
+            break
+        else:
+            if i > 0:
+                print(f"Doing No Color conflicts iteration {i+1} because missing_labels = {missing_labels} ")
+                
     if len(missing_labels)>0:
+        import system_utils as su
+        print(f"leftover_labels = {leftover_labels}")
+        print(f"no_missing_labels = {no_missing_labels}")
+        print(f"missing_labels = {missing_labels}")
+        su.compressed_pickle(curr_limb_mesh,"curr_limb_mesh")
+        su.compressed_pickle(face_lookup,"face_lookup")
+        su.compressed_pickle(no_missing_labels,"no_missing_labels")
+        su.compressed_pickle(max_submesh_threshold,"max_submesh_threshold")
         raise Exception("missing labels was not resolved")
+        
 
     # -----now just divide the groups into seperate components
     empty_faces = np.where(face_coloring==-1)[0]
@@ -829,14 +912,99 @@ def resolve_empty_conflicting_face_labels(
                         total_mesh_graph=mesh_graph,
                          propagation_type="random",
                         max_iterations = 1000,
-                        max_submesh_threshold = 30000
+                        max_submesh_threshold = max_submesh_threshold
                         )
 
     # -- wheck that the face coloring did not have any empty faces --
     empty_faces = np.where(face_coloring_copy==-1)[0]
     if len(empty_faces) > 0:
+        import system_utils as su
+        su.compressed_pickle(curr_limb_mesh,"curr_limb_mesh")
+        su.compressed_pickle(face_lookup,"face_lookup")
+        su.compressed_pickle(no_missing_labels,"no_missing_labels")
+        su.compressed_pickle(max_submesh_threshold,"max_submesh_threshold")
+
         raise Exception(f"empty faces were greater than 0 after waterfilling at: {empty_faces}")
 
 
     return face_coloring_copy
 
+import general_utils as gu
+def groups_of_labels_to_resolved_labels(current_mesh,face_correspondence_lists):
+    """
+    Purpose: To take a list of face correspondences of different parts
+    and turn them into an array mapping every face (on the mesh) to a label
+    
+    """
+    no_missing_labels = np.arange(0,len(face_correspondence_lists))
+    
+    face_lookup = dict([(j,[]) for j in range(0,len(current_mesh.faces))])
+    
+    for j,curr_faces_corresponded in enumerate(face_correspondence_lists):
+        for c in curr_faces_corresponded:
+            face_lookup[c].append(j)
+    
+    original_labels = gu.get_unique_values_dict_of_lists(face_lookup)
+    print(f"max(original_labels),len(original_labels) = {(max(original_labels),len(original_labels))}")
+    
+    if len(original_labels) != len(no_missing_labels):
+        raise Exception(f"len(original_labels) != len(no_missing_labels) for original_labels = {len(original_labels)},no_missing_labels = {len(no_missing_labels)}")
+
+    if max(original_labels) + 1 > len(original_labels):
+        raise Exception("There are some missing labels in the initial labeling")
+        
+    #here is where can call the function that resolves the face labels
+    face_coloring_copy = resolve_empty_conflicting_face_labels(
+                     curr_limb_mesh = current_mesh,
+                     face_lookup=face_lookup,
+                     no_missing_labels = no_missing_labels
+        
+    )
+    
+    divided_submeshes,divided_submeshes_idx = tu.split_mesh_into_face_groups(current_mesh,face_coloring_copy)
+    divided_submeshes = list(divided_submeshes.values())
+    divided_submeshes_idx = list(divided_submeshes_idx.values())
+    return divided_submeshes,divided_submeshes_idx
+
+
+""" ------------ 9/17 Addition: Will expand a certain label until hits the soma border -------- """
+def waterfill_starting_label_to_soma_border(curr_branch_mesh,
+                                           border_vertices,
+                                            label_to_expand,
+                                           total_face_labels,
+                                           print_flag=True):
+
+    """
+    Purpose: To expand a certain label so it is touching the soma 
+    border vertices
+    
+    """
+    #0) Turn the mesh into a graph
+    total_mesh_graph = nx.from_edgelist(curr_branch_mesh.face_adjacency)
+
+    #1) Get the nodes that represent the border
+    border_faces = set(tu.vertices_coordinates_to_faces(curr_branch_mesh,border_vertices))
+
+    final_faces = np.where(total_face_labels == label_to_expand)[0]
+
+    n_touching_soma = len(border_faces.intersection(set(final_faces)))
+    counter = 0
+    while n_touching_soma < 10:
+        final_faces = np.unique(np.concatenate([xu.get_neighbors(total_mesh_graph,k) for k in final_faces]))
+        n_touching_soma = len(border_faces.intersection(set(final_faces)))
+        counter+= 1
+
+
+    if print_flag:
+        print(f"Took {counter} iterations to expand the label back")
+        
+    total_face_labels[final_faces] = label_to_expand
+    return total_face_labels
+
+
+    
+    
+    
+
+
+    

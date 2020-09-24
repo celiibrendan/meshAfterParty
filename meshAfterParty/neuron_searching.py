@@ -77,8 +77,32 @@ def n_spines(branch,limb_name=None,branch_name=None,**kwargs):
         return 0
 
 @run_options(run_type="Branch")
-def no_spine_width(branch,limb_name=None,branch_name=None,**kwargs):
-    return branch.width_new["no_spine_average"]
+def width_new(branch,limb_name=None,branch_name=None,width_new_name="no_spine_mean_mesh_center",**kwargs):
+    return branch.width_new[width_new_name]
+
+
+
+# ---------- new possible widths ----------------- #
+@run_options(run_type="Branch")
+def mean_mesh_center(branch,limb_name=None,branch_name=None,**kwargs):
+    return branch.width_new["mean_mesh_center"]
+
+@run_options(run_type="Branch")
+def median_mesh_center(branch,limb_name=None,branch_name=None,**kwargs):
+    return branch.width_new["median_mesh_center"]
+
+@run_options(run_type="Branch")
+def no_spine_mean_mesh_center(branch,limb_name=None,branch_name=None,**kwargs):
+    return branch.width_new["no_spine_mean_mesh_center"]
+
+@run_options(run_type="Branch")
+def no_spine_median_mesh_center(branch,limb_name=None,branch_name=None,**kwargs):
+    return branch.width_new["no_spine_median_mesh_center"]
+
+# ---------- new possible widths ----------------- #
+
+
+
 
 @run_options(run_type="Branch")
 def no_spine_width(branch,limb_name=None,branch_name=None,**kwargs):
@@ -130,6 +154,13 @@ def convert_limb_function_return_to_dict(function_return,
 def convert_limb_function_return_to_limb_branch_dict(function_return,
                                         curr_limb_concept_network,
                                                     limb_name):
+    """
+    Purpose: returns a dictionary that maps limb to valid branches
+    according to a function return that is True or False
+    (only includes the branches that are true from the function_return)
+    
+    Result: retursn a dictionary like dict(L1=[3,5,8,9,10])
+    """
     new_dict = convert_limb_function_return_to_dict(function_return,
                                         curr_limb_concept_network)
     return {limb_name:[k for k,v in new_dict.items() if v == True]}
@@ -172,7 +203,9 @@ def skeletal_distance_from_soma(curr_limb,
                     limb_name = None,
                     somas = None,
                     error_if_all_nodes_not_return=True,
-                    print_flag = False
+                    print_flag = False,
+                    **kwargs
+                            
     ):
 
     """
@@ -289,6 +322,9 @@ def axon_segment(curr_limb,limb_branch_dict,limb_name=None,
                width_type = "no_spine_average_mesh_center",
                must_have_spine=True,
              **kwargs):
+    """
+    Function that will go through and hopefully label all of the axon pieces on a limb
+    """
     
     
     
@@ -408,6 +444,7 @@ def axon_segment_downstream_dendrites(curr_limb,limb_branch_dict,limb_name=None,
     
     return return_dict
 
+import width_utils as wu
 @run_options(run_type="Limb")
 def axon_segment_clean_false_positives(curr_limb,
                                        limb_branch_dict,
@@ -503,12 +540,17 @@ def axon_segment_clean_false_positives(curr_limb,
                         if print_flag:
                             print(f"Not processing node {n} because there were no spines and  must_have_spine set to {must_have_spine}")
                         continue
+                else:
+                    if print_flag:
+                        print(f"Not processing node {n} because spines were NONE and must_have_spine set to {must_have_spine}")
+                    continue #if spines were None
                     
             
             #2- 5) get the tangent touching parts of the mesh
-            width_array_1,width_array_2 = nru.find_mesh_width_array_border(curr_limb=curr_limb_copy,
+            width_array_1,width_array_2 = wu.find_mesh_width_array_border(curr_limb=curr_limb_copy,
                                  node_1 = n,
                                  node_2 = upstream_node,
+                                width_name=width_type,
                                 segment_start = 1,
                                 segment_end = 6,
                                 skeleton_segment_size = 500,

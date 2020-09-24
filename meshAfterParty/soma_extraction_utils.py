@@ -108,6 +108,8 @@ def soma_volume_check(current_mesh,multiplier=8):
 
 
 # -------------- Function that will extract the soma ------- #
+import meshlab
+from copy import deepcopy
 def extract_soma_center(segment_id,
                         current_mesh_verts,
                         current_mesh_faces,
@@ -118,9 +120,14 @@ def extract_soma_center(segment_id,
                         soma_size_threshold = 20000,
                        inner_decimation_ratio = 0.25,
                        volume_mulitplier=8,
-                       side_length_ratio_threshold=3,
+                       #side_length_ratio_threshold=3,
+                        side_length_ratio_threshold=6,
                        soma_size_threshold_max=192000, #this puts at 12000 once decimated
-                       delete_files=True
+                       delete_files=True,
+                        backtrack_soma_mesh_to_original=True, #should either be None or 
+                        boundary_vertices_threshold=None,#700 the previous threshold used
+                        poisson_backtrack_distance_threshold=None,#1500 the previous threshold used
+                        close_holes=False,
                        ):    
     """
     Will extract the soma meshes (possible multiple) from
@@ -285,14 +292,20 @@ def extract_soma_center(segment_id,
                 for v,sdf in zip(valid_soma_segments_width,valid_soma_segments_sdf):
                     submesh_face_list = np.where(classifier.labels_list == v)[0]
                     soma_mesh = largest_mesh_path_inner_decimated.submesh([submesh_face_list],append=True)
+                    
+                    # ---------- No longer doing the extra checks in here --------- #
 
                     
-                    if side_length_check(soma_mesh,side_length_ratio_threshold) and soma_volume_check(soma_mesh,volume_mulitplier):
+                    curr_side_len_check = side_length_check(soma_mesh,side_length_ratio_threshold)
+                    curr_volume_check = soma_volume_check(soma_mesh,volume_mulitplier)
+                    if curr_side_len_check and curr_volume_check:
                         to_add_list.append(soma_mesh)
                         to_add_list_sdf.append(sdf)
                         
                     else:
-                        print(f"--->This soma mesh was not added because it did not pass the sphere validation: {soma_mesh}")
+                        print(f"--->This soma mesh was not added because it did not pass the sphere validation:\n "
+                             f"soma_mesh = {soma_mesh}, curr_side_len_check = {curr_side_len_check}, curr_volume_check = {curr_volume_check}")
+                        continue
 
                 n_failed_inner_soma_loops = 0
 
@@ -381,10 +394,106 @@ def extract_soma_center(segment_id,
     run_time = time.time() - global_start_time
 
     print(f"\n\n\n Total time for run = {time.time() - global_start_time}")
+    print(f"Before Filtering the number of somas found = {len(total_soma_list_revised)}")
+    
+#     import system_utils as su
+#     su.compressed_pickle(total_soma_list_revised,"total_soma_list_revised")
+#     su.compressed_pickle(new_mesh,"original_mesh")
 
     #need to erase all of the temporary files ******
     #import shutil
     #shutil.rmtree(directory)
+    
+    """
+    Running the extra tests that depend on
+    - border vertices
+    - how well the poisson matches the backtracked soma to the real mesh
+    - other size checks
+    
+    """
+    filtered_soma_list = []
+    filtered_soma_list_sdf = []
+    for soma_mesh,curr_soma_sdf in zip(total_soma_list_revised,total_soma_list_revised_sdf):
+        if backtrack_soma_mesh_to_original:
+            print("Performing Soma Mesh Backtracking to original mesh")
+            soma_mesh_poisson = deepcopy(soma_mesh)
+            try:
+                #print("About to find original mesh")
+                soma_mesh = original_mesh_soma(
+                                                mesh = new_mesh,
+                                                soma_meshes=[soma_mesh_poisson],
+                                                sig_th_initial_split=15)[0]
+            except:
+                print("--->This soma mesh was not added because Was not able to backtrack soma to mesh")
+                continue
+            else:
+                if soma_mesh is None:
+                    print("--->This soma mesh was not added because Was not able to backtrack soma to mesh")
+                    continue
+
+
+
+
+            print(f"poisson_backtrack_distance_threshold = {poisson_backtrack_distance_threshold}")
+            #do the check that tests if there is a max distance between poisson and backtrack:
+            if not poisson_backtrack_distance_threshold is None and poisson_backtrack_distance_threshold > 0:
+                
+                if close_holes: 
+                    print("Using the close holes feature")
+                    fill_hole_obj = meshlab.FillHoles(max_hole_size=2000,
+                                                     self_itersect_faces=False)
+
+                    soma_mesh_filled_holes,output_subprocess_obj = fill_hole_obj(   
+                                                        vertices=soma_mesh.vertices,
+                                                         faces=soma_mesh.faces,
+                                                         return_mesh=True,
+                                                         delete_temp_files=True,
+                                                        )
+                else:
+                    soma_mesh_filled_holes = soma_mesh
+                
+#                 soma_mesh_poisson.export("soma_mesh_poisson.off")
+#                 soma_mesh_filled_holes.export("soma_mesh_filled_holes.off")
+                
+                
+                
+                print("APPLYING poisson_backtrack_distance_threshold CHECKS")
+                mesh_1 = soma_mesh_filled_holes
+                mesh_2 = soma_mesh_poisson
+
+                poisson_max_distance = tu.max_distance_betwee_mesh_vertices(mesh_1,mesh_2,
+                                                                  verbose=True)
+                print(f"poisson_max_distance = {poisson_max_distance}")
+                if poisson_max_distance > poisson_backtrack_distance_threshold:
+                    print(f"--->This soma mesh was not added because it did not pass the poisson_backtrack_distance check:\n"
+                      f" poisson_max_distance = {poisson_max_distance}")
+                    continue
+
+
+        #do the boundary check:
+        if not boundary_vertices_threshold is None:
+            print("USING boundary_vertices_threshold CHECK")
+            soma_boundary_groups_sizes = np.array([len(k) for k in tu.find_border_face_groups(soma_mesh)])
+            print(f"soma_boundary_groups_sizes = {soma_boundary_groups_sizes}")
+            large_boundary_groups = soma_boundary_groups_sizes[soma_boundary_groups_sizes>boundary_vertices_threshold]
+            print(f"large_boundary_groups = {large_boundary_groups} with boundary_vertices_threshold = {boundary_vertices_threshold}")
+            if len(large_boundary_groups)>0:
+                print(f"--->This soma mesh was not added because it did not pass the boundary vertices validation:\n"
+                      f" large_boundary_groups = {large_boundary_groups}")
+                continue
+        
+        curr_side_len_check = side_length_check(soma_mesh,side_length_ratio_threshold)
+        curr_volume_check = soma_volume_check(soma_mesh,volume_mulitplier)
+        if (not curr_side_len_check) or (not curr_volume_check):
+            print(f"--->This soma mesh was not added because it did not pass the sphere validation:\n "
+                 f"soma_mesh = {soma_mesh}, curr_side_len_check = {curr_side_len_check}, curr_volume_check = {curr_volume_check}")
+            continue
+            
+
+        #If made it through all the checks then add to final list
+        filtered_soma_list.append(soma_mesh)
+        filtered_soma_list_sdf.append(curr_soma_sdf)
+        
 
     """
     Need to delete all files in the temp folder *****
@@ -406,7 +515,8 @@ def extract_soma_center(segment_id,
             f.unlink()
 
     #return total_soma_list, run_time
-    return total_soma_list_revised,run_time,total_soma_list_revised_sdf
+    #return total_soma_list_revised,run_time,total_soma_list_revised_sdf
+    return filtered_soma_list,run_time,filtered_soma_list_sdf
 
 
 def filter_away_inside_soma_pieces(
@@ -617,30 +727,39 @@ def find_soma_centroids(soma_mesh_list):
     return soma_mesh_list_centers
 
 
-def find_soma_centroid_containing_meshes(soma_mesh_list_centers,
-                                            split_meshes):
-        containing_mesh_indices=dict([(i,[]) for i,sm_c in enumerate(soma_mesh_list_centers)])
-        for k,sm_center in enumerate(soma_mesh_list_centers):
-
-            viable_meshes = [j for j,m in enumerate(split_meshes) 
-                     if trimesh.bounds.contains(m.bounds,sm_center.reshape(-1,3))
-                            ]
-            if len(viable_meshes) == 0:
-                raise Exception(f"The Soma {k} with {sm_center} was not contained in any of the boundying boxes")
-            elif len(viable_meshes) == 1:
-                containing_mesh_indices[k] = viable_meshes[0]
-            else:
-                #find which mesh is closer to the soma midpoint
-                min_distances_to_soma = []
-                for v_i in viable_meshes:
-                    # build the KD Tree
-                    viable_neuron_kdtree = KDTree(split_meshes[v_i].vertices)
-                    distances,closest_node = viable_neuron_kdtree.query(sm_center.reshape(-1,3))
-                    min_distances_to_soma.append(np.min(distances))
+def find_soma_centroid_containing_meshes(soma_mesh_list,
+                                            split_meshes,
+                                        verbose=False):
+    """
+    Purpose: Will find the mesh piece that most likely has the 
+    soma that was found by the poisson soma finding process
+    
+    """
+    containing_mesh_indices=dict([(i,[]) for i,sm_c in enumerate(soma_mesh_list)])
+    for k,sm_mesh in enumerate(soma_mesh_list):
+        sm_center = tu.mesh_center_vertex_average(sm_mesh)
+        viable_meshes = [j for j,m in enumerate(split_meshes) 
+                 if trimesh.bounds.contains(m.bounds,sm_center.reshape(-1,3))
+                        ]
+        if verbose:
+            print(f"viable_meshes = {viable_meshes}")
+        if len(viable_meshes) == 0:
+            raise Exception(f"The Soma {k} with mesh {sm_center} was not contained in any of the boundying boxes")
+        elif len(viable_meshes) == 1:
+            containing_mesh_indices[k] = viable_meshes[0]
+        else:
+            #find which mesh is closer to the soma midpoint (NOT ACTUALLY WHAT WE WANT)
+            min_distances_to_soma = []
+            for v_i in viable_meshes:
+                # build the KD Tree
+                viable_neuron_kdtree = KDTree(split_meshes[v_i].vertices)
+                distances,closest_node = viable_neuron_kdtree.query(sm_mesh.vertices.reshape(-1,3))
+                min_distances_to_soma.append(np.sum(distances))
+            if verbose:
                 print(f"min_distances_to_soma = {min_distances_to_soma}")
-                containing_mesh_indices[k] = np.argmin(min_distances_to_soma)
-        
-        return containing_mesh_indices
+            containing_mesh_indices[k] = np.argmin(min_distances_to_soma)
+
+    return containing_mesh_indices
     
 def grouping_containing_mesh_indices(containing_mesh_indices):
     """
@@ -674,3 +793,172 @@ def grouping_containing_mesh_indices(containing_mesh_indices):
         raise Exception("One of the lists is empty when grouping somas lists")
         
     return mesh_groupings
+
+
+
+""" ---------- 9/23: Addition to help filter away false somas"""
+
+import soma_extraction_utils as sm
+import time
+
+def original_mesh_soma(
+    mesh,
+    soma_meshes,
+    sig_th_initial_split=15):
+    
+    """
+    Purpose: Will help backtrack the Poisson surface reconstruction soma 
+    to the soma of the actual mesh
+    
+    Application: By backtracking to mesh it will help with figuring
+    out false somas from neural 3D junk
+    
+    Ex: 
+    
+    multi_soma_seg_ids = np.unique(multi_soma_seg_ids)
+    seg_id_idx = -2
+    seg_id = multi_soma_seg_ids[seg_id_idx]
+
+    dec_mesh = get_decimated_mesh(seg_id)
+    curr_soma_meshes = get_seg_extracted_somas(seg_id)
+    curr_soma_mesh_list = get_soma_mesh_list(seg_id)
+
+    import skeleton_utils as sk
+    sk.graph_skeleton_and_mesh(main_mesh_verts=dec_mesh.vertices,
+                               main_mesh_faces=dec_mesh.faces,
+                            other_meshes=curr_soma_meshes,
+                              other_meshes_colors="red")
+    
+
+    soma_meshes_new = original_mesh_soma(
+        mesh = dec_mesh,
+        soma_meshes=curr_soma_meshes,
+        sig_th_initial_split=15)
+    
+    
+    """
+
+    
+    main_mesh_total = mesh
+    soma_mesh_list_centers = [tu.mesh_center_vertex_average(k) for k in soma_meshes]
+    soma_mesh_list=soma_meshes
+    
+    
+
+    #--- 2) getting the soma submeshes that are connected to each soma and identifiying those that aren't (and eliminating any mesh pieces inside the soma)
+
+    #finding the mesh pieces that contain the soma
+    #splitting the current neuron into distinct pieces
+    
+    split_meshes = tu.split_significant_pieces(
+                                main_mesh_total,
+                                significance_threshold=sig_th_initial_split,
+                                print_flag=False)
+
+    print(f"# total split meshes = {len(split_meshes)}")
+
+
+    #returns the index of the split_meshes index that contains each soma    
+    containing_mesh_indices = find_soma_centroid_containing_meshes(soma_mesh_list,
+                                            split_meshes,
+                                            verbose=True)
+
+    # filtering away any of the inside floating pieces: 
+    non_soma_touching_meshes = [m for i,m in enumerate(split_meshes)
+                     if i not in list(containing_mesh_indices.values())]
+
+
+    #Adding the step that will filter away any pieces that are inside the soma
+    if len(non_soma_touching_meshes) > 0 and len(soma_mesh_list) > 0:
+        """
+        *** want to save these pieces that are inside of the soma***
+        """
+
+        non_soma_touching_meshes,inside_pieces = filter_away_inside_soma_pieces(soma_mesh_list,non_soma_touching_meshes,
+                                        significance_threshold=sig_th_initial_split,
+                                        return_inside_pieces = True)                                                      
+
+
+    split_meshes # the meshes of the original mesh
+    containing_mesh_indices #the mapping of each soma centroid to the correct split mesh
+    soma_containing_meshes = grouping_containing_mesh_indices(containing_mesh_indices)
+
+    soma_touching_meshes = [split_meshes[k] for k in soma_containing_meshes.keys()]
+
+
+    print(f"# of soma containing seperate meshes = {len(soma_touching_meshes)}")
+    print(f"meshes with somas = {soma_containing_meshes}") #Ex: {0: [0, 1]}
+
+
+
+
+
+
+
+    #--- 3)  Soma Extraction was great (but it wasn't the original soma faces), so now need to get the original soma faces and the original non-soma faces of original pieces
+
+
+    """
+    for each soma touching mesh get the following:
+    1) original soma meshes
+
+    """
+
+
+    soma_meshes_new = [None]*len(soma_meshes)
+
+    
+    for z,(mesh_idx, soma_idxes) in enumerate(soma_containing_meshes.items()):
+        print(f"\n\n----Working on soma-containing mesh piece {z}----")
+
+        #1) Final all soma faces (through soma extraction and then soma original faces function)
+        current_mesh = split_meshes[mesh_idx] #gets the current soma containing mesh
+
+        current_soma_mesh_list = [soma_mesh_list[k] for k in soma_idxes]
+
+        current_time = time.time()
+        print(f"current_soma_mesh_list = {current_soma_mesh_list}")
+        print(f"current_mesh = {current_mesh}")
+        mesh_pieces_without_soma = subtract_soma(current_soma_mesh_list,current_mesh,
+                                                    significance_threshold=250)
+        print(f"mesh_pieces_without_soma = {mesh_pieces_without_soma}")
+        
+        if len(mesh_pieces_without_soma) == 0:
+            return None
+        
+        print(f"Total time for Subtract Soam = {time.time() - current_time}")
+        current_time = time.time()
+
+        debug = True
+        
+        
+        
+        mesh_pieces_without_soma_stacked = tu.combine_meshes(mesh_pieces_without_soma)
+        if debug:
+            print(f"mesh_pieces_without_soma_stacked = {mesh_pieces_without_soma_stacked}")
+        
+        # find the original soma faces of mesh
+        soma_faces = tu.original_mesh_faces_map(current_mesh,mesh_pieces_without_soma_stacked,matching=False)
+        print(f"Total time for Original_mesh_faces_map for mesh_pieces without soma= {time.time() - current_time}")
+        current_time = time.time()
+        
+        if debug:
+            print(f"soma_faces = {soma_faces}")
+        soma_meshes = current_mesh.submesh([soma_faces],append=True,repair=False)
+        if debug:
+            print(f"soma_meshes = {soma_meshes}")
+        #How to seperate the mesh faces
+        seperate_soma_meshes,soma_face_components = tu.split(soma_meshes,only_watertight=False)
+        #take the top largest ones depending how many were originally in the soma list
+        seperate_soma_meshes = seperate_soma_meshes[:len(soma_mesh_list)]
+        soma_face_components = soma_face_components[:len(soma_mesh_list)]
+
+
+        
+        #storing the new somas
+        for zz,s_idx in enumerate(soma_idxes):
+            soma_meshes_new[s_idx] = seperate_soma_meshes[zz]
+            
+        
+    return soma_meshes_new
+    
