@@ -901,6 +901,44 @@ def find_border_faces(mesh):
     return border_faces
 
 
+def find_border_vertex_groups(mesh):
+    """
+    Will return all borders as faces and grouped together
+    """
+    if len(mesh.faces) < 3:
+        return []
+
+    if mesh.is_watertight:
+        return []
+
+    # we know that in a watertight mesh every edge will be included twice
+    # thus every edge which appears only once is part of a hole boundary
+    boundary_groups = group_rows(
+        mesh.edges_sorted, require_count=1)
+
+    # mesh is not watertight and we have too few edges
+    # edges to do a repair
+    # since we haven't changed anything return False
+    if len(boundary_groups) < 3:
+        return []
+
+    boundary_edges = mesh.edges[boundary_groups]
+    index_as_dict = [{'index': i} for i in boundary_groups]
+
+    # we create a graph of the boundary edges, and find cycles.
+    g = nx.from_edgelist(
+        np.column_stack((boundary_edges,
+                         index_as_dict)))
+    border_edge_groups = list(nx.connected_components(g))
+
+    """
+    Psuedocode on converting list of edges to 
+    list of faces
+
+    """
+    return border_edge_groups
+    
+
 def find_border_face_groups(mesh):
     """
     Will return all borders as faces and grouped together
@@ -992,7 +1030,8 @@ def mesh_with_ends_cutoff(mesh,n_iterations=5,
     else:
         return sig_leftover_pieces
     
-
+'''
+# Old method that only computed percentage of total number of border vertices
 from pykdtree.kdtree import KDTree
 def filter_away_border_touching_submeshes(
                             mesh,
@@ -1035,7 +1074,10 @@ def filter_away_border_touching_submeshes(
             print("There were no border edges for the main mesh")
         passed_idx = np.arange(len(submesh_list))
     else:
-        
+        """
+        Want to just find a matching border group and then look 
+        at percentage
+        """
 
         passed_idx = []
         for i,subm in enumerate(submesh_list):
@@ -1052,7 +1094,97 @@ def filter_away_border_touching_submeshes(
         return [k for i,k in enumerate(submesh_list) if i in passed_idx]
     else:
         return passed_idx
+'''
+from pykdtree.kdtree import KDTree
+import numpy as np
+
+def filter_away_border_touching_submeshes_by_group(
+                            mesh,
+                            submesh_list,
+                            border_percentage_threshold=0.5,#would make 0.00001 if wanted to enforce nullification if at most one touchedss
+                            verbose = False,
+                            return_meshes=True,
+                    
+                            ):
+    """
+    Purpose: Will return submeshes or indices that 
+    do not touch a border edge of the parenet mesh
+
+    Pseudocode:
+    1) Get the border vertices of mesh grouped
+    2) For each submesh
+       a. Find which border group the vertices overlap with (0 distances)
+       b. For each group that it is touching 
+          i) Find the number of overlap
+          ii) if the percentage is greater than threshold then nullify
+    - 
+
+    Ex: 
     
+    return_value = filter_away_border_touching_submeshes(
+                                mesh = eraser_branch.mesh,
+                                submesh_list = eraser_branch.spines,
+                                verbose = True,
+                                return_meshes=True)
+    sk.graph_skeleton_and_mesh(main_mesh_verts=mesh.vertices,
+                           main_mesh_faces=mesh.faces,
+                            other_meshes=eraser_branch.spines,
+                                                  other_meshes_colors="red")
+    sk.graph_skeleton_and_mesh(main_mesh_verts=mesh.vertices,
+                           main_mesh_faces=mesh.faces,
+                            other_meshes=return_value,
+                                other_meshes_colors="red")
+                                
+    Ex 2:
+    tu = reload(tu)
+    tu.filter_away_border_touching_submeshes_by_group(
+        mesh=curr_branch.mesh,
+        submesh_list=curr_branch.spines
+    )
+    """
+
+    #1) Get the border vertices of mesh
+    border_vertex_groups = find_border_vertex_groups(mesh)
+    if len(border_vertex_groups) == 0:
+        if verbose:
+            print("There were no border edges for the main mesh")
+        passed_idx = np.arange(len(submesh_list))
+    else:
+        """
+        Want to just find a matching border group and then look 
+        at percentage
+        """
+
+        passed_idx = []
+        for i,subm in enumerate(submesh_list):
+            #creates KDTree for the submesh
+            spine_kdtree = KDTree(subm.vertices)
+            
+            not_touching_significant_border=True
+            
+            for z,b_verts in enumerate(border_vertex_groups):
+                dist,closest_vert_idx = spine_kdtree.query(mesh.vertices[list(b_verts)])
+                touching_perc = len(dist[dist == 0])/len(b_verts)
+                if touching_perc > border_percentage_threshold:
+                    if verbose:
+                        print(f"Submesh {z} was touching a greater percentage ({touching_perc}) of border vertices than threshold ({border_percentage_threshold})")
+                    not_touching_significant_border=False
+                    break
+            
+            
+            if not_touching_significant_border:
+                passed_idx.append(i)
+
+
+        passed_idx = np.array(passed_idx)
+        if verbose:
+            print(f"At end passed_idx = {passed_idx} ")
+
+    if return_meshes:
+        return [k for i,k in enumerate(submesh_list) if i in passed_idx]
+    else:
+        return passed_idx
+
     
 def max_distance_betwee_mesh_vertices(mesh_1,mesh_2,
                                       verbose=False,
@@ -1090,6 +1222,95 @@ def max_distance_betwee_mesh_vertices(mesh_1,mesh_2,
             return False
         else:
             return True
+
+import meshlab
+def fill_holes(mesh,
+              max_hole_size=2000,
+              self_itersect_faces=False):
+    lrg_mesh = mesh
+    with meshlab.FillHoles(max_hole_size=max_hole_size,self_itersect_faces=self_itersect_faces) as fill_hole_obj:
+
+        mesh_filled_holes,fillholes_file_obj = fill_hole_obj(   
+                                            vertices=lrg_mesh.vertices,
+                                             faces=lrg_mesh.faces,
+                                             return_mesh=True,
+                                             delete_temp_files=True,
+                                            )
+    return mesh_filled_holes
+
+def filter_meshes_by_containing_coordinates(mesh_list,nullifying_points,
+                                                filter_away=True,
+                                           method="distance",
+                                           distance_threshold=500,
+                                           verbose=False):
+    """
+    Purpose: Will either filter away or keep meshes from a list of meshes
+    based on points based to the function
+    
+    Application: Can filter away spines that are too close to the endpoints of skeletons
+    
+    Ex: 
+    import trimesh
+    import numpy as np
+    tu = reload(tu)
+
+    curr_limb = recovered_neuron[2]
+    curr_limb_end_coords = find_skeleton_endpoint_coordinates(curr_limb.skeleton)
+
+
+    kept_spines = []
+
+    for curr_branch in curr_limb:
+        #a) get the spines
+        curr_spines = curr_branch.spines
+
+        #For each spine:
+        if not curr_spines is None:
+            curr_kept_spines = tu.filter_meshes_by_bbox_containing_coordinates(curr_spines,
+                                                                            curr_limb_end_coords)
+            print(f"curr_kept_spines = {curr_kept_spines}")
+            kept_spines += curr_kept_spines
+
+    nviz.plot_objects(meshes=kept_spines)
+    """
+    if not nu.is_array_like(mesh_list):
+        mesh_list = [mesh_list]
+        
+    nullifying_points = np.array(nullifying_points).reshape(-1,3)
+    
+    containing_meshes = []
+    non_containing_meshes = []
+    for j,sp_m in enumerate(mesh_list):
+        # tried filling hole and using contains
+        #sp_m_filled = tu.fill_holes(sp_m)
+        #contains_results = sp_m.bounds.contains(currc_limb_end_coords)
+
+        #tried using the bounds method
+        #contains_results = trimesh.bounds.contains(sp_m.bounds,currc_limb_end_coords.reshape(-1,3))
+
+        #final version
+        if method=="bounding_box":
+            contains_results = sp_m.bounding_box_oriented.contains(nullifying_points.reshape(-1,3))
+        elif method == "distance":
+            sp_m_kdtree = KDTree(sp_m.vertices)
+            distances,closest_nodes = sp_m_kdtree.query(nullifying_points.reshape(-1,3))
+            contains_results = distances < distance_threshold
+            if verbose:
+                print(f"Submesh {j} ({sp_m}) distances = {distances}")
+                print(f"Min distance {np.min(distances)}")
+                print(f"contains_results = {contains_results}\n")
+        else:
+            raise Exception(f"Unimplemented method ({method}) requested")
+            
+        if np.sum(contains_results) > 0:
+            containing_meshes.append(sp_m)
+        else:
+            non_containing_meshes.append(sp_m)
+    
+    if filter_away:
+        return non_containing_meshes
+    else:
+        return containing_meshes
     
 """    
 An algorithm that could be used to find sdf values    

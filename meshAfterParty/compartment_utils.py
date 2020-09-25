@@ -903,7 +903,12 @@ def resolve_empty_conflicting_face_labels(
 
     face_coloring_copy = face_coloring.copy()
     
+    print("BEFORE face_lookup_resolved_test")
+    import system_utils as su
+    su.compressed_pickle(empty_connected_components,"empty_connected_components")
+    
     for comp in tqdm(empty_connected_components):
+        print("len(mesh_graph) = {len(mesh_graph)}")
         face_lookup_resolved_test = waterfill_labeling(
                         #total_mesh_correspondence=face_lookup_resolved_test,
                         total_mesh_correspondence=face_coloring_copy,
@@ -914,6 +919,7 @@ def resolve_empty_conflicting_face_labels(
                         max_iterations = 1000,
                         max_submesh_threshold = max_submesh_threshold
                         )
+    print("AFTER face_lookup_resolved_test")
 
     # -- wheck that the face coloring did not have any empty faces --
     empty_faces = np.where(face_coloring_copy==-1)[0]
@@ -989,10 +995,16 @@ def waterfill_starting_label_to_soma_border(curr_branch_mesh,
 
     n_touching_soma = len(border_faces.intersection(set(final_faces)))
     counter = 0
-    while n_touching_soma < 10:
+    max_iterations = 1000
+    while n_touching_soma < 10 and n_touching_soma < len(border_faces):
         final_faces = np.unique(np.concatenate([xu.get_neighbors(total_mesh_graph,k) for k in final_faces]))
         n_touching_soma = len(border_faces.intersection(set(final_faces)))
         counter+= 1
+        if counter > max_iterations:
+            print("Couldn't get the final faces to touch the somas border, before breaking"
+                 f"\nn_touching_soma = {n_touching_soma}, final_faces = {len(final_faces)}"
+                 f" border_faces = {len(border_faces)}")
+            break
 
 
     if print_flag:

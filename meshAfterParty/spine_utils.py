@@ -395,4 +395,4 @@ def filter_spine_meshes(spine_meshes,
 #------------ 9/23 Addition -------------- #
 import trimesh_utils as tu
 def filter_out_border_spines(mesh,spine_submeshes):
-    return tu.filter_away_border_touching_submeshes(mesh,spine_submeshes)
+    return tu.filter_away_border_touching_submeshes_by_group(mesh,spine_submeshes)

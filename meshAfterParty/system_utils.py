@@ -40,13 +40,14 @@ class HiddenPrints:
         sys.stdout = self._original_stdout
     
 import warnings
-
+import logging, sys
 def ignore_warnings():
     """
     This will ignore warnings but not the meshlab warnings
     
     """
     warnings.filterwarnings('ignore')
+    logging.disable(sys.maxsize)
     
 
 from contextlib import contextmanager,redirect_stderr,redirect_stdout
@@ -84,6 +85,10 @@ with su.suppress_stdout_stderr():
     
     
     """
+    #will supress the warnings:
+    ignore_warnings()
+    
+    
     #get the original setting of the tqdm.disable
     if suppress_tqdm:
         original_tqdm = copy.copy(tqdm.disable)

@@ -67,7 +67,10 @@ def largest_mesh_piece(msh):
     total_mesh_split_lengths_inner = [len(k.faces) for k in mesh_splits_inner]
     ordered_mesh_splits_inner = mesh_splits_inner[np.flip(np.argsort(total_mesh_split_lengths_inner))]
     return ordered_mesh_splits_inner[0]
-def soma_volume_ratio(current_mesh):
+
+import system_utils as su
+def soma_volume_ratio(current_mesh,
+                     watertight_method="fill_holes"):
     """
     bounding_box_oriented: rotates the box to be less volume
     bounding_box : does not rotate the box and makes it axis aligned
@@ -81,17 +84,35 @@ def soma_volume_ratio(current_mesh):
         #get the largest piece
         lrg_mesh = largest_mesh_piece(current_mesh)
         if not lrg_mesh.is_watertight:
-            print("Using Poisson Surface Reconstruction to make mesh watertight")
-            #run the Poisson Surface reconstruction and get the largest piece
-            new_mesh_inner,poisson_file_obj = Poisson_obj_temp(vertices=lrg_mesh.vertices,
-                   faces=lrg_mesh.faces,
-                   return_mesh=True,
-                   delete_temp_files=True,
-                   segment_id=random.randint(0,999999))
-            lrg_mesh = largest_mesh_piece(new_mesh_inner)
+            lrg_mesh.export("lrg_mesh_in_soma_volume.off")
+            if watertight_method == "poisson":
+                print("Using Poisson Surface Reconstruction for watertightness in soma_volume_ratio")
+                #run the Poisson Surface reconstruction and get the largest piece
+                new_mesh_inner,poisson_file_obj = Poisson_obj_temp(vertices=lrg_mesh.vertices,
+                       faces=lrg_mesh.faces,
+                       return_mesh=True,
+                       delete_temp_files=True,
+                       segment_id=random.randint(0,999999))
+                lrg_mesh = largest_mesh_piece(new_mesh_inner)
+            elif watertight_method == "fill_holes":
+                print("Using the close holes feature for watertightness in soma_volume_ratio")
+                fill_hole_obj = meshlab.FillHoles(max_hole_size=2000,
+                                                 self_itersect_faces=False)
+
+                mesh_filled_holes,fillholes_file_obj = fill_hole_obj(   
+                                                    vertices=lrg_mesh.vertices,
+                                                     faces=lrg_mesh.faces,
+                                                     return_mesh=True,
+                                                     delete_temp_files=True,
+                                                    )
+                lrg_mesh = largest_mesh_piece(mesh_filled_holes)
+                
+                    
+            else:
+                raise Exception(f"Unimplemented watertight_method requested: {watertight_method}")
 
         #turn the mesh into a closed mesh based on 
-
+        print(f"mesh.is_watertight = {lrg_mesh.is_watertight}")
         ratio_val = lrg_mesh.bounding_box.volume/lrg_mesh.volume
     #     if ratio_val < 1:
     #         raise Exception("Less than 1 value in volume ratio computation")
@@ -439,6 +460,7 @@ def extract_soma_center(segment_id,
             #do the check that tests if there is a max distance between poisson and backtrack:
             if not poisson_backtrack_distance_threshold is None and poisson_backtrack_distance_threshold > 0:
                 
+                soma_mesh.export("soma_mesh.off")
                 if close_holes: 
                     print("Using the close holes feature")
                     fill_hole_obj = meshlab.FillHoles(max_hole_size=2000,
@@ -453,8 +475,8 @@ def extract_soma_center(segment_id,
                 else:
                     soma_mesh_filled_holes = soma_mesh
                 
-#                 soma_mesh_poisson.export("soma_mesh_poisson.off")
-#                 soma_mesh_filled_holes.export("soma_mesh_filled_holes.off")
+                
+                #soma_mesh_filled_holes.export("soma_mesh_filled_holes.off")
                 
                 
                 

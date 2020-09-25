@@ -309,8 +309,43 @@ def skeletal_distance_from_soma(curr_limb,
 from copy import deepcopy
 import networkx_utils as xu
 
-@run_options(run_type="Limb")
-def axon_segment(curr_limb,limb_branch_dict,limb_name=None,
+
+
+axon_width_like_requirement = "(median_mesh_center < 200)"# or no_spine_median_mesh_center < 150)"
+axon_width_like_query = (f"(n_spines < 4 and {axon_width_like_requirement} and skeleton_distance_branch <= 15000)"
+                f" or (skeleton_distance_branch > 15000 and {axon_width_like_requirement} and spines_per_skeletal_length < 0.00023)")
+axon_width_like_functions_list = [
+    "width",
+    "median_mesh_center",
+    "n_spines",
+    "n_faces_branch",
+    "skeleton_distance_branch",
+    "spines_per_skeletal_length",
+    "no_spine_median_mesh_center",
+]
+
+
+def axon_width_like_segments(current_neuron,
+                      current_query=None,
+                      current_functions_list=None):
+    """
+    Will get all of
+    
+    """
+    
+    if current_functions_list is None:
+        current_functions_list = axon_width_like_functions_list
+    if current_query is None:
+        current_query = axon_width_like_query
+        
+    limb_branch_dict = ns.query_neuron(current_neuron,
+                                       #query="n_spines < 4 and no_spine_average_mesh_center < 400",
+                                       query=current_query,
+                                       #return_dataframe=True,
+                   functions_list=current_functions_list)
+    return limb_branch_dict
+
+def axon_segment(curr_limb,limb_branch_dict=None,limb_name=None,
                  
                  #the parameters for the axon_segment_downstream_dendrites function
                  downstream_face_threshold=5000,
@@ -319,14 +354,12 @@ def axon_segment(curr_limb,limb_branch_dict,limb_name=None,
                  
                  #the parameters for the axon_segment_clean_false_positives function
                  width_match_threshold=50,
-               width_type = "no_spine_average_mesh_center",
+               width_type = "no_spine_median_mesh_center",
                must_have_spine=True,
              **kwargs):
     """
     Function that will go through and hopefully label all of the axon pieces on a limb
     """
-    
-    
     
     curr_limb_concept_network = curr_limb.concept_network
     #print(f"limb_branch_dict BEFORE = {limb_branch_dict}")

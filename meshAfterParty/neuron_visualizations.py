@@ -9,9 +9,9 @@ import time
 
 def plot_soma_limb_concept_network(neuron_obj,
                                   soma_color="red",
-                                  limb_color="blue",
+                                  limb_color="aqua",
                                   node_size=500,
-                                  font_color="white",
+                                  font_color="black",
                                   node_colors=dict(),
                                   **kwargs):
     """
@@ -39,6 +39,8 @@ def plot_soma_limb_concept_network(neuron_obj,
             else:
                 curr_color = limb_color
         node_list_colors.append(curr_color)
+    
+    #print(f"font_color = {font_color}")
     nx.draw(neuron_obj.concept_network,with_labels=True,node_color=node_list_colors,
            font_color=font_color,node_size=node_size)
     
@@ -1558,4 +1560,103 @@ def plot_spines(current_neuron):
                         mesh_spines_alpha = 0.8,
 
                          )
+# -------  9/24: Wrapper for the sk.graph function that is nicer to interface with ----#
+"""
+def graph_skeleton_and_mesh(main_mesh_verts=[],
+                            main_mesh_faces=[],
+                            unique_skeleton_verts_final=[],
+                            edges_final=[],
+                            edge_coordinates=[],
+                            other_meshes=[],
+                            other_meshes_colors =  [],
+                            mesh_alpha=0.2,
+                            other_meshes_face_components = [],
+                            other_skeletons = [],
+                            other_skeletons_colors =  [],
+                            return_other_colors = False,
+                            main_mesh_color = [0.,1.,0.,0.2],
+                            main_skeleton_color = [0,0.,1,1],
+                            main_mesh_face_coloring = [],
+                            other_scatter=[],
+                            scatter_size = 0.3,
+                            other_scatter_colors=[],
+                            main_scatter_color=[1.,0.,0.,0.5],
+                            buffer=1000,
+                           axis_box_off=True,
+                           html_path="",
+                           show_at_end=True,
+                           append_figure=False):
+                           
+things that need to be changed:
+1) main_mesh combined
+2) edge_coordinates is just the main_skeleton
+other_scatter --> scatters
+3) change all the other_[]_colors names
+
+
+*if other inputs aren't list then make them list
+                           
+"""
+import skeleton_utils as sk
+def plot_objects(main_mesh=None,
+                 main_skeleton=None,
+                 main_mesh_color = [0.,1.,0.,0.2],
+                main_skeleton_color = [0,0.,1,1],
+                meshes=[],
+                meshes_colors =  [],
+                mesh_alpha=0.2,
+                            
+                skeletons = [],
+                skeletons_colors =  [],
+                            
+                scatters=[],
+                scatters_colors=[],
+                scatter_size = 0.3,
+                            
+                main_scatter_color=[1.,0.,0.,0.5],
+                buffer=1000,
+                axis_box_off=True,
+                html_path="",
+                show_at_end=True,
+                append_figure=False):
     
+    if main_mesh is None:
+        main_mesh_verts = []
+        main_mesh_faces= []
+    else:
+        main_mesh_verts = main_mesh.vertices
+        main_mesh_faces= main_mesh.faces
+        
+    if main_skeleton is None:
+        edge_coordinates = []
+    else:
+        edge_coordinates=main_skeleton
+        
+        
+    convert_to_list_vars = [meshes,meshes_colors,skeletons,
+                            skeletons_colors,scatters,scatters_colors]
+    for k in convert_to_list_vars:
+        if type(k) != list:
+            k = [k]
+    
+        
+    return sk.graph_skeleton_and_mesh(main_mesh_verts=main_mesh_verts,
+                           main_mesh_faces=main_mesh_faces,
+                           edge_coordinates=edge_coordinates,
+                           other_meshes=meshes,
+                                      mesh_alpha=mesh_alpha,
+                            other_meshes_colors=meshes_colors,
+                            other_skeletons=skeletons,
+                            other_skeletons_colors=skeletons_colors,
+                            other_scatter=scatters,
+                            other_scatter_colors=scatters_colors,
+                            scatter_size=scatter_size,
+                            main_scatter_color=main_scatter_color,
+                            buffer=buffer,
+                            axis_box_off=axis_box_off,
+                            html_path=html_path,
+                            show_at_end=show_at_end,
+                            append_figure=append_figure
+                           )
+        
+        

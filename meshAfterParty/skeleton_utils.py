@@ -248,6 +248,9 @@ def graph_skeleton_and_mesh(main_mesh_verts=[],
     - if mapped to groups then do random colors (and generate them)
     - if mapped to colors then just do submeshes and send the colors
     """
+    #print(f"other_scatter = {other_scatter}")
+    #print(f"mesh_alpha = {mesh_alpha}")
+    
     if not append_figure:
         ipv.figure(figsize=(15,15))
     
@@ -1940,7 +1943,6 @@ import time
 import os
 import pathlib
 
-from tqdm.notebook import tqdm
 
 import meshlab
 from importlib import reload
@@ -3504,6 +3506,30 @@ def find_branch_skeleton_with_specific_coordinate(divded_skeleton,current_coordi
             matching_branch.append(b_idx)
     
     return matching_branch
+
+#----------- 9/24 -------------- #
+import networkx_utils as xu
+def find_skeleton_endpoint_coordinates(skeleton):
+    """
+    Purpose: To find the endpoint coordinates 
+    of a skeleton
+    
+    Application: 
+    1) Can get the endpoints of a skeleton and 
+    then check that none of the spines contain 
+    an endpoint coordinate to help 
+    guard against false spines at the endpoints
+    
+    Pseudocode:
+    1) convert the skeleton to a graph
+    2) Find the endpoint nodes of the graph (with degree 1)
+    3) return the coordinates of the graph nodes
+    
+    """
+    G = convert_skeleton_to_graph(skeleton)
+    endpoint_nodes = xu.get_nodes_of_degree_k(G,degree_choice=1)
+    endpoint_coordinates = xu.get_node_attributes(G,node_list=endpoint_nodes)
+    return endpoint_coordinates
 
 
 

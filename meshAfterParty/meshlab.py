@@ -350,6 +350,9 @@ class Decimator(Meshlab):
                  mesh_filename="",
                  printout=True, delete_temp_files=True,**kwargs):
         
+        if segment_id is None:
+            segment_id= random.randint(100,100000)
+        
         if len(input_mesh_path) <= 0:
             if len(mesh_filename)<=0:
                 mesh_filename = 'neuron_{}.off'.format(segment_id)
@@ -508,6 +511,8 @@ class Poisson(Meshlab):
                  input_mesh_path="",
                  mesh_filename="",
                  printout=True, delete_temp_files=True,**kwargs):
+        if segment_id is None:
+            segment_id= random.randint(100,100000)
         
         if len(input_mesh_path) <= 0:
             if len(mesh_filename)<=0:
@@ -663,6 +668,8 @@ class FilterBase(Meshlab):
                  input_mesh_path="",
                  mesh_filename="",
                  printout=True, delete_temp_files=True,**kwargs):
+        if segment_id is None:
+            segment_id= random.randint(100,100000)
         
         if len(input_mesh_path) <= 0:
             if len(mesh_filename)<=0:
@@ -750,10 +757,10 @@ class FillHoles(FilterBase):
                  max_hole_size=2000,
                  self_itersect_faces=True,
                  overwrite=False, **kwargs):
-        print(f"self_itersect_faces = {self_itersect_faces}")
+        
         #calling the super script:
         current_script_filters = self.initialize_script_filters(max_hole_size,self_itersect_faces)
-        print(f"current_script = {current_script_filters}")
+        
         super().__init__(temp_folder=temp_folder,
             script_filters=current_script_filters, 
             name="fill_holes",overwrite=overwrite, **kwargs)
