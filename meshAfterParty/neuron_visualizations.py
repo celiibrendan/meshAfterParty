@@ -5,7 +5,7 @@ import networkx as nx
 import neuron_utils as nru
 import networkx_utils as xu
 import time
-
+from importlib import reload
 
 def plot_soma_limb_concept_network(neuron_obj,
                                   soma_color="red",
@@ -1598,6 +1598,7 @@ other_scatter --> scatters
                            
 """
 import skeleton_utils as sk
+
 def plot_objects(main_mesh=None,
                  main_skeleton=None,
                  main_mesh_color = [0.,1.,0.,0.2],
@@ -1619,6 +1620,8 @@ def plot_objects(main_mesh=None,
                 html_path="",
                 show_at_end=True,
                 append_figure=False):
+    import neuron_visualizations as nviz
+    nviz = reload(nviz)
     
     if main_mesh is None:
         main_mesh_verts = []

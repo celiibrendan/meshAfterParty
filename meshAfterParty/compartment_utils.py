@@ -908,7 +908,7 @@ def resolve_empty_conflicting_face_labels(
     su.compressed_pickle(empty_connected_components,"empty_connected_components")
     
     for comp in tqdm(empty_connected_components):
-        print("len(mesh_graph) = {len(mesh_graph)}")
+        #print("len(mesh_graph) = {len(mesh_graph)}")
         face_lookup_resolved_test = waterfill_labeling(
                         #total_mesh_correspondence=face_lookup_resolved_test,
                         total_mesh_correspondence=face_coloring_copy,
