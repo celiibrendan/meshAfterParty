@@ -438,7 +438,6 @@ def extract_soma_center(segment_id,
         if backtrack_soma_mesh_to_original:
             print("Performing Soma Mesh Backtracking to original mesh")
             soma_mesh_poisson = deepcopy(soma_mesh)
-            
             try:
                 #print("About to find original mesh")
                 soma_mesh = original_mesh_soma(
@@ -446,6 +445,8 @@ def extract_soma_center(segment_id,
                                                 soma_meshes=[soma_mesh_poisson],
                                                 sig_th_initial_split=15)[0]
             except:
+                import traceback
+                traceback.print_exc()
                 print("--->This soma mesh was not added because Was not able to backtrack soma to mesh")
                 continue
             else:
