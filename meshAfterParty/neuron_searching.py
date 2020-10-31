@@ -203,6 +203,7 @@ def skeletal_distance_from_soma(curr_limb,
                     limb_name = None,
                     somas = None,
                     error_if_all_nodes_not_return=True,
+                    include_node_skeleton_dist=True,
                     print_flag = False,
                     **kwargs
                             
@@ -280,8 +281,12 @@ def skeletal_distance_from_soma(curr_limb,
                 #return_dict[n] = np.inf
                 continue
             #2) convert the path into skeletal distance of each node and then add up
-            path_length = np.sum([sk.calculate_skeleton_distance(curr_directional_network.nodes[k]["data"].skeleton)
-                           for k in curr_shortest_path[:-1]])
+            if not include_node_skeleton_dist:
+                path_length = np.sum([sk.calculate_skeleton_distance(curr_directional_network.nodes[k]["data"].skeleton)
+                               for k in curr_shortest_path[:-1]])
+            else:
+                path_length = np.sum([sk.calculate_skeleton_distance(curr_directional_network.nodes[k]["data"].skeleton)
+                               for k in curr_shortest_path])
 
 
             #3) Map of each of distances to the node in a dictionary and return
@@ -312,8 +317,13 @@ import networkx_utils as xu
 
 
 axon_width_like_requirement = "(median_mesh_center < 200)"# or no_spine_median_mesh_center < 150)"
-axon_width_like_query = (f"(n_spines < 4 and {axon_width_like_requirement} and skeleton_distance_branch <= 15000)"
-                f" or (skeleton_distance_branch > 15000 and {axon_width_like_requirement} and spines_per_skeletal_length < 0.00023)")
+ais_axon_width_like_requirement = "(median_mesh_center < 600)" #this will get all of axons including the axon intial segment
+
+def axon_width_like_query(width_to_use):
+    axon_width_like_query = (f"(n_spines < 4 and {width_to_use} and skeleton_distance_branch <= 15000)"
+                    f" or (skeleton_distance_branch > 15000 and {width_to_use} and spines_per_skeletal_length < 0.00023)")
+    return axon_width_like_query
+
 axon_width_like_functions_list = [
     "width",
     "median_mesh_center",
@@ -327,7 +337,9 @@ axon_width_like_functions_list = [
 
 def axon_width_like_segments(current_neuron,
                       current_query=None,
-                      current_functions_list=None):
+                      current_functions_list=None,
+                             include_ais=False,
+                            verbose=False):
     """
     Will get all of
     
@@ -336,15 +348,21 @@ def axon_width_like_segments(current_neuron,
     if current_functions_list is None:
         current_functions_list = axon_width_like_functions_list
     if current_query is None:
-        current_query = axon_width_like_query
+        if include_ais:
+            current_query = axon_width_like_query(ais_axon_width_like_requirement)
+        else:
+            current_query = axon_width_like_query(axon_width_like_requirement)
+    if verbose:
+        print(f"current_query = {current_query}")
         
-    limb_branch_dict = ns.query_neuron(current_neuron,
+    limb_branch_dict = query_neuron(current_neuron,
                                        #query="n_spines < 4 and no_spine_average_mesh_center < 400",
                                        query=current_query,
                                        #return_dataframe=True,
                    functions_list=current_functions_list)
     return limb_branch_dict
 
+@run_options(run_type="Limb")
 def axon_segment(curr_limb,limb_branch_dict=None,limb_name=None,
                  
                  #the parameters for the axon_segment_downstream_dendrites function

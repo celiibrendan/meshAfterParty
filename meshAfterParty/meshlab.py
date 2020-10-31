@@ -6,6 +6,7 @@ import time
 import copy
 import os
 import random
+import trimesh_utils as tu
 
 
 class Scripter:
@@ -207,7 +208,7 @@ class Meshlab:
         if mesh_obj.suffix != '.off':
             raise TypeError('mesh path must be to an .off file')
         
-        return trimesh.load_mesh(mesh_obj)
+        return tu.load_mesh_no_processing(mesh_obj)
         
     def __call__(self, input_mesh_path, output_mesh_path='.', printout=True,random_port = True,port_number=-1):
         input_obj = Path(input_mesh_path).absolute()
@@ -229,7 +230,7 @@ class Meshlab:
                 #generate the random port
                 port_number = random.randint(100,10000)
             
-            print(f"Using port = {port_number}")
+            #print(f"Using port = {port_number}")
             command_to_run = f'xvfb-run -n {port_number} -s "-screen 0 800x600x24" meshlabserver $@ ' + script_command
             
         from subprocess import PIPE
@@ -364,10 +365,10 @@ class Decimator(Meshlab):
         
         try_counter = 10
         for i in range(try_counter):
-            print('IN INPUT FILE VALIDATION LOOP')
+            #print('IN INPUT FILE VALIDATION LOOP')
             try:
                 input_mesh = self.fetch_mesh_from_off(input_mesh_path)
-                print('LEAVING LOOP, MESH VALIDATED')
+                #print('LEAVING LOOP, MESH VALIDATED')
                 break
             except Exception as e:
                 print('VALIDATION ERROR (sleepin): ' + str(e))
@@ -525,10 +526,10 @@ class Poisson(Meshlab):
         
         try_counter = 10
         for i in range(try_counter):
-            print('IN INPUT FILE VALIDATION LOOP')
+            #print('IN INPUT FILE VALIDATION LOOP')
             try:
                 input_mesh = self.fetch_mesh_from_off(input_mesh_path)
-                print('LEAVING LOOP, MESH VALIDATED')
+                #print('LEAVING LOOP, MESH VALIDATED')
                 break
             except Exception as e:
                 print('VALIDATION ERROR (sleepin): ' + str(e))
@@ -682,10 +683,10 @@ class FilterBase(Meshlab):
         
         try_counter = 10
         for i in range(try_counter):
-            print('IN INPUT FILE VALIDATION LOOP')
+            #print('IN INPUT FILE VALIDATION LOOP')
             try:
                 input_mesh = self.fetch_mesh_from_off(input_mesh_path)
-                print('LEAVING LOOP, MESH VALIDATED')
+                #print('LEAVING LOOP, MESH VALIDATED')
                 break
             except Exception as e:
                 print('VALIDATION ERROR (sleepin): ' + str(e))

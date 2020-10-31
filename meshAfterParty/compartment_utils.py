@@ -6,14 +6,15 @@ from skeleton_utils import *
 
 from tqdm_utils import tqdm
 
-
+import system_utils as su
 def get_skeletal_distance_no_skipping(main_mesh,edges,
                                  buffer=0.01,
                                 bbox_ratio=1.2,
                                distance_threshold=3000,
                                       distance_by_mesh_center=False,
                                 print_flag=False,
-                                edge_loop_print=True):
+                                edge_loop_print=False,
+                                     stitch_patches=30):
     """
     Purpose: To return the histogram of distances along a mesh subtraction process
     so that we could evenutally find an adaptive distance threshold
@@ -32,7 +33,8 @@ def get_skeletal_distance_no_skipping(main_mesh,edges,
     total_distances = []
     total_distances_std = []
     
-    for i,ex_edge in tqdm(enumerate(edges)):
+    #for i,ex_edge in tqdm(enumerate(edges)):
+    for i,ex_edge in enumerate(edges):
         #print("\n------ New loop ------")
         #print(ex_edge)
         
@@ -187,7 +189,83 @@ def get_skeletal_distance_no_skipping(main_mesh,edges,
             print(f"Distance of skeleton = {sk.calculate_skeleton_distance(edges)}")
             raise Exception(f"unique_removed_faces = {unique_removed_faces}")
             
+        if stitch_patches>0:
+            """ ---- 9/28 Addition: Want to fill in the holes that will be filled in later
+            with waterfilling algorithm 
+
+            Pseudocode: 
+            -1) Cheuck that there were actually eliminated faces
+            0) Get the border vertices for all of the kept_mesh and 
+            map them to the main mesh
+
+            1) Find Part of mesh that is not in the faces that could 
+            possibly be included in the mesh correspondence (eliminated_mesh)
+
+            2) Divide the eliminated_mesh into split pieces
+
+
+            3) For each split pieces of the eliminated_mesh
+            a. Get the border vertices
+            b. Map to the main mesh
+            c. Take these border vertices and take boolean difference with kept_mesh border vertices
+            d. If list is empty then add the split face indexes to the kept_mesh faces
+
+            4) Continue with rest of processing
+
+            """
+            #-1) Cheuck that there were actually eliminated faces
+            eliminated_mesh_faces_idx = np.setdiff1d(np.arange(len(main_mesh.faces)),unique_removed_faces)
+            if len(eliminated_mesh_faces_idx)>0:
             
+
+                #0) Get the border vertices for all of the kept_mesh and 
+                #map them to the main mesh
+                kept_mesh = main_mesh.submesh([unique_removed_faces],append=True,repair=False)
+                kept_mesh_splits,kept_mesh_splits_idx = tu.split(kept_mesh)
+                kept_border_verts = []
+                for km in kept_mesh_splits:
+                    curr_border_verts = tu.find_border_vertices(km)
+                    kept_border_verts.append(tu.original_mesh_vertices_map(main_mesh,vertices_coordinates=km.vertices[curr_border_verts]))
+
+                total_kept_border_verts = np.concatenate(kept_border_verts)
+
+
+                #1) Find Part of mesh that is not in the faces that could 
+                #possibly be included in the mesh correspondence (eliminated_mesh)
+
+                eliminated_mesh = main_mesh.submesh([eliminated_mesh_faces_idx],append=True,repair =False)
+
+                #2) Divide the eliminated_mesh into split pieces
+                elim_mesh_splits,elim_mesh_splits_idx = tu.split(eliminated_mesh)
+
+                # 3) For each split pieces of the eliminated_mesh
+                # a. Get the border vertices
+                # b. Map to the main mesh
+                # c. Take these border vertices and take boolean difference with kept_mesh border vertices
+                # d. If list is empty then add the split face indexes to the kept_mesh faces
+                final_faces_with_stitching = [unique_removed_faces]
+                meshes_to_stitch = []
+                debug=False
+                for j,(e_mesh,e_mesh_face_idx) in enumerate(zip(elim_mesh_splits,elim_mesh_splits_idx)):
+                    if len(e_mesh.faces) > stitch_patches:
+                        if debug:
+                            print(f"Split Mesh {j} not stitched because face size ({e_mesh}) > {stitch_patches}")
+                        continue
+                    # a. Get the border vertices
+                    curr_border_verts = tu.find_border_vertices(e_mesh)
+                    original_bord_verts = tu.original_mesh_vertices_map(main_mesh,vertices_coordinates=e_mesh.vertices[curr_border_verts])
+                    not_cancelled_verts = np.setdiff1d(original_bord_verts,total_kept_border_verts)
+                    if len(not_cancelled_verts) == 0:
+                        final_faces_with_stitching.append(eliminated_mesh_faces_idx[e_mesh_face_idx])
+                        meshes_to_stitch.append(e_mesh)
+                    else:
+                        if debug:
+                            print(f"Split Mesh {j} Not stitched because not_cancelled_verts = {not_cancelled_verts}")
+
+                unique_removed_faces_revised = np.unique(np.concatenate(final_faces_with_stitching))
+                unique_removed_faces = unique_removed_faces_revised
+
+            """ ------------------ END OF 9/28 ADDITION -------------------"""
 
         #faces_to_keep = set(np.arange(0,len(main_mesh.faces))).difference(unique_removed_faces)
         new_submesh = main_mesh.submesh([unique_removed_faces],only_watertight=False,append=True)
@@ -250,14 +328,15 @@ def get_skeletal_distance(main_mesh,edges,
                                distance_threshold=3000,
                                distance_by_mesh_center=True,
                                 print_flag=False,
-                                edge_loop_print=True):
+                                edge_loop_print=False,
+                              stitch_patches=50):
     """
     Purpose: To return the histogram of distances along a mesh subtraction process
     so that we could evenutally find an adaptive distance threshold
     
     
     """
-    print(f"INSIDE GET SKELETAL DISTANCE distance_by_mesh_center = {distance_by_mesh_center}")
+    #print(f"INSIDE GET SKELETAL DISTANCE distance_by_mesh_center = {distance_by_mesh_center}")
     debug=False
 
     
@@ -271,7 +350,8 @@ def get_skeletal_distance(main_mesh,edges,
     
     total_distances = []
     total_distances_std = []
-    for i,ex_edge in tqdm(enumerate(edges)):
+    #for i,ex_edge in tqdm(enumerate(edges)):
+    for i,ex_edge in enumerate(edges):
         #print("\n------ New loop ------")
         #print(ex_edge)
         
@@ -439,7 +519,95 @@ def get_skeletal_distance(main_mesh,edges,
         if debug:
             print(f"unique_removed_faces = {unique_removed_faces}")  
 
+        #print(f"BEFORE STITCHES unique_removed_faces.shape = {unique_removed_faces.shape}")
+        if stitch_patches > 0:
+            """ ---- 9/28 Addition: Want to fill in the holes that will be filled in later
+            with waterfilling algorithm 
+
+            Pseudocode: 
+            -1) Cheuck that there were actually eliminated faces
+            0) Get the border vertices for all of the kept_mesh and 
+            map them to the main mesh
+
+            1) Find Part of mesh that is not in the faces that could 
+            possibly be included in the mesh correspondence (eliminated_mesh)
+
+            2) Divide the eliminated_mesh into split pieces
+
+
+            3) For each split pieces of the eliminated_mesh
+            a. Get the border vertices
+            b. Map to the main mesh
+            c. Take these border vertices and take boolean difference with kept_mesh border vertices
+            d. If list is empty then add the split face indexes to the kept_mesh faces
+
+            4) Continue with rest of processing
+
+            """
+            debug = False
+            #-1) Cheuck that there were actually eliminated faces
+            eliminated_mesh_faces_idx = np.setdiff1d(np.arange(len(main_mesh.faces)),unique_removed_faces)
+            if len(eliminated_mesh_faces_idx)>0:
+                #print("Working in the skeletal_distance patches")
+
+                #0) Get the border vertices for all of the kept_mesh and 
+                #map them to the main mesh
+                kept_mesh = main_mesh.submesh([unique_removed_faces],append=True,repair=False)
+                kept_mesh_splits,kept_mesh_splits_idx = tu.split(kept_mesh)
+                kept_border_verts = []
+                for km in kept_mesh_splits:
+                    curr_border_verts = tu.find_border_vertices(km)
+                    kept_border_verts.append(tu.original_mesh_vertices_map(main_mesh,vertices_coordinates=km.vertices[curr_border_verts]))
+
+                total_kept_border_verts = np.concatenate(kept_border_verts)
+
+
+                #1) Find Part of mesh that is not in the faces that could 
+                #possibly be included in the mesh correspondence (eliminated_mesh)
+
+                eliminated_mesh = main_mesh.submesh([eliminated_mesh_faces_idx],append=True,repair =False)
+
+                #2) Divide the eliminated_mesh into split pieces
+                elim_mesh_splits,elim_mesh_splits_idx = tu.split(eliminated_mesh)
+                
+                
+                if debug:
+                    eliminated_mesh.export("eliminated_mesh.off")
+
+                # 3) For each split pieces of the eliminated_mesh
+                # a. Get the border vertices
+                # b. Map to the main mesh
+                # c. Take these border vertices and take boolean difference with kept_mesh border vertices
+                # d. If list is empty then add the split face indexes to the kept_mesh faces
+                final_faces_with_stitching = [unique_removed_faces]
+                meshes_to_stitch = []
+                for j,(e_mesh,e_mesh_face_idx) in enumerate(zip(elim_mesh_splits,elim_mesh_splits_idx)):
+                    if len(e_mesh.faces) > stitch_patches:
+                        if debug:
+                            print(f"Split Mesh {j} not stitched because faces size ({e_mesh}) > {stitch_patches}")
+                        continue
+
+                    # a. Get the border vertices
+                    curr_border_verts = tu.find_border_vertices(e_mesh)
+                    original_bord_verts = tu.original_mesh_vertices_map(main_mesh,vertices_coordinates=e_mesh.vertices[curr_border_verts])
+                    not_cancelled_verts = np.setdiff1d(original_bord_verts,total_kept_border_verts)
+                    if len(not_cancelled_verts) == 0:
+                        final_faces_with_stitching.append(eliminated_mesh_faces_idx[e_mesh_face_idx])
+                        meshes_to_stitch.append(e_mesh)
+                        if debug:
+                            print(f"Split Mesh {j} WAS YES stitched because not_cancelled_verts = {not_cancelled_verts}")
+                    else:
+                        if debug:
+                            print(f"Split Mesh {j} Not stitched because not_cancelled_verts = {not_cancelled_verts}")
+
+                unique_removed_faces_revised = np.unique(np.concatenate(final_faces_with_stitching))
+                unique_removed_faces = unique_removed_faces_revised
+                debug = False
+
+            """ ------------------ END OF 9/28 ADDITION -------------------"""
+        debug = False
         #faces_to_keep = set(np.arange(0,len(main_mesh.faces))).difference(unique_removed_faces)
+        #print(f"unique_removed_faces.shape = {unique_removed_faces.shape}")
         new_submesh = main_mesh.submesh([unique_removed_faces],only_watertight=False,append=True)
         if debug:
             print("--------------------- Starting new trial --------------------")
@@ -537,7 +705,9 @@ def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
                                           curr_branch_mesh,
                                          skeleton_segment_width = 1000,
                                           distance_by_mesh_center = True,
-                                         print_flag=False):
+                                         print_flag=False,
+                                         return_mesh_perc_drop=False,
+                                          stitch_patches=50):
     
     debug=False
     #making the skeletons resized to 1000 widths and then can use outlier finding
@@ -558,15 +728,18 @@ def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
                         bbox_ratio=1.2,
                         distance_threshold=3000,
                         distance_by_mesh_center=distance_by_mesh_center,
-                        print_flag=False
+                        print_flag=False,
+        stitch_patches= stitch_patches
     )
-    debug=False
+    
+    
     if debug:
         print("\n After first skeletal distance call")
         print(f"segment_skeletal_mean_distances = {segment_skeletal_mean_distances}")
         print(f"segment_skeletal_std_distances = {segment_skeletal_std_distances}")
         print(f"mesh_correspondence = {mesh_correspondence}")
         print(f"mesh_correspondence_indices = {mesh_correspondence_indices}")
+        mesh_correspondence.export("mesh_correspondence_round_1.off")
         
     if len(mesh_correspondence_indices)== 0:
         if print_flag:
@@ -613,8 +786,17 @@ def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
                         bbox_ratio=1.2,
                         distance_threshold=total_threshold,
                         distance_by_mesh_center=distance_by_mesh_center,
-                        print_flag=False
+                        print_flag=False,
+                        stitch_patches=1000,
     )
+    
+    
+    
+    #calculate the mesh percentage drop from the first mesh correspondence to after the adaptive measurement is used
+    mesh_perc_drop = 1 - len(mesh_correspondence_indices_2)/len(mesh_correspondence_indices)
+    
+    if debug:
+        print(f"mesh_perc_drop = {mesh_perc_drop}")
     
     if debug:
         print("\n After 2nd skeletal distance call")
@@ -625,21 +807,13 @@ def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
     
     if len(mesh_correspondence_indices_2) == 0:
         print("empty mesh_correspondence_indices_2 returned so returning original mesh correspondence")
-        return mesh_correspondence_indices,np.mean(segment_skeletal_mean_distances) + 2*np.max(segment_skeletal_std_distances)
+        total_threshol = np.mean(segment_skeletal_mean_distances) + 2*np.max(segment_skeletal_std_distances)
+        if return_mesh_perc_drop:
+            return mesh_correspondence_indices, total_threshold,mesh_perc_drop
+        else:
+            return mesh_correspondence_indices,total_threshol
         
-        
-    """
-    segment_skeletal_mean_distances
-    segment_skeletal_std_distances,
-    mesh_correspondence,
-    mesh_correspondence_indices
 
-    segment_skeletal_mean_distances_2,
-    filtered_measurements_std,
-    mesh_correspondence_2,
-    mesh_correspondence_indices_2
-    
-    """
     debug = False
     if debug: 
         print(f"\n\n segment_skeletal_mean_distances.shape = {np.array(segment_skeletal_mean_distances).shape}\n"
@@ -666,8 +840,10 @@ def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
 #     sk.graph_skeleton_and_mesh(other_meshes = [curr_branch_mesh.submesh([mesh_correspondence_indices[mesh_correspondence_indices_2]],append=True)])
         
     # PROBLEM NOT PASSING BACK A CONNECTED COMPONENT
-        
-    return mesh_correspondence_indices[mesh_correspondence_indices_2], total_threshold
+    if return_mesh_perc_drop:
+        return mesh_correspondence_indices[mesh_correspondence_indices_2], total_threshold,mesh_perc_drop
+    else:
+        return mesh_correspondence_indices[mesh_correspondence_indices_2],total_threshold
 
 
 # -------- for the mesh correspondence that creates an exact 1-to1 correspondence of mesh face to skeleton branch------- #
@@ -682,12 +858,23 @@ def filter_face_coloring_to_connected_components(curr_limb_mesh,face_coloring):
     the waterfilling process
     
     """
-    leftover_labels = np.unique(face_coloring)
+    leftover_labels =np.setdiff1d( np.unique(face_coloring),[-1])
     for curr_label in leftover_labels:
         label_indices = np.where(face_coloring==curr_label)[0]
         curr_submesh = curr_limb_mesh.submesh([label_indices],append=True)
         split_meshes,split_components = tu.split(curr_submesh,return_components=True)
-        to_keep_indices = label_indices[split_components[0]]
+        
+        
+        try:
+            label_indices = np.array(label_indices)
+            split_components_0 = np.array(list(split_components[0])).astype("int")
+            to_keep_indices = label_indices[split_components_0]
+        except:
+            print(f"label_indices = {label_indices}")
+            print(f"curr_submesh = {curr_submesh}")
+            print(f"split_components = {split_components}")
+            print(f"split_components[0] = {split_components[0]}")
+            raise Exception("")
         to_clear_indices = np.setdiff1d(label_indices, to_keep_indices)
         face_coloring[to_clear_indices] = -1
     return face_coloring
@@ -747,7 +934,13 @@ def waterfill_labeling(
             total_labels.remove(-1)
         
         if len(total_labels) == 0:
+            su.compressed_pickle(curr_unmarked_faces,"curr_unmarked_faces")
+            su.compressed_pickle(total_mesh_graph,"total_mesh_graph")
+            su.compressed_pickle(total_mesh_correspondence,"total_mesh_correspondence")
+            su.compressed_pickle(submesh_indices,"submesh_indices")
+            
             raise Exception("total labels does not have any marked neighbors")
+            
         elif len(total_labels) == 1:
             #print("All surrounding labels are the same so autofilling the remainder of unlabeled labels")
             for gg in curr_unmarked_faces:
@@ -782,13 +975,14 @@ def waterfill_labeling(
     return total_mesh_correspondence
 
 
-
+import system_utils as su
 def resolve_empty_conflicting_face_labels(
                      curr_limb_mesh,
                      face_lookup,
                      no_missing_labels = [],
                     max_submesh_threshold=50000,
-                    max_color_filling_iterations=10):
+                    max_color_filling_iterations=10,
+                    debug=False):
     
     """
     Input: 
@@ -881,7 +1075,6 @@ def resolve_empty_conflicting_face_labels(
                 print(f"Doing No Color conflicts iteration {i+1} because missing_labels = {missing_labels} ")
                 
     if len(missing_labels)>0:
-        import system_utils as su
         print(f"leftover_labels = {leftover_labels}")
         print(f"no_missing_labels = {no_missing_labels}")
         print(f"missing_labels = {missing_labels}")
@@ -902,10 +1095,9 @@ def resolve_empty_conflicting_face_labels(
     # ---- Functions that will fill in the rest of the mesh correspondence ---- #
 
     face_coloring_copy = face_coloring.copy()
-    
-    print("BEFORE face_lookup_resolved_test")
-    import system_utils as su
-    su.compressed_pickle(empty_connected_components,"empty_connected_components")
+    if debug:
+        print("BEFORE face_lookup_resolved_test")
+        su.compressed_pickle(empty_connected_components,"empty_connected_components")
     
     for comp in tqdm(empty_connected_components):
         #print("len(mesh_graph) = {len(mesh_graph)}")
@@ -924,7 +1116,7 @@ def resolve_empty_conflicting_face_labels(
     # -- wheck that the face coloring did not have any empty faces --
     empty_faces = np.where(face_coloring_copy==-1)[0]
     if len(empty_faces) > 0:
-        import system_utils as su
+        
         su.compressed_pickle(curr_limb_mesh,"curr_limb_mesh")
         su.compressed_pickle(face_lookup,"face_lookup")
         su.compressed_pickle(no_missing_labels,"no_missing_labels")

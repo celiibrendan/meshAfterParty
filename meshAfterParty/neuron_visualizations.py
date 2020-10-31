@@ -48,9 +48,9 @@ from copy import deepcopy
 import neuron
 import matplotlib.pyplot as plt
 def plot_limb_concept_network_2D(neuron_obj,
+                                 node_colors=dict(),
                                  limb_name=None,
                                  somas=None,
-                                  node_colors=dict(),
                                  default_color = "green",
                                   node_size=2000,
                                   font_color="white",
@@ -98,6 +98,11 @@ def plot_limb_concept_network_2D(neuron_obj,
     #0) If passed a neuron object then use the limb name to get the limb object
     #- make copy of limb object
     
+    if limb_name is None and len(node_colors)>0:
+        #just strip the L name of the first key that is not the soma
+        limb_name = [k for k in node_colors.keys() if "S" not in k][0].split("_")[0]
+        print(f"No limb name was given so using {limb_name} because was the limb in the first key")
+        
     if str(type(neuron_obj)) == str(neuron.Neuron):
         if not limb_name is None:
             limb_obj = deepcopy(neuron_obj.concept_network.nodes[limb_name]["data"])
@@ -214,7 +219,8 @@ def plot_concept_network(curr_concept_network,
                             show_at_end=True,
                             append_figure=False,
                             highlight_starting_node=True,
-                            starting_node_size=-1):
+                            starting_node_size=-1,
+                                 flip_y=True):
     
     if starting_node_size == -1:
         starting_node_size = scatter_size*3
@@ -331,7 +337,8 @@ def plot_concept_network(curr_concept_network,
                                other_scatter_colors=node_color,
                                scatter_size=scatter_size,
                                show_at_end=False,
-                               append_figure=True
+                               append_figure=True,
+                               flip_y=flip_y,
                               )
     
     
@@ -342,7 +349,7 @@ def plot_concept_network(curr_concept_network,
     if show_at_end:
         ipv.show()
         
-        
+from copy import deepcopy
 def visualize_concept_map(curr_concept_network,
                             node_color="red",
                             #node_color="black",
@@ -365,7 +372,8 @@ def visualize_concept_map(curr_concept_network,
                           
                             show_at_end=True,
                             append_figure=False,
-                         print_flag=False):
+                         print_flag=False,
+                         flip_y=True):
 
     
     """
@@ -388,12 +396,17 @@ def visualize_concept_map(curr_concept_network,
                           arrow_color = "green")
     """
     
+    if flip_y:
+        curr_concept_network = deepcopy(curr_concept_network)
+        for k in curr_concept_network.nodes():
+            curr_concept_network.nodes[k]["data"].mesh_center[...,1] = -curr_concept_network.nodes[k]["data"].mesh_center[...,1]
     
     if not append_figure:
         ipv.pylab.clear()
         ipv.figure(figsize=(15,15))
     
     node_locations = dict([(k,curr_concept_network.nodes[k]["data"].mesh_center) for k in curr_concept_network.nodes()])
+    
     node_edges = np.array(list(curr_concept_network.edges))
 
 
@@ -459,7 +472,9 @@ def visualize_concept_map(curr_concept_network,
                                        other_scatter_colors=[mu.color_to_rgba(starting_node_color,starting_node_alpha)],
                                        scatter_size=starting_node_size,
                                        show_at_end=False,
-                                       append_figure=True
+                                       append_figure=True,
+                                        flip_y=False
+                
                                    )
     
     #print("************ Done plotting the starting nodes *******************")
@@ -489,7 +504,8 @@ def visualize_concept_map(curr_concept_network,
     if print_flag:
         print(f"edge_color = {edge_color} IN SKELETON")
     concept_network_skeleton = nru.convert_concept_network_to_skeleton(curr_concept_network)
-    plot_ipv_skeleton(concept_network_skeleton,edge_color)
+    
+    plot_ipv_skeleton(concept_network_skeleton,edge_color,flip_y=False)
     sk.graph_skeleton_and_mesh(
                               #other_skeletons=[concept_network_skeleton],
                               #other_skeletons_colors=[edge_color],
@@ -497,7 +513,8 @@ def visualize_concept_map(curr_concept_network,
                                other_scatter_colors=color_list_correct_size,
                                scatter_size=node_size,
                                show_at_end=False,
-                               append_figure=True
+                               append_figure=True,
+                                flip_y=False
                               )
 
     if show_at_end:
@@ -554,9 +571,14 @@ def plot_branch_pieces(neuron_network,
     
 import ipyvolume as ipv
 
-def plot_ipv_mesh(elephant_mesh_sub,color=[1.,0.,0.,0.2]):
+def plot_ipv_mesh(elephant_mesh_sub,color=[1.,0.,0.,0.2],
+                 flip_y=True):
     if len(elephant_mesh_sub.vertices) == 0:
         return
+    
+    if flip_y:
+        elephant_mesh_sub = elephant_mesh_sub.copy()
+        elephant_mesh_sub.vertices[...,1] = -elephant_mesh_sub.vertices[...,1]
     
     #check if the color is a dictionary
     if type(color) == dict:
@@ -591,10 +613,16 @@ def plot_ipv_mesh(elephant_mesh_sub,color=[1.,0.,0.,0.2]):
         mesh4.material.transparent = True
         
 import skeleton_utils as sk
-def plot_ipv_skeleton(edge_coordinates,color=[0,0.,1,1]):
+def plot_ipv_skeleton(edge_coordinates,color=[0,0.,1,1],
+                     flip_y=True):
     if len(edge_coordinates) == 0:
         print("Edge coordinates in plot_ipv_skeleton were of 0 length so returning")
         return []
+    
+    if flip_y:
+        edge_coordinates = edge_coordinates.copy()
+        edge_coordinates[...,1] = -edge_coordinates[...,1] 
+    
     unique_skeleton_verts_final,edges_final = sk.convert_skeleton_to_nodes_edges(edge_coordinates)
     mesh2 = ipv.plot_trisurf(unique_skeleton_verts_final[:,0], 
                             unique_skeleton_verts_final[:,1], 
@@ -605,12 +633,20 @@ def plot_ipv_skeleton(edge_coordinates,color=[0,0.,1,1]):
     mesh2.material.transparent = True
     
     #print(f"Color in skeleton ipv plot local = {color}")
+    
+    if flip_y:
+        unique_skeleton_verts_final[...,1] = -unique_skeleton_verts_final[...,1]
 
     return unique_skeleton_verts_final
 
 def plot_ipv_scatter(scatter_points,scatter_color=[1.,0.,0.,0.5],
-                    scatter_size=0.4):
+                    scatter_size=0.4,
+                    flip_y=True):
     scatter_points = np.array(scatter_points).reshape(-1,3)
+    if flip_y:
+        scatter_points = scatter_points.copy()
+        scatter_points[...,1] = -scatter_points[...,1]
+        
     if len(scatter_points):
         print("No scatter points to plot")
         return
@@ -747,7 +783,8 @@ def visualize_neuron(
     
     
     print_flag = False,
-    print_time = False
+    print_time = False,
+    flip_y=True
     
     ):
     
@@ -1093,7 +1130,7 @@ def visualize_neuron(
             
             #Can plot the meshes now
             for curr_mesh,curr_mesh_color in zip(plot_items,color_list_correct_size):
-                plot_ipv_mesh(curr_mesh,color=curr_mesh_color)
+                plot_ipv_mesh(curr_mesh,color=curr_mesh_color,flip_y=flip_y)
             
             if print_time:
                 print(f"Plotting mesh pieces= {time.time() - local_time}")
@@ -1122,7 +1159,7 @@ def visualize_neuron(
                                                                                           n_colors=len(soma_meshes))
                 soma_names,soma_colors_list_alpha_fixed_size
                 for curr_soma_mesh,curr_soma_color in zip(soma_meshes,soma_colors_list_alpha_fixed_size):
-                    plot_ipv_mesh(curr_soma_mesh,color=curr_soma_color)
+                    plot_ipv_mesh(curr_soma_mesh,color=curr_soma_color,flip_y=flip_y)
                     main_vertices.append(curr_soma_mesh.vertices)
                 
                 if print_time:
@@ -1135,7 +1172,7 @@ def visualize_neuron(
                 whole_neuron_colors_list_alpha = mu.apply_alpha_to_color_list(whole_neuron_colors_list,alpha=configuration_dict["whole_neuron_alpha"])
                 
                 #graph
-                plot_ipv_mesh(current_neuron.mesh,color=whole_neuron_colors_list_alpha[0])
+                plot_ipv_mesh(current_neuron.mesh,color=whole_neuron_colors_list_alpha[0],flip_y=flip_y)
                 main_vertices.append([np.min(current_neuron.mesh.vertices,axis=0),
                                       np.max(current_neuron.mesh.vertices,axis=0)])
                 
@@ -1167,7 +1204,7 @@ def visualize_neuron(
                     #concatenate the meshes
                     #print("Inside spine meshes combined")
                     combined_spine_meshes = tu.combine_meshes(spine_meshes)
-                    plot_ipv_mesh(combined_spine_meshes,color=spines_color_list_alpha[0])
+                    plot_ipv_mesh(combined_spine_meshes,color=spines_color_list_alpha[0],flip_y=flip_y)
                     main_vertices.append(combined_spine_meshes.vertices)
                     
                 else:
@@ -1176,7 +1213,7 @@ def visualize_neuron(
 
 
                     for curr_spine_mesh,curr_spine_color in zip(spine_meshes,spines_colors_list_alpha_fixed_size):
-                        plot_ipv_mesh(curr_spine_mesh,color=curr_spine_color)
+                        plot_ipv_mesh(curr_spine_mesh,color=curr_spine_color,flip_y=flip_y)
                         main_vertices.append(curr_spine_mesh.vertices)
                 if print_time:
                     print(f"Plotting mesh spines= {time.time() - local_time}")
@@ -1198,7 +1235,7 @@ def visualize_neuron(
             
             #Can plot the meshes now
             for curr_skeleton,curr_skeleton_color in zip(plot_items,color_list_correct_size):
-                plot_ipv_skeleton(curr_skeleton,color=curr_skeleton_color)
+                plot_ipv_skeleton(curr_skeleton,color=curr_skeleton_color,flip_y=flip_y)
             
             if print_time:
                 print(f"Plotting skeleton pieces = {time.time() - local_time}")
@@ -1215,7 +1252,7 @@ def visualize_neuron(
                 soma_skeletons = [nru.get_soma_skeleton(current_neuron,k) for k in soma_names]
                 
                 for curr_soma_sk,curr_soma_sk_color in zip(soma_skeletons,soma_colors_list_alpha_fixed_size):
-                    sk_vertices = plot_ipv_skeleton(curr_soma_sk,color=curr_soma_sk_color)
+                    sk_vertices = plot_ipv_skeleton(curr_soma_sk,color=curr_soma_sk_color,flip_y=flip_y)
                     main_vertices.append(sk_vertices) #adding the vertices
                 
                 if print_time:
@@ -1227,7 +1264,7 @@ def visualize_neuron(
                 whole_neuron_colors_list_alpha = mu.apply_alpha_to_color_list(whole_neuron_colors_list,alpha=configuration_dict["whole_neuron_alpha"])
                 
                 #graph
-                sk_vertices = plot_ipv_skeleton(current_neuron.skeleton,color=whole_neuron_colors_list_alpha[0])
+                sk_vertices = plot_ipv_skeleton(current_neuron.skeleton,color=whole_neuron_colors_list_alpha[0],flip_y=flip_y)
                 main_vertices.append([np.min(sk_vertices,axis=0),
                                       np.max(sk_vertices,axis=0)])
                 
@@ -1421,7 +1458,7 @@ def visualize_neuron(
 
             #graph
             for curr_mesh in current_mesh_list:
-                plot_ipv_mesh(curr_mesh,color=curr_mesh_colors_list_alpha)
+                plot_ipv_mesh(curr_mesh,color=curr_mesh_colors_list_alpha,flip_y=flip_y)
                 main_vertices.append(curr_mesh.vertices)
         if print_time:
             print(f"Plotting mesh pieces of {m_type} = {time.time() - local_time}")
@@ -1443,7 +1480,12 @@ def visualize_neuron(
     if len(main_vertices) == 0:
         raise Exception("No vertices plotted in the entire function (after took out empty vertices)")
     
-    main_vertices = np.array(main_vertices)
+    main_vertices = np.array(main_vertices).reshape(-1,3)
+    
+    if flip_y:
+        main_vertices = main_vertices.copy()
+        main_vertices[...,1] = -main_vertices[...,1]
+        
     volume_max = np.max(main_vertices.reshape(-1,3),axis=0)
     volume_min = np.min(main_vertices.reshape(-1,3),axis=0)
     
@@ -1549,7 +1591,7 @@ def visualize_neuron(
     return
 
 
-def plot_spines(current_neuron):
+def plot_spines(current_neuron,flip_y=True):
     visualize_neuron(current_neuron,
                           limb_branch_dict = dict(),
                           mesh_whole_neuron=True,
@@ -1558,6 +1600,7 @@ def plot_spines(current_neuron):
                         mesh_spines = True,
                         mesh_spines_color = "red",
                         mesh_spines_alpha = 0.8,
+                     flip_y=flip_y
 
                          )
 # -------  9/24: Wrapper for the sk.graph function that is nicer to interface with ----#
@@ -1619,7 +1662,8 @@ def plot_objects(main_mesh=None,
                 axis_box_off=True,
                 html_path="",
                 show_at_end=True,
-                append_figure=False):
+                append_figure=False,
+                flip_y=True):
     import neuron_visualizations as nviz
     nviz = reload(nviz)
     
@@ -1659,7 +1703,8 @@ def plot_objects(main_mesh=None,
                             axis_box_off=axis_box_off,
                             html_path=html_path,
                             show_at_end=show_at_end,
-                            append_figure=append_figure
+                            append_figure=append_figure,
+                            flip_y=flip_y
                            )
         
         

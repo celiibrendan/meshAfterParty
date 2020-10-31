@@ -173,6 +173,10 @@ that gives the distance
 
 
 """
+def find_matching_endpoints_row(branch_idx_to_endpoints,end_coordinates):
+    match_1 = (branch_idx_to_endpoints.reshape(-1,3) == end_coordinates[0]).all(axis=1).reshape(-1,2)
+    match_2 = (branch_idx_to_endpoints.reshape(-1,3) == end_coordinates[1]).all(axis=1).reshape(-1,2)
+    return np.where(np.sum(match_1 + match_2,axis=1)>1)[0]
 
 def matching_rows(vals,row,print_flag=False):
 
@@ -220,6 +224,9 @@ def sort_multidim_array_by_rows(edge_array,order_row_items=False):
     return sorted_edge_array
 
 
+
+def sort_elements_in_every_row(current_array):
+    return np.array([np.sort(yi) for yi in current_array])
 # --------- Functions pulled from trimesh.grouping ---------- #
 
 

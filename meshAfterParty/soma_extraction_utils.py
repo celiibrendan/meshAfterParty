@@ -70,7 +70,9 @@ def largest_mesh_piece(msh):
 
 import system_utils as su
 def soma_volume_ratio(current_mesh,
-                     watertight_method="fill_holes"):
+                     #watertight_method="fill_holes,
+                     watertight_method="poisson"
+                     ):
     """
     bounding_box_oriented: rotates the box to be less volume
     bounding_box : does not rotate the box and makes it axis aligned
@@ -138,7 +140,7 @@ def extract_soma_center(segment_id,
                         large_mesh_threshold = 60000,
                         large_mesh_threshold_inner = 40000,
                         soma_width_threshold = 0.32,
-                        soma_size_threshold = 20000,
+                        soma_size_threshold = 15000,
                        inner_decimation_ratio = 0.25,
                        volume_mulitplier=8,
                        #side_length_ratio_threshold=3,

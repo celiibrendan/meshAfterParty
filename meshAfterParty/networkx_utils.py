@@ -83,7 +83,7 @@ def endpoint_connectivity(endpoints_1,endpoints_2,
         return connections_dict
     
     if len(endpoints_match) > 1:
-        print_string = f"No endpoints matching: {endpoints_match}"
+        print_string = f"Multiple endpoints matching: {endpoints_match}"
         if exceptions_flag:
             raise Exception(print_string)
         else:
@@ -168,7 +168,13 @@ def node_to_edges(G,node_number):
         
 def get_node_list(G,exclude_list = []):
     return [n for n in list(G.nodes()) if n not in exclude_list]
+
+import numpy_utils as nu
 def get_nodes_with_attributes_dict(G,attribute_dict):
+    """
+    
+    
+    """
     node_list = []
     total_search_keys = list(attribute_dict.keys())
     for x,y in G.nodes(data=True):
@@ -182,7 +188,7 @@ def get_nodes_with_attributes_dict(G,attribute_dict):
                 #print(f"attribute_dict[search_key] = {attribute_dict[search_key]}")
                 curr_search_val= y[search_key]
                 if type(curr_search_val) in [type(np.array([])),type(np.ndarray([])),list]:
-                    if not np.array_equiv(np.array(curr_search_val),attribute_dict[search_key]):
+                    if not nu.compare_threshold(np.array(curr_search_val),attribute_dict[search_key]):
                         add_flag=False
                         break
                 else:
@@ -193,6 +199,13 @@ def get_nodes_with_attributes_dict(G,attribute_dict):
                 #print("Added!")
                 node_list.append(x)
     return node_list
+
+def get_graph_node_by_coordinate(G,coordinate):
+    match_nodes = get_nodes_with_attributes_dict(G,dict(coordinates=coordinate))
+    if len(match_nodes) != 1:
+        raise Exception(f"Not just one node in graph with coordinate {coordinate}: {match_nodes}")
+    else:
+        return match_nodes[0]
 
 def get_all_nodes_with_certain_attribute_key(G,attribute_name):
     return nx.get_node_attributes(G,attribute_name)
@@ -236,6 +249,16 @@ def get_nodes_greater_or_equal_degree_k(G,degree_choice):
 
 def get_nodes_less_or_equal_degree_k(G,degree_choice):
     return [k for k,v in dict(G.degree).items() if v <= degree_choice]
+
+def get_node_degree(G,node_name):
+    if not nu.is_array_like(node_name):
+        node_name = [node_name]
+    degree_dict = dict(G.degree)
+    node_degrees = [degree_dict[k] for k in node_name]
+    if len(node_degrees) > 1:
+        return node_degrees
+    else:
+        return node_degrees[0]
 
 
 def set_node_attributes_dict(G,attrs):
@@ -383,6 +406,76 @@ def remove_cycle(branch_subgraph, max_cycle_iterations=1000):
     
     return branch_subgraph
 
+
+def find_skeletal_distance_along_graph_node_path(G,node_path):
+    """
+    Purpose: To find the skeletal distance along nodes of
+    a graph that represents a skeleton
+    
+    Pseudocode: 
+    1) Get the coordinates of the nodes
+    2) Find the distances between consecutive coordinates
+    
+    Ex: 
+    find_skeletal_distance_along_graph_node_path(
+                                                G = skeleton_graph,
+                                                node_path = cycles_list[0]
+                                                )
+    
+    """
+    coordinates = get_node_attributes(G,node_list=node_path)
+    total_distance = np.sum(np.linalg.norm(coordinates[:-1] - coordinates[1:],axis=1))
+    return total_distance
+
+def find_all_cycles(G, source=None, cycle_length_limit=None):
+    """forked from networkx dfs_edges function. Assumes nodes are integers, or at least
+    types which work with min() and > ."""
+    if source is None:
+        # produce edges for all components
+        comp_list = [list(k) for k in list(nx.connected_components(G))]
+        nodes=[i[0] for i in comp_list]
+    else:
+        # produce edges for components with source
+        nodes=[source]
+    # extra variables for cycle detection:
+    cycle_stack = []
+    output_cycles = set()
+
+    def get_hashable_cycle(cycle):
+        """cycle as a tuple in a deterministic order."""
+        m = min(cycle)
+        mi = cycle.index(m)
+        mi_plus_1 = mi + 1 if mi < len(cycle) - 1 else 0
+        if cycle[mi-1] > cycle[mi_plus_1]:
+            result = cycle[mi:] + cycle[:mi]
+        else:
+            result = list(reversed(cycle[:mi_plus_1])) + list(reversed(cycle[mi_plus_1:]))
+        return tuple(result)
+
+    for start in nodes:
+        if start in cycle_stack:
+            continue
+        cycle_stack.append(start)
+
+        stack = [(start,iter(G[start]))]
+        while stack:
+            parent,children = stack[-1]
+            try:
+                child = next(children)
+
+                if child not in cycle_stack:
+                    cycle_stack.append(child)
+                    stack.append((child,iter(G[child])))
+                else:
+                    i = cycle_stack.index(child)
+                    if i < len(cycle_stack) - 2: 
+                        output_cycles.add(get_hashable_cycle(cycle_stack[i:]))
+
+            except StopIteration:
+                stack.pop()
+                cycle_stack.pop()
+
+    return [list(i) for i in output_cycles]
 
 
 def set_node_data(curr_network,node_name,curr_data,curr_data_label):
@@ -1011,14 +1104,14 @@ def shortest_path_between_two_sets_of_nodes(G,node_list_1,node_list_2,
 
     #1) Add a new node to graph that is connected to all nodes in node_list_1 (s)
     s = node_number_max + 1
-    G_copy.add_edges_from([(s,k) for k in node_list_1])
+    G_copy.add_weighted_edges_from([(s,k,0.0001) for k in node_list_1])
 
     #2) Add a new node to graph that is connected to all nodes in node_list_2 (t)
     t = node_number_max + 2
-    G_copy.add_edges_from([(t,k) for k in node_list_2])
+    G_copy.add_weighted_edges_from([(t,k,0.0001) for k in node_list_2])
 
     #3) Find shortest path from s to t
-    shortest_path = nx.shortest_path(G_copy,s,t)
+    shortest_path = nx.shortest_path(G_copy,s,t,weight="weight")
     
 
     #node_pair
@@ -1031,6 +1124,67 @@ def shortest_path_between_two_sets_of_nodes(G,node_list_1,node_list_2,
     else:
         return curr_shortest_path
     
+    
+def find_nodes_within_certain_distance_of_target_node(G,
+                                                      target_node,
+                                                        cutoff_distance = 10000,
+                                                        return_dict=False):
+    """
+    Purpose: To Find the node values that are within a certain 
+    distance of a target node 
+    
+    """
+    distance_dict = nx.single_source_dijkstra_path_length(G,target_node,
+                                                          cutoff=cutoff_distance
+                                                         )
+    if return_dict:
+        return distance_dict
+    
+    close_nodes = set(np.array(list(distance_dict)).astype("int"))
+    return close_nodes
+    
+    
+def add_new_coordinate_node(G,
+    node_coordinate,
+    replace_nodes=None,
+    replace_coordinates=None,
+    neighbors=None,
+    node_id=None,
+                           return_node_id=True):
+    """
+    To add a node to a graph
+    with just a coordinate and potentially replacing 
+    another node
+    """
+    
+    G = copy.deepcopy(G)
+    
+    if not replace_coordinates is None:
+        if len(replace_coordinates.shape) < 2:
+            replace_coordinates=replace_coordinates.reshape(-1,3)
+            
+        replace_nodes = [get_graph_node_by_coordinate(G,k) for k in replace_coordinates]
+
+    if not replace_nodes is None:
+        if not nu.is_array_like(replace_nodes):
+            replace_nodes = [replace_nodes]
+        neighbors = np.unique(np.concatenate([get_neighbors(G,k) for k in replace_nodes]))
+    
+    if node_id is None:
+        node_id = np.max(G.nodes()) + 1
+        
+    G.add_node(node_id,coordinates=node_coordinate)
+
+    G.add_weighted_edges_from([(node_id,k,
+             np.linalg.norm(G.nodes[k]["coordinates"] - node_coordinate)) for k in neighbors])
+    
+    if not replace_nodes is None:
+        G.remove_nodes_from(replace_nodes)
+        
+    if return_node_id:
+        return G,node_id
+    else:
+        return G
     
     
 

@@ -290,32 +290,41 @@ def get_starting_info_from_concept_network(concept_networks):
     
     
     output_dicts = []
-    for current_soma,curr_concept_network in concept_networks.items():
-        curr_output_dict = dict()
-        # 1) get the soma it's connect to
-        curr_output_dict["starting_soma"] = current_soma
-        
-        # 2) get the node that has the starting coordinate 
-        starting_node = xu.get_starting_node(curr_concept_network)
-        curr_output_dict["starting_node"] = starting_node
-        
-        endpoints_dict = xu.get_node_attributes(curr_concept_network,attribute_name="endpoints",node_list=[starting_node],
-                       return_array=False)
-        
-        curr_output_dict["starting_endpoints"] = endpoints_dict[starting_node]
-        
-        starting_node_dict = xu.get_node_attributes(curr_concept_network,attribute_name="starting_coordinate",node_list=[starting_node],
-                       return_array=False)
-        #get the starting coordinate of the starting dict
-        curr_output_dict["starting_coordinate"] = starting_node_dict[starting_node]
+    for current_soma,curr_concept_network_list in concept_networks.items():
+        for curr_concept_network in curr_concept_network_list:
+            curr_output_dict = dict()
+            # 1) get the soma it's connect to
+            curr_output_dict["starting_soma"] = current_soma
 
-        if "touching_soma_vertices" in curr_concept_network.nodes[starting_node].keys():
-            curr_output_dict["touching_soma_vertices"] = curr_concept_network.nodes[starting_node]["touching_soma_vertices"]
-        else:
-            curr_output_dict["touching_soma_vertices"] = None
-        
-        #curr_output_dict["concept_network"] = curr_concept_network
-        output_dicts.append(curr_output_dict)
+            # 2) get the node that has the starting coordinate 
+            starting_node = xu.get_starting_node(curr_concept_network)
+            curr_output_dict["starting_node"] = starting_node
+
+            endpoints_dict = xu.get_node_attributes(curr_concept_network,attribute_name="endpoints",node_list=[starting_node],
+                           return_array=False)
+
+            curr_output_dict["starting_endpoints"] = endpoints_dict[starting_node]
+
+            starting_node_dict = xu.get_node_attributes(curr_concept_network,attribute_name="starting_coordinate",node_list=[starting_node],
+                           return_array=False)
+            #get the starting coordinate of the starting dict
+            curr_output_dict["starting_coordinate"] = starting_node_dict[starting_node]
+
+            if "touching_soma_vertices" in curr_concept_network.nodes[starting_node].keys():
+                curr_output_dict["touching_soma_vertices"] = curr_concept_network.nodes[starting_node]["touching_soma_vertices"]
+            else:
+                curr_output_dict["touching_soma_vertices"] = None
+                
+            #soma starting group
+            if "soma_group_idx" in curr_concept_network.nodes[starting_node].keys():
+                curr_output_dict["soma_group_idx"] = curr_concept_network.nodes[starting_node]["soma_group_idx"]
+            else:
+                curr_output_dict["soma_group_idx"] = None
+                
+            
+
+            curr_output_dict["concept_network"] = curr_concept_network
+            output_dicts.append(curr_output_dict)
     
     return output_dicts
 
@@ -511,6 +520,8 @@ def branches_to_concept_network(curr_branch_skeletons,
                              starting_coordinate,
                               starting_edge,
                                 touching_soma_vertices=None,
+                                soma_group_idx=None,
+                                starting_soma=None,
                              max_iterations= 1000000):
     """
     Will change a list of branches into 
@@ -538,7 +549,9 @@ def branches_to_concept_network(curr_branch_skeletons,
         #print("setting touching_soma_vertices 1")
         attrs = {starting_node:{"starting_coordinate":starting_coordinate,
                                 "endpoints":neuron.Branch(starting_edge).endpoints,
-                               "touching_soma_vertices":touching_soma_vertices},
+                               "touching_soma_vertices":touching_soma_vertices,
+                                "soma_group_idx":soma_group_idx,
+                               "starting_soma":starting_soma}
                                 }
         
         xu.set_node_attributes_dict(concept_network,attrs)
@@ -700,8 +713,10 @@ def branches_to_concept_network(curr_branch_skeletons,
 
     #flattening the connections so we can get the indexes of these edges
     flattened_connections = np.array(concept_network_edges).reshape(-1,2)
+    
     orders = xu.get_edge_attributes(branches_graph,edge_list=flattened_connections)
     #******
+    
     fixed_idx_orders = original_idxs[orders]
     concept_network_edges_fixed = np.array(fixed_idx_orders).reshape(-1,2)
 
@@ -734,7 +749,7 @@ def branches_to_concept_network(curr_branch_skeletons,
     starting_edge_index = original_idxs[starting_order[0]]
     print(f"starting_node in concept map (that should match the starting edge) = {starting_edge_index}")
     #attrs = {starting_node[0]:{"starting_coordinate":starting_coordinate}} #old way that think uses the wrong starting_node
-    attrs = {starting_edge_index:{"starting_coordinate":starting_coordinate,"touching_soma_vertices":touching_soma_vertices}} 
+    attrs = {starting_edge_index:{"starting_coordinate":starting_coordinate,"touching_soma_vertices":touching_soma_vertices,"soma_group_idx":soma_group_idx,"starting_soma":starting_soma}} 
     #print("setting touching_soma_vertices 2")
     xu.set_node_attributes_dict(concept_network,attrs)
     #print(f"Recovered touching vertices after 2 = {xu.get_all_nodes_with_certain_attribute_key(concept_network,'touching_soma_vertices')}")
@@ -1075,7 +1090,7 @@ def generate_limb_concept_networks_from_global_connectivity(
             curr_limb_concept_network = branches_to_concept_network(curr_limb_divided_skeletons,closest_endpoint,np.array(endpoints).reshape(-1,3),
                                                                    touching_soma_vertices=touching_pieces_soma_vertices)
             
-            print(f"Recovered touching vertices = {xu.get_all_nodes_with_certain_attribute_key(curr_limb_concept_network,'touching_soma_vertices')}")
+            #print(f"Recovered touching vertices = {xu.get_all_nodes_with_certain_attribute_key(curr_limb_concept_network,'touching_soma_vertices')}")
             curr_concept_network[soma_idx] = curr_limb_concept_network
             
             
@@ -1316,7 +1331,12 @@ def smaller_preprocessed_data(neuron_object,print_flag=False):
                           #limb_concept_networks=double_soma_obj.preprocessed_data['limb_concept_networks']
         
                           #new spine/width/labels compression
-                          computed_attribute_dict = computed_attribute_dict
+                          computed_attribute_dict = computed_attribute_dict,
+                          
+                          #For concept network creation
+                          limb_network_stating_info = double_soma_obj.preprocessed_data["limb_network_stating_info"]
+        
+        
                          
     )
     
@@ -1354,6 +1374,7 @@ def save_compressed_neuron(neuron_object,output_folder,file_name="",return_file_
 
 #For decompressing the neuron
 
+import preprocessing_vp2 as pre
 def decompress_neuron(filepath,original_mesh,
                      suppress_output=True):
     if suppress_output:
@@ -1451,13 +1472,33 @@ def decompress_neuron(filepath,original_mesh,
 
         for k in new_limb_correspondence:
             for j in tqdm(new_limb_correspondence[k]):
-
                 new_limb_correspondence[k][j]["branch_mesh"] = original_mesh.submesh([new_limb_correspondence[k][j]["branch_face_idx_whole_neuron"]],append=True,repair=False)
-                new_limb_correspondence[k][j]["branch_face_idx"] = tu.original_mesh_faces_map(original_mesh=recovered_preprocessed_data["limb_meshes"][k], 
-                                           submesh=new_limb_correspondence[k][j]["branch_mesh"] ,
-                                       matching=True,
-                                       print_flag=False,
-                                                                                             exact_match=True)
+                
+                try:
+                    
+                    new_limb_correspondence[k][j]["branch_face_idx"] = tu.original_mesh_faces_map(original_mesh=recovered_preprocessed_data["limb_meshes"][k], 
+                                               submesh=new_limb_correspondence[k][j]["branch_mesh"] ,
+                                           matching=True,
+                                           print_flag=False,
+                                           exact_match=True)
+                except:
+                    #Then try using the stitched meshes
+                    possible_non_touching_meshes = [c for c in recovered_preprocessed_data["non_soma_touching_meshes"] if len(c.faces) == len(new_limb_correspondence[k][j]["branch_mesh"].faces)]
+                    found_match = False
+                    for zz,t_mesh in enumerate(possible_non_touching_meshes):
+                        try:
+                            new_limb_correspondence[k][j]["branch_face_idx"] = tu.original_mesh_faces_map(original_mesh=t_mesh, 
+                                                   submesh=new_limb_correspondence[k][j]["branch_mesh"] ,
+                                               matching=True,
+                                               print_flag=False,
+                                               exact_match=True)
+                            found_match=True
+                            break
+                        except:
+                            print(f"Viable Non soma touching mesh({zz}): {t_mesh} was not a match")
+                    if not found_match:
+                        raise Exception(f'Could Not find matching faces on decompression of mesh {new_limb_correspondence[k][j]["branch_mesh"]}')
+                    
 
 
                 if "branch_face_idx_whole_neuron" in new_limb_correspondence[k][j].keys():
@@ -1466,7 +1507,9 @@ def decompress_neuron(filepath,original_mesh,
         recovered_preprocessed_data["limb_correspondence"] = new_limb_correspondence
 
 
-
+        # ------------------ This is old way of restoring the limb concept networks but won't work now ------------- #
+        
+        '''
         """
         g) limb_concept_networks, limb_labels:
         Data: All previous data
@@ -1486,6 +1529,31 @@ def decompress_neuron(filepath,original_mesh,
                 current_neuron=original_mesh,
                 return_limb_labels=True
                 )
+        '''
+        
+        # ----------------- ------------- #
+        """
+        Pseudocode for limb concept networks
+        
+        
+        
+        """
+        
+        limb_network_stating_info = loaded_compression["limb_network_stating_info"]
+        
+        limb_concept_networks=dict()
+        limb_labels=dict()
+
+        for curr_limb_idx,new_limb_correspondence_indiv in new_limb_correspondence.items():
+            limb_to_soma_concept_networks = pre.calculate_limb_concept_networks(new_limb_correspondence_indiv,
+                                                                                run_concept_network_checks=True,
+                                                                               **limb_network_stating_info[curr_limb_idx])   
+
+
+
+            limb_concept_networks[curr_limb_idx] = limb_to_soma_concept_networks
+            limb_labels[curr_limb_idx]= "Unlabeled"
+        
 
         recovered_preprocessed_data["limb_concept_networks"] = limb_concept_networks
         recovered_preprocessed_data["limb_labels"] = limb_labels
@@ -1508,7 +1576,10 @@ def decompress_neuron(filepath,original_mesh,
                      decomposition_type = loaded_compression["decomposition_type"],
                      preprocessed_data=recovered_preprocessed_data,
                      computed_attribute_dict = computed_attribute_dict,
-                     suppress_output=suppress_output)
+                     suppress_output=suppress_output,
+                                            calculate_spines=False,
+                                            
+                                           widths_to_calculate=[])
     
     return decompressed_neuron
 
@@ -1589,17 +1660,16 @@ def get_soma_skeleton(current_neuron,soma_name):
     #3) Make the soma center to that starting coordinate a segment
     soma_skeleton_pieces = []
     for limb_idx in limbs_connected_to_soma:
-        curr_limb_obj = curr_limb_obj = current_neuron.concept_network.nodes[limb_idx]["data"]
+        curr_limb_obj = current_neuron.concept_network.nodes[limb_idx]["data"]
         
         curr_starting_coordinate = [cn_data["starting_coordinate"] for cn_data in curr_limb_obj.all_concept_network_data
                                                     if f"S{cn_data['starting_soma']}" == soma_name]
-        if len(curr_starting_coordinate) != 1:
-            raise Exception(f"curr_starting_coordinate not exactly one element: {curr_starting_coordinate}")
+#         if len(curr_starting_coordinate) != 1:
+#             raise Exception(f"curr_starting_coordinate not exactly one element: {curr_starting_coordinate}")
         
-        curr_endpoint = curr_starting_coordinate[0]
-        
-        new_skeleton_piece = np.vstack([curr_soma_center,curr_endpoint]).reshape(-1,2,3)
-        soma_skeleton_pieces.append(new_skeleton_piece)
+        for curr_endpoint in curr_starting_coordinate:
+            new_skeleton_piece = np.vstack([curr_soma_center,curr_endpoint]).reshape(-1,2,3)
+            soma_skeleton_pieces.append(new_skeleton_piece)
     
     return sk.stack_skeletons(soma_skeleton_pieces)
 

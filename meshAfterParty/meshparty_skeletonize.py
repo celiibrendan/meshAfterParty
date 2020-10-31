@@ -114,10 +114,17 @@ def skeletonize_mesh(mesh, soma_pt=None, soma_radius=7500, collapse_soma=True,
                                                                                                        invalidation_d=invalidation_d,
                                                                                                        cc_vertex_thresh=cc_vertex_thresh,
                                                                                                        smooth_neighborhood=smooth_neighborhood,
-                                                                                                       return_map=True)
+                                                                                                      return_map=True)
+    if verbose:
+        print(f"skel_verts.shape = {skel_verts.shape}")
+        print(f"orig_skel_index.shape = {orig_skel_index.shape}")
+        
 
     if smooth_vertices is True:
         skel_verts = smooth_verts
+        
+    if verbose:
+        print(f"After smooth verts skel_verts.shape = {skel_verts.shape}")
 
     if collapse_soma is True and soma_pt is not None:
         soma_verts = mesh_filters.filter_spatial_distance_from_points(
@@ -129,6 +136,10 @@ def skeletonize_mesh(mesh, soma_pt=None, soma_radius=7500, collapse_soma=True,
     else:
         new_v, new_e, new_skel_map = skel_verts, skel_edges, skel_map
         vert_filter = np.arange(len(orig_skel_index))
+        
+        if verbose:
+            print(f"new_v.shape = {new_v.shape}")
+            print(f"vert_filter.shape = {vert_filter.shape}")
 
         if soma_pt is None:
             sk_graph = utils.create_csgraph(new_v, new_e)
@@ -144,6 +155,10 @@ def skeletonize_mesh(mesh, soma_pt=None, soma_radius=7500, collapse_soma=True,
     skel_map_full_mesh[ind_to_fix] = -1
 
     props = {}
+    
+    if verbose:
+        print(f"orig_skel_index[vert_filter].shape = {orig_skel_index[vert_filter].shape}")
+        
     if compute_original_index is True:
         props['mesh_index'] = np.append(
             mesh.map_indices_to_unmasked(orig_skel_index[vert_filter]), -1)
@@ -161,7 +176,7 @@ def skeletonize_mesh(mesh, soma_pt=None, soma_radius=7500, collapse_soma=True,
 def calculate_skeleton_paths_on_mesh(mesh, soma_pt=None, soma_thresh=7500,
                                      invalidation_d=10000, smooth_neighborhood=5,
                                      large_skel_path_threshold=5000,
-                                     cc_vertex_thresh=100,  return_map=False):
+                                     cc_vertex_thresh=50,  return_map=False):
     """ function to turn a trimesh object of a neuron into a skeleton, without running soma collapse,
     or recasting result into a Skeleton.  Used by :func:`meshparty.skeletonize.skeletonize_mesh` and
     makes use of :func:`meshparty.skeletonize.skeletonize_components`
@@ -217,8 +232,17 @@ def calculate_skeleton_paths_on_mesh(mesh, soma_pt=None, soma_thresh=7500,
             a Mx2 map of mesh vertex indices to skeleton vertex indices
 
     """
-    print(f"smooth_neighborhood = {smooth_neighborhood}")
+    debug = False
+    if debug:
+        print(f"smooth_neighborhood = {smooth_neighborhood}")
+        print(f"soma_pt = {soma_pt}")
+        print(f"invalidation_d = {invalidation_d}")
+        cc_vertex_thresh = 25
+        print(f"cc_vertex_thresh = {cc_vertex_thresh}")
 
+        
+    cc_vertex_thresh = 10
+    print(f"cc_vertex_thresh = {cc_vertex_thresh}")
     skeletonize_output = skeletonize_components(mesh,
                                                 soma_pt=soma_pt,
                                                 soma_thresh=soma_thresh,
@@ -229,6 +253,12 @@ def calculate_skeleton_paths_on_mesh(mesh, soma_pt=None, soma_thresh=7500,
         all_paths, roots, tot_path_lengths, mesh_to_skeleton_map = skeletonize_output
     else:
         all_paths, roots, tot_path_lengths = skeletonize_output
+        
+    if debug:
+        print(f"all_paths = {all_paths}")
+        print(f"roots = {roots}")
+        print(f"tot_path_lengths = {tot_path_lengths}")
+        
 
     all_edges = []
     for comp_paths in all_paths:
@@ -278,11 +308,17 @@ def reduce_verts(verts, faces):
         used_verts, the index of the new_verts in the old verts
 
     """
-    used_verts = np.unique(faces.ravel())
-    new_verts = verts[used_verts, :]
-    new_face = np.zeros(faces.shape, dtype=faces.dtype)
-    for i in range(faces.shape[1]):
-        new_face[:, i] = np.searchsorted(used_verts, faces[:, i])
+    try:
+        used_verts = np.unique(faces.ravel())
+        new_verts = verts[used_verts, :]
+        new_face = np.zeros(faces.shape, dtype=faces.dtype)
+        for i in range(faces.shape[1]):
+            new_face[:, i] = np.searchsorted(used_verts, faces[:, i])
+    except:
+        print(f"verts={verts}")
+        print(f"faces={faces}")
+        print(f"used_verts = {used_verts}")
+        raise Exception
     return new_verts, new_face, used_verts
 
 
@@ -768,3 +804,223 @@ def ray_trace_distance(vertex_inds, mesh, max_iter=10, rand_jitter=0.001, verbos
         if it > max_iter:
             break
     return rs
+
+# ================= 10/12 added skeletonization for decomposition=================================== #
+
+from copy import deepcopy
+from importlib import reload
+import numpy as np
+import networkx as nx
+import time
+from meshparty import trimesh_io
+
+def skeletonize_mesh_largest_component(mesh,
+                                    root=None,
+                                      verbose=False,
+                                      filter_mesh=True, #will filter the mesh for just one connected piece
+                                      ):
+    """
+    To run the skeletonization on the 
+    largest connected component of one mesh
+    
+    Example 1:
+    #How to get the skeleton from the skeleton object
+    sk_meshparty = sk_meshparty_obj.vertices[sk_meshparty_obj.edges]
+    
+    """
+    limb_mesh_mparty = deepcopy(mesh)
+
+#     # just getting the largest connected component
+#     connect_comp = list(nx.connected_components(nx.from_edgelist(limb_mesh_mparty.face_adjacency)))
+#     max_connect_comp = np.argmax([len(k) for k in connect_comp])
+#     limb_mesh_mparty = limb_mesh_mparty.submesh([list(connect_comp[max_connect_comp])],append=True)
+    if filter_mesh:
+        limb_mesh_mparty = limb_mesh_mparty.split(only_watertight=False,repair=False)[0]
+
+    limb_obj_tr_io  = trimesh_io.Mesh(vertices = limb_mesh_mparty.vertices,
+                                                           faces = limb_mesh_mparty.faces,
+                                                           normals=limb_mesh_mparty.face_normals)
+
+    meshparty_time = time.time()
+    if verbose:
+        print("\nStep 1: Starting Skeletonization")
+    sk_meshparty_obj, v = skeletonize_mesh(limb_obj_tr_io,
+                          soma_pt = root,
+                          soma_radius = 0,
+                          collapse_soma = False,
+                          invalidation_d=12000,
+                          smooth_vertices=True,
+                           smooth_neighborhood = 1,
+                          compute_radius = True, #Need the pyembree list
+                          compute_original_index=True,
+                          verbose=verbose)
+    if verbose:
+        print(f"Total time for meshParty skeletonization = {time.time() - meshparty_time}")
+    if filter_mesh:
+        return sk_meshparty_obj,limb_mesh_mparty
+    else:
+        return sk_meshparty_obj
+
+
+import time
+import skeleton_utils as sk
+import general_utils as gu
+import numpy as np
+import compartment_utils as cu
+import itertools
+import trimesh_utils as tu
+
+def skeleton_obj_to_branches(sk_meshparty_obj,
+                             mesh,
+                            meshparty_n_surface_downsampling = 0,
+                            meshparty_segment_size = 200,
+                            verbose=False
+                            ):
+
+    limb_mesh_mparty = mesh
+    #Step 2: Getting the branches
+    if verbose:
+        print("\nStep 2: Decomposing Branches")
+    meshparty_time = time.time()
+
+    segments, segment_maps = compute_segments(sk_meshparty_obj)
+    # getting the skeletons that go with them
+    segment_branches = np.array([sk_meshparty_obj.vertices[np.vstack([k[:-1],k[1:]]).T] for k in segments])
+    
+    branches_touching_root = sk.find_branch_skeleton_with_specific_coordinate(segment_branches,
+                                        current_coordinate=sk_meshparty_obj.vertices[sk_meshparty_obj.root])
+    
+    
+    
+    #combine segments that are connected at the root if there are only 2
+    if len(branches_touching_root) ==2:
+        keep_ind = np.setdiff1d(np.arange(len(segments)),branches_touching_root).astype("int")
+        
+        #calculating the new segment
+        b_touch_seg_1 = segments[branches_touching_root[0]]
+        b_touch_seg_2 = segments[branches_touching_root[1]]
+
+        b_touch_seg_1_ends = b_touch_seg_1[[0,-1]]
+        b_touch_seg_2_ends = b_touch_seg_2[[0,-1]]
+        b_1_root_end = np.where(b_touch_seg_1_ends == sk_meshparty_obj.root)[0]
+        b_2_root_end = np.where(b_touch_seg_2_ends == sk_meshparty_obj.root)[0]
+        b_1_root_end,b_2_root_end
+
+        if b_1_root_end == 0:
+            b_touch_seg_1 = np.flip(b_touch_seg_1)
+        if b_2_root_end == 1:
+            b_touch_seg_2 = np.flip(b_touch_seg_2)
+            
+        new_seg = np.concatenate([b_touch_seg_1[:-1],b_touch_seg_2])
+        
+        
+        #adding the new segment to the older segments
+        new_segments = [segments[k] for k in keep_ind]
+        new_segments.append(new_seg)
+        
+        new_segment_branches = np.array([sk_meshparty_obj.vertices[np.vstack([k[:-1],k[1:]]).T] for k in new_segments])
+        
+        segments = new_segments
+        segment_branches = new_segment_branches
+        
+    branches_touching_root = sk.find_branch_skeleton_with_specific_coordinate(segment_branches,
+                                        current_coordinate=sk_meshparty_obj.vertices[sk_meshparty_obj.root])
+    print(f"branches_touching_root = {branches_touching_root}")
+    #raise Exception("")
+        
+
+    #------------ Add in the downsampling and resizing ----------------- #
+
+
+    if meshparty_n_surface_downsampling > 0:
+        if verbose:
+            print(f"Going to downsample the meshparty segments {meshparty_n_surface_downsampling}")
+        for j,s in enumerate(segment_branches):
+            for i in range(n_surface_downsampling):
+                s = sk.downsample_skeleton(s)
+            segment_branches[j] = s
+
+    new_segment_branches = []
+    if meshparty_segment_size > 0:
+        if verbose:
+            print(f"Resizing meshparty skeletal segments to length {meshparty_segment_size} nm")
+        for j,s in enumerate(segment_branches):
+            new_segment_branches.append(sk.resize_skeleton_branch(s,segment_width = meshparty_segment_size))
+    segment_branches = np.array(new_segment_branches)
+
+    #------------ END OF downsampling and resizing ----------------- #
+
+    if verbose:
+        print(f"Total time for meshParty decomposition = {time.time() - meshparty_time}")
+
+
+    # -- Step 3: Creating the mesh correspondence --
+    if verbose:
+        print("\nStep 3: Mesh correspondence")
+    meshparty_time = time.time()
+
+    sk_vertices_to_mesh_vertices = gu.invert_mapping(sk_meshparty_obj.mesh_to_skel_map)
+    #getting a list of all the original vertices that belong to each segment
+    segment_mesh_vertices = [np.unique(np.concatenate([sk_vertices_to_mesh_vertices[k] for k in segment_list])) for segment_list in segments]
+    #getting a list of all the original vertices that belong to each segment
+    segment_mesh_faces = [np.unique(limb_mesh_mparty.vertex_faces[k]) for k in segment_mesh_vertices]
+    segment_mesh_faces = [k[k>=0] for k in segment_mesh_faces]
+    
+    # --------------- 10/29: Adding in the part that combines the branch points that are close ----------- #
+    
+    segment_branches_filtered,kept_branches_idx = sk.combine_close_branch_points(
+                                                            skeleton_branches=segment_branches)
+    
+    segment_branches_filtered = np.array(segment_branches_filtered)
+    #print(f"kept_branches_idx = {kept_branches_idx}")
+    print(f"max(kept_branches_idx) = {max(kept_branches_idx)}, len(kept_branches_idx) = {len(kept_branches_idx)}")
+    segment_mesh_faces_filtered = [k for i,k in enumerate(segment_mesh_faces) if i in set(kept_branches_idx)]
+    
+    
+
+    #face_lookup = gu.invert_mapping(segment_mesh_faces)
+    face_lookup = gu.invert_mapping(segment_mesh_faces_filtered)
+
+    curr_limb_mesh = limb_mesh_mparty
+
+
+    original_labels = set(list(itertools.chain.from_iterable(list(face_lookup.values()))))
+    if verbose:
+        print(f"max(original_labels),len(original_labels) = {(max(original_labels),len(original_labels))}")
+
+    face_coloring_copy = cu.resolve_empty_conflicting_face_labels(curr_limb_mesh = curr_limb_mesh,
+                                                                face_lookup=face_lookup,
+                                                                no_missing_labels = list(original_labels))
+
+
+    # -- splitting the mesh pieces into individual pieces
+    divided_submeshes,divided_submeshes_idx = tu.split_mesh_into_face_groups(curr_limb_mesh,face_coloring_copy,
+                                                                            return_dict=False)
+
+
+    if verbose:
+        print(f"Total time for meshParty mesh correspondence = {time.time() - meshparty_time}")
+
+    # -- Step 4: Getting the Widths ---
+    if verbose:
+        print("\nStep 4: Retrieving Widths")
+    meshparty_time = time.time()
+
+    segment_width_measurements = [sk_meshparty_obj.vertex_properties["rs"][k] for k in segments]
+    segment_widths_median = np.array([np.median(k) for k in segment_width_measurements])
+    segment_widths_median_filtered = segment_widths_median[kept_branches_idx]
+
+    if verbose:
+        print(f"Total time for meshParty Retrieving Widths = {time.time() - meshparty_time}")
+    # ---- Our Final Products -----
+    
+    segment_branches = np.array(segment_branches)
+
+#     return (segment_branches, #skeleton branches
+#             divided_submeshes, divided_submeshes_idx, #mesh correspondence (mesh and indices)
+#             segment_widths_median) #widths
+
+    return (segment_branches_filtered, #skeleton branches
+            divided_submeshes, divided_submeshes_idx, #mesh correspondence (mesh and indices)
+            segment_widths_median_filtered) #widths
+    

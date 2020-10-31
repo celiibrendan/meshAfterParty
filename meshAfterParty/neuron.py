@@ -17,6 +17,7 @@ import neuron_utils as nru
 from pathlib import Path
 import algorithms_utils as au
 import neuron_searching as ns
+from pykdtree.kdtree import KDTree #to be used for the soma_vertex nullification
 
 import width_utils as wu
 
@@ -493,9 +494,9 @@ class Limb:
                                                                             )
         
         return directional_concept_network
-        
     
-    def set_concept_network_directional(self,starting_soma,print_flag=False,**kwargs):
+    
+    def set_concept_network_directional(self,starting_soma,soma_group_idx=0,print_flag=False,**kwargs):
         """
         Pseudocode: 
         1) Get the current concept_network
@@ -542,9 +543,8 @@ class Limb:
         
         matching_concept_network_data = [k for k in self.all_concept_network_data if ((k["starting_soma"] == starting_soma) or (nru.soma_label(k["starting_soma"]) == starting_soma))]
 
-        if len(matching_concept_network_data) != 1:
+        if len(matching_concept_network_data) < 1:
             raise Exception(f"The concept_network data for the starting soma ({starting_soma}) did not have exactly one match: {matching_concept_network_data}")
-        
         
         
         #find which the starting_coordinate and starting_node
@@ -563,13 +563,17 @@ class Limb:
         for prev_st_node in previous_starting_node:
             del self.concept_network.nodes[prev_st_node]["starting_coordinate"]
             del self.concept_network.nodes[prev_st_node]["touching_soma_vertices"]
+            del self.concept_network.nodes[prev_st_node]["soma_group_idx"]
+            del self.concept_network.nodes[prev_st_node]["starting_soma"]
         
         
-
-        matching_concept_network_dict = matching_concept_network_data[0]
+        
+        matching_concept_network_dict = matching_concept_network_data[soma_group_idx]
+        #print(f"matching_concept_network_dict = {matching_concept_network_dict}")
         curr_starting_node = matching_concept_network_dict["starting_node"]
         curr_starting_coordinate= matching_concept_network_dict["starting_coordinate"]
         curr_touching_soma_vertices = matching_concept_network_dict["touching_soma_vertices"]
+        curr_soma_group_idx = matching_concept_network_dict["soma_group_idx"]
         
         if debug:
             print("Applying the set_directional change!!!!")
@@ -577,7 +581,10 @@ class Limb:
 
         #set the starting coordinate in the concept network
         attrs = {curr_starting_node:{"starting_coordinate":curr_starting_coordinate,
-                                    "touching_soma_vertices":curr_touching_soma_vertices}}
+                                    "touching_soma_vertices":curr_touching_soma_vertices,
+                                    "soma_group_idx":curr_soma_group_idx,
+                                    "starting_soma":starting_soma}
+                }
         if print_flag:
             print(f"attrs = {attrs}")
         xu.set_node_attributes_dict(self.concept_network,attrs)
@@ -596,6 +603,7 @@ class Limb:
         self.current_starting_endpoints = matching_concept_network_dict["starting_endpoints"]
         self.current_starting_soma = matching_concept_network_dict["starting_soma"]
         self.current_touching_soma_vertices = matching_concept_network_dict["touching_soma_vertices"]
+        self.current_soma_group_idx = matching_concept_network_dict["soma_group_idx"]
         
         if print_flag:
             self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True,print_flag=print_flag,**kwargs)
@@ -647,10 +655,17 @@ class Limb:
             self.current_starting_endpoints = dc(mesh.current_starting_endpoints)
             self.current_starting_node = dc(mesh.current_starting_node)
             
+            
+            
             if hasattr(mesh,"current_touching_soma_vertices"):
                 self.current_touching_soma_vertices = dc(mesh.current_touching_soma_vertices)
             else:
                 self.current_touching_soma_vertices = None
+            
+            if hasattr(mesh,"current_soma_group_idx"):
+                self.current_soma_group_idx = dc(mesh.current_soma_group_idx)
+            else:
+                self.current_soma_group_idx = None
             
             self.current_starting_soma = dc(mesh.current_starting_soma)
             self.labels = dc(mesh.labels)
@@ -698,7 +713,8 @@ class Limb:
             self.current_starting_endpoints = current_concept_network["starting_endpoints"]
             self.current_starting_soma = current_concept_network["starting_soma"]
             self.current_touching_soma_vertices = current_concept_network["touching_soma_vertices"]
-            self.concept_network = concept_network_dict[self.current_starting_soma]
+            self.current_soma_group_idx = current_concept_network["soma_group_idx"]
+            self.concept_network = concept_network_dict[self.current_starting_soma][self.current_soma_group_idx]
             
             self.all_concept_network_data = concept_network_data
         
@@ -1412,7 +1428,9 @@ class Neuron:
                 suppress_output=False,
                 calculate_spines=True,
                 widths_to_calculate=["no_spine_median_mesh_center",
-                                    "no_spine_mean_mesh_center"]):
+                                    "no_spine_mean_mesh_center"],
+                fill_hole_size=2000,
+                ):
 #                  concept_network=None,
 #                  non_graph_meshes=dict(),
 #                  pre_processed_mesh = dict()
@@ -1487,22 +1505,48 @@ class Neuron:
             neuron_start_time =time.time()
             if preprocessed_data is None: 
                 print("--- 0) Having to preprocess the Neuron becuase no preprocessed data\nPlease wait this could take a while.....")
-                if suppress_preprocessing_print:
-                    with su.suppress_stdout_stderr():
-                        preprocessed_data = pn.preprocess_neuron(mesh,
-                                         segment_id=segment_id,
-                                         description=description,
-                                          decomposition_type=decomposition_type,
-                                            mesh_correspondence=mesh_correspondence,
-                                            distance_by_mesh_center=distance_by_mesh_center,
-                                            meshparty_segment_size =meshparty_segment_size,
-                                             meshparty_n_surface_downsampling = meshparty_n_surface_downsampling,
-                                          somas=somas,
-                                                                branch_skeleton_data=branch_skeleton_data,
-                                                                combine_close_skeleton_nodes = combine_close_skeleton_nodes,
-                                                                combine_close_skeleton_nodes_threshold=combine_close_skeleton_nodes_threshold)
-                        print(f"preprocessed_data inside with = {preprocessed_data}")
+                
+                with su.suppress_stdout_stderr() if suppress_preprocessing_print else su.dummy_context_mgr():
+                    if fill_hole_size == -1:
+                        vert_holes = tu.find_border_vertex_groups(self.mesh)
+                        vert_holes_size = np.array([len(k) for k in vert_holes])
+                        fill_hole_size = np.max(fill_hole_size) + 10
+                        print(f"Calculating max hole filling size as {fill_hole_size} ")
+
+                        
+                    if fill_hole_size > 0 and len(tu.find_border_vertex_groups(self.mesh))>0:
+                        try:
+                            mesh = tu.fill_holes(mesh,max_hole_size=fill_hole_size)
+                            self.mesh = mesh
+                        except:
+                            print("**** Tried to fill holes but was unable to, just preceeding on*****")
+                        else:
+                            vert_holes = tu.find_border_vertex_groups(self.mesh)
+                            vert_holes_size = np.array([len(k) for k in vert_holes])
+                            print(f"Successfully filled all holes up to size {fill_hole_size}")
+                            print(f"Still existing holes = {vert_holes_size}")
+                            
+                    preprocessed_data = pn.preprocess_neuron(mesh,
+                                     segment_id=segment_id,
+                                     description=description,
+                                      decomposition_type=decomposition_type,
+                                        mesh_correspondence=mesh_correspondence,
+                                        distance_by_mesh_center=distance_by_mesh_center,
+                                        meshparty_segment_size =meshparty_segment_size,
+                                         meshparty_n_surface_downsampling = meshparty_n_surface_downsampling,
+                                      somas=somas,
+                                                            branch_skeleton_data=branch_skeleton_data,
+                                                            combine_close_skeleton_nodes = combine_close_skeleton_nodes,
+                                                            combine_close_skeleton_nodes_threshold=combine_close_skeleton_nodes_threshold)
+                    #print(f"preprocessed_data inside with = {preprocessed_data}")
+                        
+                        
+                """ DON'T NEED THIS BRANCH ANYMORE BECAUSE CONDITIONALLY BLOCKING THE OUTPUT
                 else:
+                    if fill_hole_size > 0:
+                        print("Fixing holes in mesh before processing")
+                        mesh = tu.fill_holes(mesh,max_hole_size=fill_hole_size)
+                        self.mesh = mesh
                     preprocessed_data = pn.preprocess_neuron(mesh,
                                          segment_id=segment_id,
                                          description=description,
@@ -1518,6 +1562,7 @@ class Neuron:
 
                 print(f"--- 0) Total time for preprocessing: {time.time() - neuron_start_time}\n\n\n\n")
                 neuron_start_time = time.time()
+                """
             else:
                 print("Already have preprocessed data")
 
@@ -2053,19 +2098,38 @@ class Neuron:
                 
 #                 print(f"Before width call width_name =  {width_name} with parameters:\n "
 #                       f"distance_by_mesh_center={distance_by_mesh_center}, no_spines = {no_spines}, summary_measure={summary_measure}")
-                current_width_array,current_width = wu.calculate_new_width(curr_branch_obj, 
-                                      skeleton_segment_size=skeleton_segment_size,
-                                      width_segment_size=width_segment_size, 
-                                      distance_by_mesh_center=distance_by_mesh_center,
-                                      no_spines=no_spines,
-                                      summary_measure=summary_measure,
-                                      return_average=True,
-                                      print_flag=False,
-                                    **kwargs)
+                
+                
+                #Add rule that will help skip segment if has no spines
+                already_computed = False
+                
+                
+                if (curr_branch_obj.spines is None or len(curr_branch_obj.spines) == 0) and no_spines:
+                    
+                    #see if we can skip
+                    new_width_name = width_name.replace("no_spine_","")
+                    if new_width_name in curr_branch_obj.width_new.keys():
+                        print("No spines and using precomputed width")
+                        curr_branch_obj.width_new[width_name] = curr_branch_obj.width_new[new_width_name]
+                        curr_branch_obj.width_array[width_name] = curr_branch_obj.width_array[new_width_name]
+                        
+                        already_computed=True
+                
+        
+                if not already_computed:
+                    current_width_array,current_width = wu.calculate_new_width(curr_branch_obj, 
+                                          skeleton_segment_size=skeleton_segment_size,
+                                          width_segment_size=width_segment_size, 
+                                          distance_by_mesh_center=distance_by_mesh_center,
+                                          no_spines=no_spines,
+                                          summary_measure=summary_measure,
+                                          return_average=True,
+                                          print_flag=False,
+                                        **kwargs)
 
 
-                curr_branch_obj.width_new[width_name] = current_width
-                curr_branch_obj.width_array[width_name] = current_width_array
+                    curr_branch_obj.width_new[width_name] = current_width
+                    curr_branch_obj.width_array[width_name] = current_width_array
     
     
     def calculate_width_without_spines(self,
@@ -2100,6 +2164,7 @@ class Neuron:
     
     
     
+    
     def calculate_spines(self,
                         #query="width > 400 and n_faces_branch>100",
                          query="median_mesh_center > 200 and n_faces_branch>100",
@@ -2109,7 +2174,10 @@ class Neuron:
                         cgal_path=Path("./cgal_temp"),
                         print_flag=False,
                         filter_out_border_spines=True,
-                        skeleton_endpoint_nullification=True):
+                        skeleton_endpoint_nullification=True,
+                         soma_vertex_nullification = True,
+                         border_percentage_threshold=0.3,
+                        check_spine_border_perc=0.4):
         
         print(f"query = {query}")
         print(f"smoothness_threshold = {smoothness_threshold}")
@@ -2147,6 +2215,12 @@ class Neuron:
             #to be used for endpoint nullification
             if skeleton_endpoint_nullification:
                 curr_limb_end_coords = sk.find_skeleton_endpoint_coordinates(curr_limb.skeleton)
+            
+            
+            if soma_vertex_nullification:
+                soma_verts = np.concatenate([self[f"S{k}"].mesh.vertices for k in curr_limb.touching_somas()])
+                soma_kdtree = KDTree(soma_verts)
+            
             curr_limb._index = -1
             for branch_idx,curr_branch in enumerate(curr_limb):
                 if limb_idx in new_branch_dict.keys():
@@ -2194,7 +2268,11 @@ class Neuron:
                             if print_flag:
                                 print("Using the filter_out_border_spines option")
                             spine_submesh_split_filtered = spu.filter_out_border_spines(self[limb_idx][branch_idx].mesh,
-                                                                                        spine_submesh_split_filtered)
+                                                                                        spine_submesh_split_filtered,
+                                                                                        border_percentage_threshold=border_percentage_threshold,
+                                                                                        check_spine_border_perc=check_spine_border_perc,
+                                                                                        verbose=print_flag
+                                                                                       )
                         if skeleton_endpoint_nullification:
                             if print_flag:
                                 print("Using the skeleton_endpoint_nullification option")
@@ -2202,6 +2280,15 @@ class Neuron:
                             spine_submesh_split_filtered = tu.filter_meshes_by_containing_coordinates(spine_submesh_split_filtered,
                                                                         curr_limb_end_coords,
                                                                         distance_threshold=500)
+                        
+                        if soma_vertex_nullification:
+                            if print_flag:
+                                print("Using the soma_vertex_nullification option")
+                                
+                            spine_submesh_split_filtered = spu.filter_out_soma_touching_spines(spine_submesh_split_filtered,
+                                                                        soma_kdtree=soma_kdtree)
+                            
+                        
                 
 
                         if print_flag:

@@ -65,10 +65,14 @@ def write_neuron_off(current_mesh,main_mesh_path):
     return main_mesh_path
 
 
-def combine_meshes(mesh_pieces):
+def combine_meshes(mesh_pieces,merge_vertices=True):
     leftover_mesh = trimesh.Trimesh(vertices=np.array([]),faces=np.array([]))
     for m in mesh_pieces:
         leftover_mesh += m
+        
+    if merge_vertices:
+        leftover_mesh.merge_vertices()
+    
     return leftover_mesh
 
 """
@@ -296,7 +300,7 @@ def split(mesh, only_watertight=False, adjacency=None, engine=None, return_compo
     
     
     ordered_meshes = np.array([meshes[i] for i in ordered_indices])
-    ordered_components = np.array([components[i] for i in ordered_indices])
+    ordered_components = np.array([components[i] for i in ordered_indices],dtype="object")
     
     if len(ordered_meshes)>=2:
         if (len(ordered_meshes[0].faces) < len(ordered_meshes[1].faces)) and (len(ordered_meshes[0].vertices) < len(ordered_meshes[1].vertices)) :
@@ -310,8 +314,16 @@ def split(mesh, only_watertight=False, adjacency=None, engine=None, return_compo
                            )
     
     #control if the meshes is iterable or not
+    try:
+        ordered_comp_indices = np.array([k.astype("int") for k in ordered_components])
+    except:
+        import system_utils as su
+        su.compressed_pickle(ordered_components,"ordered_components")
+        print(f"ordered_components = {ordered_components}")
+        raise Exception("ordered_components")
+    
     if return_components:
-        return ordered_meshes,ordered_components
+        return ordered_meshes,ordered_comp_indices
     else:
         return ordered_meshes
 
@@ -379,7 +391,51 @@ def compare_meshes_by_face_midpoints(mesh1,mesh2,match_threshold=0.001,print_fla
             print("Meshes are equal!")
         return True
     
+import time
+def original_mesh_vertices_map(original_mesh, submesh=None,
+                               vertices_coordinates=None,
+                               matching=True,
+                               match_threshold = 0.001,
+                               print_flag=False):
+    """
+    Purpose: Given an original_mesh and either a 
+        i) submesh
+        ii) list of vertices coordinates
+    Find the indices of the original vertices in the
+    original mesh
+    
+    Pseudocode:
+    1) Get vertices to map to original
+    2) Construct a KDTree of the original mesh vertices
+    3) query the closest vertices on the original mesh
+    
+    
+    """
+    
+    if not submesh is None:
+        vertices_coordinates = submesh.vertices
+    elif vertices_coordinates is None:
+        raise Exception("Both Submesh and vertices_coordinates are None")
+    else:
+        pass
+    
+    global_start = time.time()
+    #1) Put the submesh face midpoints into a KDTree
+    original_mesh_kdtree = KDTree(original_mesh.vertices)
+    #2) Query the fae midpoints of submesh against KDTree
+    distances,closest_node = original_mesh_kdtree.query(vertices_coordinates)
 
+    #check that all of them matched below the threshold
+    if np.any(distances> match_threshold):
+        raise Exception(f"There were {np.sum(distances> match_threshold)} faces that did not have an exact match to the original mesh")
+
+    if print_flag:
+        print(f"Total time for mesh mapping: {time.time() - global_start}")
+
+    return closest_node
+    
+    
+    
 def original_mesh_faces_map(original_mesh, submesh,
                            matching=True,
                            print_flag=False,
@@ -465,15 +521,43 @@ def original_mesh_faces_map(original_mesh, submesh,
         return original_mesh.submesh([return_faces],append=True)
     else:
         return return_faces
-   
-   
+
+def shared_edges_between_faces_on_mesh(mesh,faces_a,faces_b,
+                                 return_vertices_idx=False):
+    """
+    Given two sets of faces, find the edges which are in both sets of faces.
+    Parameters
+    ---------
+    faces_a : (n, 3) int
+      Array of faces
+    faces_b : (m, 3) int
+      Array of faces
+    Returns
+    ---------
+    shared : (p, 2) int
+      Edges shared between faces
+      
+      
+    Pseudocode:
+    1) Get the unique edges of each of the faces
+    """
+    faces_a_edges = np.unique(mesh.faces_unique_edges[faces_a].ravel())
+    faces_b_edges = np.unique(mesh.faces_unique_edges[faces_b].ravel())
+    shared_edges_idx = np.intersect1d(faces_a_edges,faces_b_edges)
+    
+    if return_vertices_idx:
+        return np.unique(mesh.edges_unique[shared_edges_idx].ravel())
+    else:
+        return shared_edges_idx
     
 def mesh_pieces_connectivity(
                 main_mesh,
                 central_piece,
                 periphery_pieces,
+                connectivity="edges",
                 return_vertices=False,
                 return_central_faces=False,
+                return_vertices_idx = False,
                 print_flag=False,
                 merge_vertices=False):
     """
@@ -567,41 +651,295 @@ def mesh_pieces_connectivity(
     #2) For each periphery piece, find if touching the central piece at all
     touching_periphery_pieces = []
     touching_periphery_pieces_intersecting_vertices= []
+    touching_periphery_pieces_intersecting_vertices_idx = []
     
     #the faces have the vertices indices stored so just comparing vertices indices!
-    central_p_verts = np.unique(main_mesh.faces[central_piece_faces].ravel())
+    
+    if connectivity!="edges":
+        central_p_verts = np.unique(main_mesh.faces[central_piece_faces].ravel())
     
     for j,curr_p_faces in enumerate(periphery_pieces_faces):
         
-        curr_p_verts = np.unique(main_mesh.faces[curr_p_faces].ravel())
+        if connectivity=="edges": #will do connectivity based on edges
+            intersecting_vertices = shared_edges_between_faces_on_mesh(main_mesh,
+                                                                       faces_a=central_piece_faces,
+                                                                       faces_b=curr_p_faces,
+                                                                       return_vertices_idx=True)
+            
+        else:
+            curr_p_verts = np.unique(main_mesh.faces[curr_p_faces].ravel())
+            intersecting_vertices = np.intersect1d(central_p_verts,curr_p_verts)
         
-        intersecting_vertices = np.intersect1d(central_p_verts,curr_p_verts)
         if print_flag:
             print(f"intersecting_vertices = {intersecting_vertices}")
         
-        if len(np.intersect1d(central_p_verts,curr_p_verts)) > 0:
+        if len(intersecting_vertices) > 0:
             touching_periphery_pieces.append(j)
             touching_periphery_pieces_intersecting_vertices.append(main_mesh.vertices[intersecting_vertices])
+            touching_periphery_pieces_intersecting_vertices_idx.append(intersecting_vertices)
     
     
     
-    if not return_vertices and not return_central_faces:
-        return touching_periphery_pieces
+    #redoing the return structure
+    return_value = [touching_periphery_pieces]
+    if return_vertices:
+        return_value.append(touching_periphery_pieces_intersecting_vertices)
+    if return_central_faces:
+        return_value.append(central_piece_faces)
+    if return_vertices_idx:
+        return_value.append(touching_periphery_pieces_intersecting_vertices_idx)
+    
+    if len(return_value) == 1:
+        return return_value[0]
     else:
-        if return_vertices and return_central_faces:
-            return touching_periphery_pieces,touching_periphery_pieces_intersecting_vertices,central_piece_faces
-        elif return_vertices:
-            return touching_periphery_pieces,touching_periphery_pieces_intersecting_vertices
-        elif return_central_faces:
-            touching_periphery_pieces,central_piece_faces
-        else:
-            raise Exception("Soething messed up with return in mesh connectivity")
+        return return_value
+    
+    
+#     if not return_vertices and not return_central_faces:
+#         return touching_periphery_pieces
+#     else:
+#         if return_vertices and return_central_faces:
+#             return touching_periphery_pieces,touching_periphery_pieces_intersecting_vertices,central_piece_faces
+#         elif return_vertices:
+#             return touching_periphery_pieces,touching_periphery_pieces_intersecting_vertices
+#         elif return_central_faces:
+#             touching_periphery_pieces,central_piece_faces
+#         else:
+#             raise Exception("Soething messed up with return in mesh connectivity")
             
 
 
+    
+def mesh_list_connectivity(meshes,
+                        main_mesh,
+                           connectivity="edges",
+                           min_common_vertices=1,
+                           return_vertex_connection_groups=False,
+                           return_largest_vertex_connection_group=False,
+                        print_flag = False):
+    """
+    Pseudocode:
+    1) Build an edge list
+    2) Use the edgelist to find connected components
+
+    Arguments:
+    - meshes (list of trimesh.Trimesh) #
+    - retrun_vertex_connection_groups (bool): whether to return the touching vertices
+
+
+    """
+
+    periphery_pieces = meshes
+    meshes_connectivity_edge_list = []
+    meshes_connectivity_vertex_connection_groups = []
+    
+    vertex_graph = None
+    
+        
+
+    periphery_pieces_faces = []
+    #periphery_pieces_faces = [original_mesh_faces_map(main_mesh,k) for k in periphery_pieces]
+    #print(f"periphery_pieces = {len(periphery_pieces)}")
+    for k in periphery_pieces:
+        if type(k) == type(trimesh.Trimesh()):
+            #print("using trimesh pieces")
+            periphery_pieces_faces.append(original_mesh_faces_map(main_mesh,k))
+        else:
+            #print("just using face idxs")
+            periphery_pieces_faces.append(k)
+
+
+    
+        """
+        Pseudocode:
+        Iterates through all combinations of meshes
+        1) get the faces of both meshes in the pair
+        2) using the faces get the shared edges between them (if any)
+        3) If there were shared edges then save them as intersecting vertices
+        
+        
+        """
+
+    for j,central_p_faces in enumerate(periphery_pieces_faces):
+        if connectivity!="edges":
+            central_p_verts = np.unique(main_mesh.faces[central_p_faces].ravel())
+            
+        for i in range(0,j):
+            curr_p_faces = periphery_pieces_faces[i]
+            if connectivity=="edges": #will do connectivity based on edges
+                intersecting_vertices = shared_edges_between_faces_on_mesh(main_mesh,
+                                                                           faces_a=central_p_faces,
+                                                                           faces_b=curr_p_faces,
+                                                                           return_vertices_idx=True)
+                
+            else: #then do the vertex way
+                
+                curr_p_verts = np.unique(main_mesh.faces[curr_p_faces].ravel())
+
+                intersecting_vertices = np.intersect1d(central_p_verts,curr_p_verts)
+                
+            if print_flag:
+                print(f"intersecting_vertices = {intersecting_vertices}")
+
+
+            if len(intersecting_vertices) >= min_common_vertices:
+                if return_vertex_connection_groups:
+
+                    if vertex_graph is None:
+                        vertex_graph = mesh_vertex_graph(main_mesh)
+
+                    curr_vertex_connection_groups = split_vertex_list_into_connected_components(
+                                                    vertex_indices_list=intersecting_vertices,
+                                                    mesh=main_mesh,
+                                                    vertex_graph=vertex_graph,
+                                                    return_coordinates=True,
+                                                   )
+                    if return_largest_vertex_connection_group:
+                        curr_vertex_connection_groups_len = [len(k) for k in curr_vertex_connection_groups]
+                        largest_group = np.argmax(curr_vertex_connection_groups_len)
+                        curr_vertex_connection_groups = curr_vertex_connection_groups[largest_group]
+
+                    meshes_connectivity_vertex_connection_groups.append(curr_vertex_connection_groups)
+
+                meshes_connectivity_edge_list.append((j,i))
+
+    meshes_connectivity_edge_list = nu.sort_elements_in_every_row(meshes_connectivity_edge_list)
+    if return_vertex_connection_groups:
+        return meshes_connectivity_edge_list,meshes_connectivity_vertex_connection_groups
+    else:
+        return meshes_connectivity_edge_list
+
+'''
+Saved method before added in vertex options
+
+
+def mesh_list_connectivity(meshes,
+                        main_mesh,
+                           min_common_vertices=1,
+                           return_vertex_connection_groups=False,
+                           return_largest_vertex_connection_group=False,
+                        print_flag = False):
+    """
+    Pseudocode:
+    1) Build an edge list
+    2) Use the edgelist to find connected components
+
+    Arguments:
+    - meshes (list of trimesh.Trimesh) #
+    - retrun_vertex_connection_groups (bool): whether to return the touching vertices
+
+
+    """
+
+    periphery_pieces = meshes
+    meshes_connectivity_edge_list = []
+    meshes_connectivity_vertex_connection_groups = []
+    
+    vertex_graph = None
+    
+        
+
+    periphery_pieces_faces = []
+    #periphery_pieces_faces = [original_mesh_faces_map(main_mesh,k) for k in periphery_pieces]
+    #print(f"periphery_pieces = {len(periphery_pieces)}")
+    for k in periphery_pieces:
+        if type(k) == type(trimesh.Trimesh()):
+            #print("using trimesh pieces")
+            periphery_pieces_faces.append(original_mesh_faces_map(main_mesh,k))
+        else:
+            #print("just using face idxs")
+            periphery_pieces_faces.append(k)
+
+
+    for j,central_p_faces in enumerate(periphery_pieces_faces):
+        central_p_verts = np.unique(main_mesh.faces[central_p_faces].ravel())
+        for i in range(0,j):
+            curr_p_faces = periphery_pieces_faces[i]
+            curr_p_verts = np.unique(main_mesh.faces[curr_p_faces].ravel())
+
+            intersecting_vertices = np.intersect1d(central_p_verts,curr_p_verts)
+            if print_flag:
+                print(f"intersecting_vertices = {intersecting_vertices}")
+            
+            
+            
+
+            if len(intersecting_vertices) >= min_common_vertices:
+                if return_vertex_connection_groups:
+                    
+                    if vertex_graph is None:
+                        vertex_graph = mesh_vertex_graph(main_mesh)
+                    
+                    curr_vertex_connection_groups = split_vertex_list_into_connected_components(
+                                                    vertex_indices_list=intersecting_vertices,
+                                                    mesh=main_mesh,
+                                                    vertex_graph=vertex_graph,
+                                                    return_coordinates=True,
+                                                   )
+                    if return_largest_vertex_connection_group:
+                        curr_vertex_connection_groups_len = [len(k) for k in curr_vertex_connection_groups]
+                        largest_group = np.argmax(curr_vertex_connection_groups_len)
+                        curr_vertex_connection_groups = curr_vertex_connection_groups[largest_group]
+                
+                    meshes_connectivity_vertex_connection_groups.append(curr_vertex_connection_groups)
+                    
+                meshes_connectivity_edge_list.append((j,i))
+
+    meshes_connectivity_edge_list = nu.sort_elements_in_every_row(meshes_connectivity_edge_list)
+    if return_vertex_connection_groups:
+        return meshes_connectivity_edge_list,meshes_connectivity_vertex_connection_groups
+    else:
+        return meshes_connectivity_edge_list
+    
+
+
+
+
+
+
+'''
+    
+    
+
+
+def split_vertex_list_into_connected_components(
+                                                vertex_indices_list, #list of vertices referencing the mesh
+                                                mesh=None, #the main mesh the vertices list references
+                                                vertex_graph=None, # a precomputed vertex graph if available
+                                                return_coordinates=True, #whether to return the groupings as coordinates (if False the returns them as indices)
+                                               ):
+    """
+    Purpose: 
+    Given a list of vertices (in reference to a main mesh),
+    returns the vertices divided into connected components on the graph
+    
+    Pseudocode:
+    1) Build graph from vertex and edges of mesh
+    2) Create a subgraph from the vertices list
+    3) Find the connected components of the subgraph
+    4) Either return the vertex coordinates or indices
+    """
+    if vertex_graph is None:
+        #1) Build graph from vertex and edges of mesh
+        if mesh is None:
+            raise Exception("Neither the vertex graph or mesh argument were non None")
+            
+        vertex_graph = mesh_vertex_graph(mesh)
+    
+    #2) Create a subgraph from the vertices list
+    vertex_subgraph = vertex_graph.subgraph(vertex_indices_list)
+    
+    vertex_groups = [np.array(list(k)).astype("int") for k in list(nx.connected_components(vertex_subgraph))]
+    
+    if return_coordinates:
+        return [mesh.vertices[k] for k in vertex_groups]
+    else:
+        return vertex_groups
+
 
 def split_mesh_into_face_groups(base_mesh,face_mapping,return_idx=True,
-                               check_connect_comp = True):
+                               check_connect_comp = True,
+                                return_dict=True):
     """
     Will split a mesh according to a face coloring of labels to split into 
     """
@@ -628,6 +966,11 @@ def split_mesh_into_face_groups(base_mesh,face_mapping,return_idx=True,
             else:
                 raise Exception(f"Label {lab} has {len(curr_submeshes)} disconnected submeshes"
                                 "\n(usually when checking after the waterfilling algorithm)")
+    
+    if not return_dict:
+        total_submeshes = np.array(list(total_submeshes.values()))
+        total_submeshes_idx =np.array(list(total_submeshes_idx.values()))
+        
     if return_idx:
         return total_submeshes,total_submeshes_idx
     else:
@@ -936,7 +1279,7 @@ def find_border_vertex_groups(mesh):
     list of faces
 
     """
-    return border_edge_groups
+    return [list(k) for k in border_edge_groups]
     
 
 def find_border_face_groups(mesh):
@@ -1101,7 +1444,8 @@ import numpy as np
 def filter_away_border_touching_submeshes_by_group(
                             mesh,
                             submesh_list,
-                            border_percentage_threshold=0.5,#would make 0.00001 if wanted to enforce nullification if at most one touchedss
+                            border_percentage_threshold=0.3,#would make 0.00001 if wanted to enforce nullification if at most one touchedss
+                            inverse_border_percentage_threshold=0.9,
                             verbose = False,
                             return_meshes=True,
                     
@@ -1142,6 +1486,9 @@ def filter_away_border_touching_submeshes_by_group(
         submesh_list=curr_branch.spines
     )
     """
+    
+    if verbose:
+        print(f"border_percentage_threshold = {border_percentage_threshold}")
 
     #1) Get the border vertices of mesh
     border_vertex_groups = find_border_vertex_groups(mesh)
@@ -1165,12 +1512,26 @@ def filter_away_border_touching_submeshes_by_group(
             for z,b_verts in enumerate(border_vertex_groups):
                 dist,closest_vert_idx = spine_kdtree.query(mesh.vertices[list(b_verts)])
                 touching_perc = len(dist[dist == 0])/len(b_verts)
+                if verbose:
+                    print(f"Submesh {i} touching percentage for border {z} = {touching_perc}")
                 if touching_perc > border_percentage_threshold:
                     if verbose:
                         print(f"Submesh {z} was touching a greater percentage ({touching_perc}) of border vertices than threshold ({border_percentage_threshold})")
                     not_touching_significant_border=False
                     break
             
+            #apply the spine check that will see if percentage of border vertices of spine touching mesh border vertices
+            #is above some threshold
+            if inverse_border_percentage_threshold > 0:
+                if verbose:
+                    print(f"Applying inverse_border_percentage_threshold = {inverse_border_percentage_threshold}")
+                    print(f"border_vertex_groups = {border_vertex_groups}")
+                all_border_verts = np.concatenate([list(k) for k in border_vertex_groups])
+                whole_border_kdtree= KDTree(mesh.vertices[all_border_verts])
+                dist,closest_vert_idx = whole_border_kdtree.query(subm.vertices)
+                touching_perc = len(dist[dist == 0])/len(dist)
+                if touching_perc > inverse_border_percentage_threshold:
+                    not_touching_significant_border = False
             
             if not_touching_significant_border:
                 passed_idx.append(i)
@@ -1312,37 +1673,3 @@ def filter_meshes_by_containing_coordinates(mesh_list,nullifying_points,
     else:
         return containing_meshes
     
-"""    
-An algorithm that could be used to find sdf values    
-    
-
-import numpy as np
-import os
-os.environ['PYOPENGL_PLATFORM'] = 'egl'
-
-from mesh_to_sdf import get_surface_point_cloud, scale_to_unit_sphere
-import trimesh
-import skimage, skimage.measure
-import os
-
-
-
-mesh = current_mesh
-mesh = scale_to_unit_sphere(mesh)
-
-print("Scanning...")
-cloud = get_surface_point_cloud(mesh, surface_point_method='scan', scan_count=20, scan_resolution=400)
-
-cloud.show()
-
-os.makedirs("test", exist_ok=True)
-for i, scan in enumerate(cloud.scans):
-    scan.save("test/scan_{:d}.png".format(i))
-
-print("Voxelizing...")
-voxels = cloud.get_voxels(128, use_depth_buffer=True)
-
-print("Creating a mesh using Marching Cubes...")
-vertices, faces, normals, _ = skimage.measure.marching_cubes_lewiner(voxels, level=0)
-mesh = trimesh.Trimesh(vertices=vertices, faces=faces, vertex_normals=normals)
-mesh.show()"""

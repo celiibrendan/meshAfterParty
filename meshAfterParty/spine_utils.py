@@ -200,6 +200,7 @@ def split_mesh_into_spines_shaft(current_mesh,
     
     
 import numpy as np
+import system_utils as su
 def get_spine_meshes_unfiltered_from_mesh(current_mesh,
                                           segment_name=None,
                                         clusters=2,
@@ -246,7 +247,16 @@ def get_spine_meshes_unfiltered_from_mesh(current_mesh,
                             main_mesh=current_mesh,
                             central_piece=curr_mesh_idx,
                             periphery_pieces=total_meshes_idx)
-            touching_meshes.remove(j)
+            try:
+                touching_meshes.remove(j)
+            except:
+                print(f"j = {j}")
+                su.compressed_pickle(current_mesh,"current_mesh")
+                su.compressed_pickle(curr_mesh_idx,"curr_mesh_idx")
+                su.compressed_pickle(total_meshes_idx,"total_meshes_idx")
+                su.compressed_pickle(total_names,"total_names")
+                raise Exception("didn't do remove")
+                
             #construct the edges
             curr_edges = [[total_names[j],total_names[h]] for h in touching_meshes]
             total_edges += curr_edges
@@ -394,5 +404,50 @@ def filter_spine_meshes(spine_meshes,
 
 #------------ 9/23 Addition -------------- #
 import trimesh_utils as tu
-def filter_out_border_spines(mesh,spine_submeshes):
-    return tu.filter_away_border_touching_submeshes_by_group(mesh,spine_submeshes)
+def filter_out_border_spines(mesh,spine_submeshes,
+                            border_percentage_threshold=0.3,                                                    
+                             check_spine_border_perc=0.9,
+                            verbose=False):
+    return tu.filter_away_border_touching_submeshes_by_group(mesh,spine_submeshes,
+                                                             border_percentage_threshold=border_percentage_threshold,
+                                                             inverse_border_percentage_threshold=check_spine_border_perc,
+                                                             verbose = verbose,
+                                                            )
+
+from pykdtree.kdtree import KDTree
+def filter_out_soma_touching_spines(spine_submeshes,soma_vertices=None,soma_kdtree=None,
+                                   verbose=False,):
+    """
+    Purpose: To filter the spines that are touching the somae
+    Because those are generally false positives picked up 
+    by cgal segmentation
+    
+    Pseudocode
+    1) Create a KDTree from the soma vertices
+    2) For each spine:
+    a) Do a query against the KDTree with vertices
+    b) If any of the vertices have - distance then nullify
+
+
+    """
+    if soma_kdtree is None and not soma_vertices is None:
+        soma_kdtree = KDTree(soma_vertices)
+    if soma_kdtree is None and soma_verties is None:
+        raise Exception("Neither a soma kdtree or soma vertices were given")
+
+    if verbose:
+        print(f"Number of spines before soma border filtering = {len(spine_submeshes)}")
+    final_spines = []
+    for j,sp_mesh in enumerate(spine_submeshes):
+        sp_dist,sp_closest = soma_kdtree.query(sp_mesh.vertices)
+        n_match_vertices = np.sum(sp_dist==0)
+        
+        if n_match_vertices == 0:
+            final_spines.append(sp_mesh)
+        else:
+            if verbose:
+                print(f"Spine {j} was removed because had {n_match_vertices} border vertices")
+    if verbose:
+        print(f"Number of spines before soma border filtering = {len(final_spines)}")
+    
+    return final_spines

@@ -1,3 +1,26 @@
+
+"""
+How to recieve a single values tuple 
+and unpack it into its element --> use (__ , ) on recieving end
+
+def ex_function(ex_bool = True,second_bool=False):
+    
+    
+    return_value = (5,)
+    if ex_bool:
+        return_value += (6,)
+    if second_bool:
+        return_value += (7,)
+        
+
+    return return_value
+
+(y,) = ex_function(ex_bool=False,second_bool=False)
+type(y)
+
+"""
+
+
 import numpy_utils as nu
 import numpy as np
 import itertools
@@ -41,3 +64,46 @@ def get_unique_values_dict_of_lists(dict_of_lists):
     
     """
     return set(list(itertools.chain.from_iterable(list(dict_of_lists.values()))))
+
+def flip_key_orders_for_dict(curr_dict):
+    """
+    To flip the order of keys in dictionarys with multiple
+    levels of keys:
+    
+    Ex: 
+    test_dict = {0:{1:['a','b','c'],2:['c','d','e']},
+            1:{0:['i','j','k'],2:['f','g','h']}}
+    
+    output:
+    {0: {1: ['i', 'j', 'k']},
+     1: {0: ['a', 'b', 'c']},
+     2: {0: ['c', 'd', 'e'], 1: ['f', 'g', 'h']}}
+     
+     Pseudocode: 
+     How to flip the soma to piece touching dictionaries
+    1) get all the possible limb keys
+    2) Create a dictionary with empty list
+    3) Iterate through all of the somas
+    - if the limb is in the keys then add the info (if not then skip)
+
+    
+    """
+    test_dict = curr_dict
+    all_limbs = np.unique(np.concatenate([list(v.keys()) for v in test_dict.values()]))
+    flipped_dict = dict()
+    for l_idx in all_limbs:
+        flipped_dict[l_idx]=dict()
+        for sm_idx,sm_dict in test_dict.items():
+            if l_idx in sm_dict.keys():
+                flipped_dict[l_idx].update({sm_idx:sm_dict[l_idx]})
+    return flipped_dict
+
+
+#have to reorder the keys
+def order_dict_by_keys(current_dict):
+    current_dict_new = dict([(k,current_dict[k]) for k in np.sort(list(current_dict.keys()))])
+    return current_dict_new
+
+
+def dict_to_array(current_dict):
+    return np.vstack([list(current_dict.keys()),list(current_dict.values())]).T
