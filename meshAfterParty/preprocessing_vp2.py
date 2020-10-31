@@ -955,9 +955,11 @@ def preprocess_limb(mesh,
             print(f"len(sublimb_meshes_MP) = {len(sublimb_meshes_MP)}")
             print(f"len(sublimb_meshes_MAP) = {len(sublimb_meshes_MAP)}")
             meshes = sublimb_meshes_MP + sublimb_meshes_MAP
-            su.compressed_pickle(meshes,"meshes")
-            su.compressed_pickle(limb_mesh_mparty,"limb_mesh_mparty")
+            #su.compressed_pickle(meshes,"meshes")
             su.compressed_pickle(sublimb_meshes_MP,"sublimb_meshes_MP")
+            su.compressed_pickle(sublimb_meshes_MAP,"sublimb_meshes_MAP")
+            su.compressed_pickle(limb_mesh_mparty,"limb_mesh_mparty")
+            su.compressed_pickle(sublimb_skeletons_MP,"sublimb_skeletons_MP")
             su.compressed_pickle(sublimb_skeletons_MAP,"sublimb_skeletons_MAP")
 
             
