@@ -1157,7 +1157,8 @@ def add_new_coordinate_node(G,
     another node
     """
     
-    G = copy.deepcopy(G)
+    #G = copy.deepcopy(G)
+    G
     
     if not replace_coordinates is None:
         if len(replace_coordinates.shape) < 2:

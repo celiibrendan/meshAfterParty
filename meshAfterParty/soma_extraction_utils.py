@@ -86,7 +86,7 @@ def soma_volume_ratio(current_mesh,
         #get the largest piece
         lrg_mesh = largest_mesh_piece(current_mesh)
         if not lrg_mesh.is_watertight:
-            lrg_mesh.export("lrg_mesh_in_soma_volume.off")
+            #lrg_mesh.export("lrg_mesh_in_soma_volume.off")
             if watertight_method == "poisson":
                 print("Using Poisson Surface Reconstruction for watertightness in soma_volume_ratio")
                 #run the Poisson Surface reconstruction and get the largest piece
@@ -955,7 +955,7 @@ def original_mesh_soma(
         print(f"Total time for Subtract Soam = {time.time() - current_time}")
         current_time = time.time()
 
-        debug = True
+        debug = False
         
         
         

@@ -1415,7 +1415,7 @@ def convert_skeleton_to_graph_old(staring_edges,
 
 def convert_skeleton_to_graph(staring_edges,
                              stitch_print=False,
-                                   combine_node_dist = 0.1,
+                                   combine_node_dist = 0.0001,
                              node_matching_size_threshold=10000):
     """
     Purpose: To automatically convert a skeleton to a graph
@@ -2065,6 +2065,7 @@ def clean_skeleton_with_soma_verts(G,
         return G
     
 import copy
+import time
 def combine_close_branch_points(skeleton=None,
                                 combine_threshold = 700,
                                print_flag=False,
@@ -2106,7 +2107,8 @@ def combine_close_branch_points(skeleton=None,
         
         
     """
-    
+    debug_time = False
+    combine_close_time = time.time()
     
     branches_flag = False    
     if not skeleton_branches is None:
@@ -2185,7 +2187,11 @@ def combine_close_branch_points(skeleton=None,
         print(f"Found {len(valid_paths)} valid paths to replace")
         print(f"valid_paths = {(valid_paths)}")
         print(f"valid_path_lengths = {valid_path_lengths}")
-                        
+                     
+    if debug_time:
+        print(f"Finding all paths = { time.time() - combine_close_time}")
+        combine_close_time = time.time()
+        
     if len(valid_paths) == 0:
         if print_flag:
             print("No valid paths found so just returning the original")
@@ -2203,8 +2209,13 @@ def combine_close_branch_points(skeleton=None,
     
     """
     curr_sk_graph_cp = copy.deepcopy(curr_sk_graph)
+    if debug_time:
+        print(f"Copying graph= { time.time() - combine_close_time}")
+        combine_close_time = time.time()
+        
     print(f"length of Graph = {len(curr_sk_graph_cp)}")
     for p_idx,p in enumerate(valid_paths):
+        
         print(f"Working on path {p}")
         path_degrees = xu.get_node_degree(curr_sk_graph_cp,p)
         print(f"path_degrees = {path_degrees}")
@@ -2213,6 +2224,10 @@ def combine_close_branch_points(skeleton=None,
         #get endpoint coordinates
         path_coordinates = xu.get_node_attributes(curr_sk_graph_cp,node_list=p)
         end_coordinates = np.array([path_coordinates[0],path_coordinates[-1]]).reshape(-1,3)
+        
+        if debug_time:
+            print(f"Getting coordinates = { time.time() - combine_close_time}")
+            combine_close_time = time.time()
         
 #         print(f"end_coordinates = {end_coordinates}")
 #         print(f"branch_idx_to_endpoints = {branch_idx_to_endpoints}")
@@ -2236,12 +2251,20 @@ def combine_close_branch_points(skeleton=None,
                 raise Exception("No matching endpoints for branch")
             else:
                 branch_position_to_delete = branch_idxs[0]
+        
+        if debug_time:
+            print(f"Finding matching endpoints = { time.time() - combine_close_time}")
+            combine_close_time = time.time()
     
         #get the coordinates of the path and average them for new node
         average_endpoints = np.mean(path_coordinates,axis=0)
         
         #replace the old end nodes with the new one
         curr_sk_graph_cp,new_node_id = xu.add_new_coordinate_node(curr_sk_graph_cp,node_coordinate=average_endpoints,replace_nodes=p_end_nodes)
+        
+        if debug_time:
+            print(f"Adding new coordinate node = { time.time() - combine_close_time}")
+            combine_close_time = time.time()
         
         #go through and change all remaining paths to now include the new combined node id
         for p_idx_curr in range(p_idx+1,len(valid_paths)):
@@ -2254,6 +2277,9 @@ def combine_close_branch_points(skeleton=None,
                 
             valid_paths[p_idx_curr][(valid_paths[p_idx_curr]==p_end_nodes[0]) | (valid_paths[p_idx_curr]==p_end_nodes[1])] = new_node_id
         
+        if debug_time:
+            print(f"Changing all remaining paths = { time.time() - combine_close_time}")
+            combine_close_time = time.time()
         
         if branches_flag:
             #delete the branch id from the index
@@ -2267,9 +2293,17 @@ def combine_close_branch_points(skeleton=None,
             match_2 = (branch_idx_to_endpoints.reshape(-1,3) == end_coordinates[1]).all(axis=1).reshape(-1,2)
             replace_mask = match_1 | match_2
             branch_idx_to_endpoints[replace_mask] = average_endpoints
+            
+        if debug_time:
+            print(f"Replacing branch index = { time.time() - combine_close_time}")
+            combine_close_time = time.time()
         
         #delete the nodes that were on the path
         curr_sk_graph_cp.remove_nodes_from(p)
+        
+        if debug_time:
+            print(f"Removing nodes = { time.time() - combine_close_time}")
+            combine_close_time = time.time()
         
     
     
@@ -2302,6 +2336,10 @@ def combine_close_branch_points(skeleton=None,
                                            replace_coordinates=old_ep,
                                           return_node_id=False)
             edited_skeleton_branches.append(convert_graph_to_skeleton(f_sk_graph))
+        
+        if debug_time:
+            print(f"Filtering branches = { time.time() - combine_close_time}")
+            combine_close_time = time.time()
         
         return edited_skeleton_branches,branch_keep_idx
         
@@ -2688,10 +2726,11 @@ def skeletonize_connected_branch(current_mesh,
             
             significant_poisson_skeleton = read_skeleton_edges_coordinates(skeleton_files)
             
-            if remove_cycles:
-                significant_poisson_skeleton = remove_cycles_from_skeleton(significant_poisson_skeleton)
+            
             
             if len(significant_poisson_skeleton) > 0:
+                if remove_cycles:
+                    significant_poisson_skeleton = remove_cycles_from_skeleton(significant_poisson_skeleton)
                 
                 if use_surface_after_CGAL:
                     boolean_significance_threshold=5
@@ -2748,6 +2787,8 @@ def skeletonize_connected_branch(current_mesh,
                     
                 leftover_meshes = combine_meshes(leftover_meshes_sig)
             else:
+                if not use_surface_after_CGAL:
+                    raise Exception(f"No CGAL skeleton was generated when the {use_surface_after_CGAL} flag was set")
                 print("No recorded skeleton so skiipping"
                      " to surface skeletonization")
                 leftover_meshes_sig = [current_mesh]
@@ -2755,6 +2796,7 @@ def skeletonize_connected_branch(current_mesh,
                 print(f"len(leftover_meshes_sig) = {leftover_meshes_sig}")
                 for zz,curr_m in enumerate(leftover_meshes_sig):
                     tu.write_neuron_off(curr_m,f"./leftover_test/limb_{limb_name}_{zz}.off")
+                    
             leftover_meshes_sig_surf_sk = []
             for m in tqdm(leftover_meshes_sig):
                 surf_sk = generate_surface_skeleton(m.vertices,
@@ -4694,6 +4736,7 @@ def cut_skeleton_at_coordinate(skeleton,
                                             new_node_name,
                                             np.linalg.norm(winning_edge_coord[k] - cut_coordinate)
                                            ) for k in range(0,2)])
+        curr_MAP_sk_graph.remove_edge(winning_edge[0],winning_edge[1])
 
         MP_stitch_node = new_node_name
     else:
@@ -4753,7 +4796,7 @@ def smooth_skeleton_branch(skeleton,
     #- if number of nodes is less than 3 then return
     if len(nodes) < 3:
         print("Only 2 skeleton nodes so cannot do smoothing")
-        return_value = skeleton
+        return skeleton
 
     if not coordinates_to_keep is None:
         coordinates_to_keep = np.array(coordinates_to_keep).reshape(-1,3)
@@ -4813,6 +4856,9 @@ def add_and_smooth_segment_to_branch(skeleton,
     orig_sk_func_smoothed = add_and_smooth_segment_to_branch(orig_sk,
                            new_seg = np.array([stitch_point_MAP,stitch_point_MP]).reshape(-1,2,3))
     """
+    if len(skeleton) == 0:
+        raise Exception("The skeleton passed to the smoothing function was empty")
+    
     orig_sk = skeleton
     orig_sk_segment_width = np.mean(sk.calculate_skeleton_segment_distances(orig_sk,cumsum=False))
     
@@ -4917,6 +4963,20 @@ def add_and_smooth_segment_to_branch(skeleton,
     #need to resize the final_sk
     final_sk = sk.resize_skeleton_branch(final_sk,segment_width=orig_sk_segment_width)
     return final_sk
+
+def number_connected_components(skeleton):
+    """
+    Will find the number of connected components in a whole skeleton
+    
+    """
+    return nx.number_connected_components(convert_skeleton_to_graph(skeleton))
+
+def number_connected_components_branches(skeleton_branches):
+    """
+    Will find the number of connected components in a list of skeleton branches
+    
+    """
+    return nx.number_connected_components(convert_skeleton_to_graph(stack_skeletons(skeleton_branches)))
 
     
 

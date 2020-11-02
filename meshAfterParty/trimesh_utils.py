@@ -759,11 +759,11 @@ def mesh_list_connectivity(meshes,
         
         
         """
-
+    
     for j,central_p_faces in enumerate(periphery_pieces_faces):
         if connectivity!="edges":
             central_p_verts = np.unique(main_mesh.faces[central_p_faces].ravel())
-            
+        
         for i in range(0,j):
             curr_p_faces = periphery_pieces_faces[i]
             if connectivity=="edges": #will do connectivity based on edges

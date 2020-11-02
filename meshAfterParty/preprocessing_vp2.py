@@ -393,6 +393,8 @@ def preprocess_limb(mesh,
                                                           meshparty_segment_size=meshparty_segment_size)
     
     
+    
+    
     if print_fusion_steps:
         print(f"Decomposing first pass: {time.time() - fusion_time }")
         fusion_time = time.time()
@@ -415,7 +417,7 @@ def preprocess_limb(mesh,
         sk_large = []
     
     
-
+    print("Another print")
     mesh_pieces_for_MAP = []
     mesh_pieces_for_MAP_face_idx = []
 
@@ -721,6 +723,7 @@ def preprocess_limb(mesh,
         divided_submeshes = sublimb_mesh_branches_MP[sublimb_idx]
         divided_submeshes_idx = sublimb_mesh_idx_branches_MP[sublimb_idx]
         segment_widths_median = widths_MP[sublimb_idx]
+        
 
         if curr_soma_to_piece_touching_vertices is None:
             print(f"Do Not Need to Fix MP Decomposition {sublimb_idx} so just continuing")
@@ -837,24 +840,48 @@ def preprocess_limb(mesh,
                         curr_ray_distance = tu.ray_trace_distance(mesh=limb_mesh_mparty, 
                                             face_inds=new_s_idx,
                                            ray_inter=ray_inter)
-                        new_widths.append(np.median(curr_ray_distance[curr_ray_distance!=0]))
+                        curr_width_median = np.median(curr_ray_distance[curr_ray_distance!=0])
+                        print(f"curr_width_median = {curr_width_median}")
+                        if (not np.isnan(curr_width_median)) and (curr_width_median > 0):
+                            new_widths.append(curr_width_median)
+                        else:
+                            print(f"USING A DEFAULT WIDTH BECAUSE THE NEWLY COMPUTED ONE WAS {curr_width_median}: {segment_widths_median[match_sk_branches[0]]}")
+                            new_widths.append(segment_widths_median[match_sk_branches[0]])
 
 
                     #6) Remove the original branch and mesh correspondence and replace with the multiples
+#                     print(f"match_sk_branches BEFORE = {match_sk_branches}")
+#                     print(f"segment_branches BEFORE = {segment_branches}")
+#                     print(f"len(new_skeletal_branches) = {len(new_skeletal_branches)}")
+#                     print(f"new_skeletal_branches BEFORE= {new_skeletal_branches}")
+                    
+                    
+                    #segment_branches = np.delete(segment_branches,match_sk_branches,axis=0)
+                    #segment_branches = np.append(segment_branches,new_skeletal_branches,axis=0)
+                    
+                    segment_branches = np.array([k for i,k in enumerate(segment_branches) if i not in match_sk_branches] + new_skeletal_branches)
+                    
 
-                    segment_branches = np.delete(segment_branches,match_sk_branches)
-                    segment_branches = np.append(segment_branches,new_skeletal_branches,axis=0)
-
-                    divided_submeshes = np.delete(divided_submeshes,match_sk_branches)
+                    divided_submeshes = np.delete(divided_submeshes,match_sk_branches,axis=0)
                     divided_submeshes = np.append(divided_submeshes,new_submeshes,axis=0)
 
-                    divided_submeshes_idx = np.delete(divided_submeshes_idx,match_sk_branches)
-                    divided_submeshes_idx = np.append(divided_submeshes_idx,new_submeshes_idx,axis=0)
+                    
+                    #divided_submeshes_idx = np.delete(divided_submeshes_idx,match_sk_branches,axis=0)
+                    #divided_submeshes_idx = np.append(divided_submeshes_idx,new_submeshes_idx,axis=0)
+                    divided_submeshes_idx = np.array([k for i,k in enumerate(divided_submeshes_idx) if i not in match_sk_branches] + new_submeshes_idx)
 
-                    segment_widths_median = np.delete(segment_widths_median,match_sk_branches)
+                    segment_widths_median = np.delete(segment_widths_median,match_sk_branches,axis=0)
                     segment_widths_median = np.append(segment_widths_median,new_widths,axis=0)
                     
-                    sk.check_skeleton_connected_component(sk.stack_skeletons(segment_branches))
+                    try:
+                        debug = False
+                        if debug:
+                            print(f"segment_branches.shape = {segment_branches.shape}")
+                            print(f"segment_branches = {segment_branches}")
+                            print(f"new_skeletal_branches = {new_skeletal_branches}")
+                        sk.check_skeleton_connected_component(sk.stack_skeletons(segment_branches))
+                    except:
+                        su.compressed_pickle(local_correspondence_revised,"local_correspondence_revised")
                     print("checked segment branches after soma add on")
                     return_find = sk.find_branch_skeleton_with_specific_coordinate(segment_branches,
                                                  orig_vertex)
@@ -1012,7 +1039,7 @@ def preprocess_limb(mesh,
 
             #1) Get the endpoint vertices of the MP skeleton branches (so every endpoint or high degree node)
             #(needs to be inside loop because limb correspondence will change)
-            curr_MP_branch_skeletons = [k["branch_skeleton"] for k in limb_correspondence_MP[MP_idx].values()]
+            curr_MP_branch_skeletons = [limb_correspondence_MP[MP_idx][k]["branch_skeleton"] for k in np.sort(list(limb_correspondence_MP[MP_idx].keys()))]
             endpoint_nodes_coordinates = np.array([sk.find_branch_endpoints(k) for k in curr_MP_branch_skeletons])
             endpoint_nodes_coordinates = np.unique(endpoint_nodes_coordinates.reshape(-1,3),axis=0)
 
@@ -1049,7 +1076,8 @@ def preprocess_limb(mesh,
 
 
             #4) Find the branches that have that MAP stitch point:
-            curr_MAP_branch_skeletons = [k["branch_skeleton"] for k in limb_correspondence_MAP[MAP_idx].values()]
+            curr_MAP_branch_skeletons = [limb_correspondence_MAP[MAP_idx][k]["branch_skeleton"]
+                                             for k in np.sort(list(limb_correspondence_MAP[MAP_idx].keys()))]
 
             MAP_branches_with_stitch_point = sk.find_branch_skeleton_with_specific_coordinate(
                 divded_skeleton=curr_MAP_branch_skeletons,
@@ -1126,10 +1154,21 @@ def preprocess_limb(mesh,
                 new_MP_skeleton = sk.convert_graph_to_skeleton(MP_stitch_branch_graph)
                 
                 """
-                
-                new_MP_skeleton = sk.add_and_smooth_segment_to_branch(skeleton=sk.convert_graph_to_skeleton(MP_stitch_branch_graph),
-                                                skeleton_stitch_point=keep_neighbor_coordinates,
-                                                 new_stitch_point=MAP_stitch_point)
+                try:
+                    if len(MP_stitch_branch_graph)>1:
+                        new_MP_skeleton = sk.add_and_smooth_segment_to_branch(skeleton=sk.convert_graph_to_skeleton(MP_stitch_branch_graph),
+                                                        skeleton_stitch_point=keep_neighbor_coordinates,
+                                                         new_stitch_point=MAP_stitch_point)
+                    else:
+                        print("Not even attempting smoothing segment because once keep_neighbor_coordinates")
+                        new_MP_skeleton = np.vstack([keep_neighbor_coordinates,MAP_stitch_point]).reshape(-1,2,3)
+                except:
+                    su.compressed_pickle(MP_stitch_branch_graph,"MP_stitch_branch_graph")
+                    su.compressed_pickle(keep_neighbor_coordinates,"keep_neighbor_coordinates")
+                    su.compressed_pickle(MAP_stitch_point,"MAP_stitch_point")
+                    
+                    
+                    raise Exception("Something went wrong with add_and_smooth_segment_to_branch")
                 
                 
                 
@@ -1198,15 +1237,22 @@ def preprocess_limb(mesh,
             stitching_skeleton_branches = curr_MAP_sk + curr_MP_sk
 
             """
-
+            
             #3) Run mesh correspondence to get new meshes and mesh_idx and widths
             local_correspondnece_stitch = mesh_correspondence_first_pass(mesh=stitching_mesh,
                                           skeleton_branches=stitching_skeleton_branches)
+            
+            try:
 
-            local_correspondence_stitch_revised = correspondence_1_to_1(mesh=stitching_mesh,
-                                                        local_correspondence=local_correspondnece_stitch,
-                                                        curr_limb_endpoints_must_keep=None,
-                                                        curr_soma_to_piece_touching_vertices=None)
+                local_correspondence_stitch_revised = correspondence_1_to_1(mesh=stitching_mesh,
+                                                            local_correspondence=local_correspondnece_stitch,
+                                                            curr_limb_endpoints_must_keep=None,
+                                                            curr_soma_to_piece_touching_vertices=None)
+            except:
+                su.compressed_pickle(stitching_skeleton_branches,"stitching_skeleton_branches")
+                su.compressed_pickle(stitching_mesh,"stitching_mesh")
+                su.compressed_pickle(local_correspondnece_stitch,"local_correspondnece_stitch")
+                raise Exception("Something went wrong with 1 to 1 correspondence")
 
 
             #Need to readjust the mesh correspondence idx

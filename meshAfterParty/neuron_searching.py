@@ -716,6 +716,7 @@ def map_new_limb_node_value(current_df,mapping_dict,value_name):
     current_df[value_name] = current_df.apply(lambda x: mapping_dict[x["limb"]][x["node"]], axis=1)
     return current_df
 
+import system_utils as su
 def generate_neuron_dataframe(current_neuron,functions_list,check_nans=True,function_kwargs=dict()):
     """
     Purpose: With a neuron and a specified set of functions generate a dataframe
@@ -752,6 +753,8 @@ def generate_neuron_dataframe(current_neuron,functions_list,check_nans=True,func
     
     if not nu.is_array_like(functions_list):
         functions_list = [functions_list]
+        
+    print(f"functions_list = {functions_list}")
     
     #2) Create a dataframe for the neuron
     curr_df = convert_neuron_to_branches_dataframe(current_neuron)
@@ -769,8 +772,10 @@ def generate_neuron_dataframe(current_neuron,functions_list,check_nans=True,func
         
     if check_nans:
         if pu.n_nans_total(curr_df) > 0:
-            print(f"Number of nans = {pu.n_nans_per_column(neuron_df)}")
+            print(f"Number of nans = {pu.n_nans_per_column(curr_df)}")
+            su.compressed_pickle(curr_df,"curr_df")
             raise Exception("Some fo the data in the dataframe were incomplete")
+            
     
     #4) return the dataframe
     return curr_df
