@@ -235,3 +235,41 @@ def decompress_pickle(filename):
 import os
 def get_file_size(filepath):
     return os.path.getsize(filepath)
+
+
+# ----------- How to make copies -------------- #
+import shutil
+
+import os
+from pathlib import Path
+
+def copy_file_and_create_shell_script(original_file,num_copies,new_dir=False):
+    """
+    Example: 
+    copy_file_and_create_shell_script("BaylorSegmentCentroid.py",5,new_dir=False)
+    """
+    if new_dir:
+        if not os.path.exists("copies"):
+            os.makedirs("copies")
+        folder = "./copies"
+    else:
+        folder = "./"
+    print(f"Using folder {folder}")
+    #create the new files
+    new_file_names = []
+    for i in range(0,num_copies):
+        # Copy the file in same folder with different name
+        new_name = str(i) + "_" + str(original_file)
+        shutil.copy(original_file,folder +"/" + str(new_name))
+        
+        new_file_names.append(new_name)
+
+    #write the shell script
+    f = open(folder + "/run_multiple_" + str(original_file) + ".sh", "w")
+    f.write("#!/bin/bash")
+    f.write("\n")
+    for file_name in new_file_names:
+        f.write("python3 " + str(file_name) + " &")
+        f.write("\n")
+    f.close()
+    
