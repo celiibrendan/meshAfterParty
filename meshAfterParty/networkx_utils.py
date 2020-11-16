@@ -175,6 +175,11 @@ def get_nodes_with_attributes_dict(G,attribute_dict):
     
     
     """
+    
+    # --- 11/4 An aleration that instead calles the more efficient method ---
+    if len(attribute_dict.keys()) == 1 and "coordinates" in attribute_dict.keys():
+        return get_graph_node_by_coordinate(G,attribute_dict["coordinates"],return_single_value=False)
+    
     node_list = []
     total_search_keys = list(attribute_dict.keys())
     for x,y in G.nodes(data=True):
@@ -200,12 +205,29 @@ def get_nodes_with_attributes_dict(G,attribute_dict):
                 node_list.append(x)
     return node_list
 
-def get_graph_node_by_coordinate(G,coordinate):
+def get_graph_node_by_coordinate_old(G,coordinate):
     match_nodes = get_nodes_with_attributes_dict(G,dict(coordinates=coordinate))
+    #print(f"match_nodes = {match_nodes}")
     if len(match_nodes) != 1:
         raise Exception(f"Not just one node in graph with coordinate {coordinate}: {match_nodes}")
     else:
         return match_nodes[0]
+    
+def get_graph_node_by_coordinate(G,coordinate,return_single_value=True):
+    """
+    Much faster way of searching for nodes by coordinates
+    
+    """
+    graph_nodes = np.array(list(G.nodes()))
+    node_coordinates = get_node_attributes(G,node_list = graph_nodes)
+    match_nodes = nu.matching_rows(node_coordinates,coordinate)
+    if return_single_value:
+        if len(match_nodes) != 1:
+            raise Exception(f"Not just one node in graph with coordinate {coordinate}: {match_nodes}")
+        else:
+            return graph_nodes[match_nodes[0]]
+    else:
+        return graph_nodes[match_nodes]
 
 def get_all_nodes_with_certain_attribute_key(G,attribute_name):
     return nx.get_node_attributes(G,attribute_name)
@@ -474,8 +496,11 @@ def find_all_cycles(G, source=None, cycle_length_limit=None):
             except StopIteration:
                 stack.pop()
                 cycle_stack.pop()
-
-    return [list(i) for i in output_cycles]
+    cycles_list = [list(i) for i in output_cycles]
+    cycles_list_array = np.array(cycles_list)
+    sorted_list = np.argsort([len(k) for k in cycles_list_array])[::-1]
+    cycles_list_sorted = cycles_list_array[sorted_list]
+    return list(cycles_list_sorted) 
 
 
 def set_node_data(curr_network,node_name,curr_data,curr_data_label):
@@ -981,8 +1006,6 @@ import random
 
 
 def hierarchy_pos(G, root=None, width=1., vert_gap = 0.2, vert_loc = 0, xcenter = 0.5,width_min = 0.3,width_noise_ampl=0.2):
-
-    \
     '''
     
     Old presets: 
@@ -1158,13 +1181,16 @@ def add_new_coordinate_node(G,
     """
     
     #G = copy.deepcopy(G)
-    G
     
     if not replace_coordinates is None:
         if len(replace_coordinates.shape) < 2:
             replace_coordinates=replace_coordinates.reshape(-1,3)
             
         replace_nodes = [get_graph_node_by_coordinate(G,k) for k in replace_coordinates]
+
+#     print(f"replace_coordinates = {replace_coordinates}")
+#     print(f"replace_nodes = {replace_nodes}")
+#     print(f"len(G) = {len(G)}")
 
     if not replace_nodes is None:
         if not nu.is_array_like(replace_nodes):

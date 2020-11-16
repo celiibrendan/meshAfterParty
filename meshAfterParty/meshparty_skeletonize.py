@@ -873,9 +873,16 @@ import trimesh_utils as tu
 def skeleton_obj_to_branches(sk_meshparty_obj,
                              mesh,
                             meshparty_n_surface_downsampling = 0,
-                            meshparty_segment_size = 200,
+                            meshparty_segment_size = 100,
                             verbose=False
                             ):
+    debug = False
+    
+    if debug:
+        print(f"mesh = {mesh}")
+        print(f"meshparty_segment_size = {meshparty_segment_size}")
+        print(f"meshparty_n_surface_downsampling = {meshparty_n_surface_downsampling}")
+    
 
     limb_mesh_mparty = mesh
     #Step 2: Getting the branches
@@ -887,6 +894,10 @@ def skeleton_obj_to_branches(sk_meshparty_obj,
     # getting the skeletons that go with them
     segment_branches = np.array([sk_meshparty_obj.vertices[np.vstack([k[:-1],k[1:]]).T] for k in segments])
     
+    if debug:
+        print(f"segments = {segments}")
+        print(f"segment_branches = {segment_branches}")
+    
     branches_touching_root = sk.find_branch_skeleton_with_specific_coordinate(segment_branches,
                                         current_coordinate=sk_meshparty_obj.vertices[sk_meshparty_obj.root])
     
@@ -894,6 +905,7 @@ def skeleton_obj_to_branches(sk_meshparty_obj,
     
     #combine segments that are connected at the root if there are only 2
     if len(branches_touching_root) ==2:
+        print("connecting at the root")
         keep_ind = np.setdiff1d(np.arange(len(segments)),branches_touching_root).astype("int")
         
         #calculating the new segment
@@ -940,13 +952,17 @@ def skeleton_obj_to_branches(sk_meshparty_obj,
                 s = sk.downsample_skeleton(s)
             segment_branches[j] = s
 
-    new_segment_branches = []
+    
     if meshparty_segment_size > 0:
+        new_segment_branches = []
         if verbose:
             print(f"Resizing meshparty skeletal segments to length {meshparty_segment_size} nm")
         for j,s in enumerate(segment_branches):
             new_segment_branches.append(sk.resize_skeleton_branch(s,segment_width = meshparty_segment_size))
-    segment_branches = np.array(new_segment_branches)
+            
+        if debug:
+            print(f"new_segment_branches = {new_segment_branches}")
+        segment_branches = np.array(new_segment_branches)
 
     #------------ END OF downsampling and resizing ----------------- #
 

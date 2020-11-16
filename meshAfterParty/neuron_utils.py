@@ -7,8 +7,8 @@ Purpose of this file: To help the development of the neuron object
 
 """
 
-import skeleton_utils as sk
 import soma_extraction_utils as sm
+import skeleton_utils as sk
 import trimesh_utils as tu
 import trimesh
 import numpy_utils as nu
@@ -1213,6 +1213,8 @@ def smaller_preprocessed_data(neuron_object,print_flag=False):
     #insignificant, non_soma touching and inside pieces just mesh pieces ()
     insignificant_limbs_face_idx = find_face_idx_and_check_recovery(original_mesh=double_soma_obj.mesh,
                                                            submesh_list=double_soma_obj.preprocessed_data["insignificant_limbs"])
+    not_processed_soma_containing_meshes_face_idx = find_face_idx_and_check_recovery(original_mesh=double_soma_obj.mesh,
+                                                           submesh_list=double_soma_obj.preprocessed_data["not_processed_soma_containing_meshes"])
 
     inside_pieces_face_idx = find_face_idx_and_check_recovery(original_mesh=double_soma_obj.mesh,
                                                            submesh_list=double_soma_obj.preprocessed_data["inside_pieces"])
@@ -1221,7 +1223,7 @@ def smaller_preprocessed_data(neuron_object,print_flag=False):
                                                            submesh_list=double_soma_obj.preprocessed_data["non_soma_touching_meshes"])
     
     if print_flag:
-        print(f"Total time for insignificant_limbs,inside_pieces,non_soma_touching_meshes compression = {time.time() - compression_time }")
+        print(f"Total time for insignificant_limbs,inside_pieces,non_soma_touching_meshes,not_processed_soma_containing_meshes compression = {time.time() - compression_time }")
     compression_time = time.time()
     
     # recover the limb meshes from the original
@@ -1274,6 +1276,7 @@ def smaller_preprocessed_data(neuron_object,print_flag=False):
     # soma_to_piece_connectivity is already small dictionary
     double_soma_obj.preprocessed_data["soma_to_piece_connectivity"]
     double_soma_obj.preprocessed_data["soma_sdfs"]
+    
 
     insignificant_limbs_face_idx
     inside_pieces_face_idx
@@ -1304,6 +1307,9 @@ def smaller_preprocessed_data(neuron_object,print_flag=False):
     #geting the labels data
     labels_lookup =double_soma_obj.get_attribute_dict("labels")
 
+    if "soma_volume_ratios" not in double_soma_obj.preprocessed_data.keys():
+        double_soma_obj.preprocessed_data["soma_volume_ratios"] = [double_soma_obj[ll].volume_ratio for ll in double_soma_obj.get_soma_node_names()]
+        
     compressed_dict = dict(
                           #saving the original number of faces and vertices to make sure reconstruciton doesn't happen with wrong mesh
                           original_mesh_n_faces = len(double_soma_obj.mesh.faces),
@@ -1313,8 +1319,10 @@ def smaller_preprocessed_data(neuron_object,print_flag=False):
 
                           soma_to_piece_connectivity=double_soma_obj.preprocessed_data["soma_to_piece_connectivity"],
                           soma_sdfs=double_soma_obj.preprocessed_data["soma_sdfs"],
+                          soma_volume_ratios=double_soma_obj.preprocessed_data["soma_volume_ratios"],
 
                           insignificant_limbs_face_idx=insignificant_limbs_face_idx,
+                          not_processed_soma_containing_meshes_face_idx = not_processed_soma_containing_meshes_face_idx,
                           inside_pieces_face_idx=inside_pieces_face_idx,
                           non_soma_touching_meshes_face_idx=non_soma_touching_meshes_face_idx,
 
@@ -1425,6 +1433,10 @@ def decompress_neuron(filepath,original_mesh,
         """
         recovered_preprocessed_data["soma_to_piece_connectivity"] = loaded_compression["soma_to_piece_connectivity"]
         recovered_preprocessed_data["soma_sdfs"] = loaded_compression["soma_sdfs"]
+        if "soma_volume_ratios" in  recovered_preprocessed_data.keys():
+            recovered_preprocessed_data["soma_volume_ratios"] = loaded_compression["soma_volume_ratios"]
+        else:
+            recovered_preprocessed_data["soma_volume_ratios"] = None
 
         """
         d) insignificant_limbs
@@ -1441,6 +1453,10 @@ def decompress_neuron(filepath,original_mesh,
         """
 
         recovered_preprocessed_data["insignificant_limbs"] = [original_mesh.submesh([k],append=True,repair=False) for k in loaded_compression["insignificant_limbs_face_idx"]]
+        
+        
+        
+        recovered_preprocessed_data["not_processed_soma_containing_meshes"] = [original_mesh.submesh([k],append=True,repair=False) for k in loaded_compression["not_processed_soma_containing_meshes_face_idx"]]
 
         recovered_preprocessed_data["non_soma_touching_meshes"] = [original_mesh.submesh([k],append=True,repair=False) for k in loaded_compression["non_soma_touching_meshes_face_idx"]]
 
@@ -1471,7 +1487,10 @@ def decompress_neuron(filepath,original_mesh,
         new_limb_correspondence = loaded_compression["new_limb_correspondence"]
 
         for k in new_limb_correspondence:
+            print(f"Working on limb {k}")
             for j in tqdm(new_limb_correspondence[k]):
+                print(f"  Working on branch {j}")
+                
                 new_limb_correspondence[k][j]["branch_mesh"] = original_mesh.submesh([new_limb_correspondence[k][j]["branch_face_idx_whole_neuron"]],append=True,repair=False)
                 
                 try:
@@ -1483,7 +1502,8 @@ def decompress_neuron(filepath,original_mesh,
                                            exact_match=True)
                 except:
                     #Then try using the stitched meshes
-                    possible_non_touching_meshes = [c for c in recovered_preprocessed_data["non_soma_touching_meshes"] if len(c.faces) == len(new_limb_correspondence[k][j]["branch_mesh"].faces)]
+                    #possible_non_touching_meshes = [c for c in recovered_preprocessed_data["non_soma_touching_meshes"] if len(c.faces) == len(new_limb_correspondence[k][j]["branch_mesh"].faces)]
+                    possible_non_touching_meshes = [c for c in recovered_preprocessed_data["non_soma_touching_meshes"] if len(c.faces) >= len(new_limb_correspondence[k][j]["branch_mesh"].faces)]
                     found_match = False
                     for zz,t_mesh in enumerate(possible_non_touching_meshes):
                         try:
@@ -2117,6 +2137,9 @@ def compute_all_concept_network_data_from_limb(curr_limb,current_neuron_mesh,som
                                                     touching_soma_vertices=touching_pieces_soma_vertices
                                                ))
     return derived_concept_network_data
+
+def error_limb_indexes(neuron_obj):
+    return np.where(np.array([len(limb.all_concept_network_data) for limb in neuron_obj])>1)[0]
 
 
 import neuron #package where can use the Branches class to help do branch skeleton analysis

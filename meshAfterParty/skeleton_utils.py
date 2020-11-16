@@ -8,14 +8,34 @@ from trimesh_utils import split_significant_pieces,split,combine_meshes,write_ne
 import networkx_utils as xu
 import matplotlib_utils as mu
 import meshparty_skeletonize as m_sk
-
-from soma_extraction_utils import find_soma_centroids,find_soma_centroid_containing_meshes,grouping_containing_mesh_indices
+import soma_extraction_utils as sm
 
 import numpy as np
 import trimesh
 
 from tqdm_utils import tqdm
 
+def compare_endpoints(endpoints_1,endpoints_2,**kwargs):
+    """
+    comparing the endpoints of a graph: 
+    
+    Ex: 
+    import networkx_utils as xu
+    xu = reload(xu)mess
+    end_1 = np.array([[2,3,4],[1,4,5]])
+    end_2 = np.array([[1,4,5],[2,3,4]])
+
+    xu.compare_endpoints(end_1,end_2)
+    """
+    #this older way mixed the elements of the coordinates together to just sort the columns
+    #return np.array_equal(np.sort(endpoints_1,axis=0),np.sort(endpoints_2,axis=0))
+    
+    #this is correct way to do it (but has to be exact to return true)
+    #return np.array_equal(nu.sort_multidim_array_by_rows(endpoints_1),nu.sort_multidim_array_by_rows(endpoints_2))
+
+    return nu.compare_threshold(nu.sort_multidim_array_by_rows(endpoints_1),
+                                nu.sort_multidim_array_by_rows(endpoints_2),
+                                **kwargs)
 
 def save_skeleton_cgal(surface_with_poisson_skeleton,largest_mesh_path):
     """
@@ -1303,7 +1323,7 @@ def stitch_skeleton(
     return total_edges_stitched
 
 
-def stack_skeletons(sk_list):
+def stack_skeletons(sk_list,graph_cleaning=False):
     list_of_skeletons = [np.array(k).reshape(-1,2,3) for k in sk_list if len(k)>0]
     if len(list_of_skeletons) == 0:
         print("No skeletons to stack so returning empty list")
@@ -1312,7 +1332,10 @@ def stack_skeletons(sk_list):
         #print("only one skeleton so no stacking needed")
         return np.array(list_of_skeletons).reshape(-1,2,3)
     else:
-        return (np.vstack(list_of_skeletons)).reshape(-1,2,3)
+        final_sk = (np.vstack(list_of_skeletons)).reshape(-1,2,3)
+        if graph_cleaning:
+            final_sk = sk.convert_graph_to_skeleton(sk.convert_skeleton_to_graph(final_sk))
+        return final_sk
 
 #------------ The actual skeletonization from mesh contraction----------- #
 from calcification_param_Module import calcification_param
@@ -1445,6 +1468,7 @@ def convert_skeleton_to_graph(staring_edges,
 
     all_skeleton_vertices = staring_edges.reshape(-1,3)
     unique_rows,indices = np.unique(all_skeleton_vertices,return_inverse=True,axis=0)
+    
     #need to merge unique indices so if within a certain range of each other then merge them together
     reshaped_indices = indices.reshape(-1,2)
     
@@ -1484,7 +1508,7 @@ def convert_skeleton_to_graph(staring_edges,
             #construct a dictionary for mapping
             map_dict = dict([(v,k) for k,v in enumerate(unique_leftovers)])
 
-            print(f"Gettng rid of {len(to_delete_nodes)} nodes")
+            print(f"Gettng rid of {len(to_delete_nodes)} nodes INSIDE SKELETON TO GRAPH CONVERSION")
 
             def vec_translate(a):    
                 return np.vectorize(map_dict.__getitem__)(a)
@@ -1505,7 +1529,7 @@ def convert_skeleton_to_graph(staring_edges,
     
 
     if stitch_print:
-        print(f"Getting the unique rows and indices= {time.time()-stitch_start}")
+        print(f"INSIDE CONVERT_SKELETON_TO_GRAPH Getting the unique rows and indices= {time.time()-stitch_start}")
     stitch_start = time.time()
 
     #create the graph from the edges
@@ -2107,6 +2131,8 @@ def combine_close_branch_points(skeleton=None,
         
         
     """
+    
+    
     debug_time = False
     combine_close_time = time.time()
     
@@ -2585,8 +2611,6 @@ def load_somas(segment_id,main_mesh_total,
         return total_soma_list
     else:
         return []
-    
-from soma_extraction_utils import subtract_soma
 
 
 def skeletonize_connected_branch(current_mesh,
@@ -2732,6 +2756,7 @@ def skeletonize_connected_branch(current_mesh,
                 if remove_cycles:
                     significant_poisson_skeleton = remove_cycles_from_skeleton(significant_poisson_skeleton)
                 
+                
                 if use_surface_after_CGAL:
                     boolean_significance_threshold=5
 
@@ -2787,9 +2812,17 @@ def skeletonize_connected_branch(current_mesh,
                     
                 leftover_meshes = combine_meshes(leftover_meshes_sig)
             else:
-                if not use_surface_after_CGAL:
-                    raise Exception(f"No CGAL skeleton was generated when the {use_surface_after_CGAL} flag was set")
-                print("No recorded skeleton so skiipping"
+                print("No recorded skeleton so skipping"
+                     " to surface skeletonization")
+#                 if not use_surface_after_CGAL:
+#                     surf_sk = generate_surface_skeleton(m.vertices,
+#                                                m.faces,
+#                                                surface_samples=n_surface_samples,
+#                                     n_surface_downsampling=n_surface_downsampling )
+#                     return surf_sk
+#                     raise gu.CGAL_skel_error(f"No CGAL skeleton was generated when the {use_surface_after_CGAL} flag was set")
+                    
+                print("No recorded skeleton so skipping"
                      " to surface skeletonization")
                 leftover_meshes_sig = [current_mesh]
             if skeleton_print:
@@ -2912,14 +2945,14 @@ def recursive_soma_skeletonization(main_mesh,
     
     #0) If don't have the soma_mesh centers then calculate
     if len(soma_mesh_list_centers) != len(soma_mesh_list):
-        soma_mesh_list_centers = find_soma_centroids(soma_mesh_list)
+        soma_mesh_list_centers = sm.find_soma_centroids(soma_mesh_list)
     
     #1) Start with the first soma and subtract from mesh
     #2) Find all of the disconnected mesh pieces
     current_soma = soma_mesh_list.pop(0)
     current_soma_index = soma_mesh_list_indexes.pop(0)
     current_soma_center = soma_mesh_list_centers.pop(0)
-    mesh_pieces = subtract_soma(current_soma,main_mesh)
+    mesh_pieces = sm.subtract_soma(current_soma,main_mesh)
     print(f"currently working on soma index {current_soma_index}")
     
     print(f"mesh_pieces after the soma subtraction = {len(mesh_pieces)}")
@@ -2935,13 +2968,13 @@ def recursive_soma_skeletonization(main_mesh,
     
     if len(soma_mesh_list) > 0:
         #find mesh pieces and all the somas that are contained within that
-        containing_mesh_indices = find_soma_centroid_containing_meshes(
+        containing_mesh_indices = sm.find_soma_centroid_containing_meshes(
                                             soma_mesh_list_centers,
                                             mesh_pieces
         )
         
         # rearrange into lists of somas per mesh soma 
-        meshes_mapped_to_somas = grouping_containing_mesh_indices(containing_mesh_indices)
+        meshes_mapped_to_somas = sm.grouping_containing_mesh_indices(containing_mesh_indices)
         
         #get all of the other mesh pieces that weren't a part of the soma containing
         mesh_pieces_with_soma = list(meshes_mapped_to_somas.keys())
@@ -3073,7 +3106,7 @@ def skeletonize_neuron(main_mesh_total,
         #compute the soma centers
         print(f"Soma List = {soma_mesh_list}")
         
-        soma_mesh_list_centers = find_soma_centroids(soma_mesh_list)
+        soma_mesh_list_centers = sm.find_soma_centroids(soma_mesh_list)
         print(f"soma_mesh_list_centers = {soma_mesh_list_centers}")
 
     
@@ -3094,7 +3127,7 @@ def skeletonize_neuron(main_mesh_total,
     
     
     #returns the index of the split_meshes index that contains each soma    
-    containing_mesh_indices = find_soma_centroid_containing_meshes(soma_mesh_list_centers,
+    containing_mesh_indices = sm.find_soma_centroid_containing_meshes(soma_mesh_list_centers,
                                             split_meshes)
     
     non_soma_touching_meshes = [m for i,m in enumerate(split_meshes)
@@ -3164,7 +3197,7 @@ def skeletonize_neuron(main_mesh_total,
         #Do the mesh subtraction to get the disconnected pieces
         current_soma = soma_mesh_list[s_i]
 
-        mesh_pieces = subtract_soma(current_soma,main_mesh)
+        mesh_pieces = sm.subtract_soma(current_soma,main_mesh)
         print(f"mesh_pieces after the soma subtraction = {len(mesh_pieces)}")
         #get each branch skeleton
         total_soma_skeletons = []
@@ -3191,7 +3224,7 @@ def skeletonize_neuron(main_mesh_total,
     
     # ---------------------- NEW WAY OF DOING THE SKELETONIZATION OF THE SOMA CONTAINING PIECES ------- #
     # rearrange into lists of somas per mesh soma 
-    meshes_mapped_to_somas = grouping_containing_mesh_indices(containing_mesh_indices)
+    meshes_mapped_to_somas = sm.grouping_containing_mesh_indices(containing_mesh_indices)
 
     print(f"meshes_mapped_to_somas = {meshes_mapped_to_somas}")
 
@@ -4048,7 +4081,8 @@ def create_soma_extending_branches(
     return_endpoints_must_keep=True,
     return_created_branch_info=False,
     try_moving_to_closest_sk_to_endpoint=True, #will try to move the closest skeleton point to an endpoint
-    distance_to_move_point_threshold = 1500 #maximum distance willling to move closest skeleton point to get to an endpoint
+    distance_to_move_point_threshold = 1500, #maximum distance willling to move closest skeleton point to get to an endpoint
+    check_connected_skeleton=True
                                     ):
     """
     Purpose: To make sure there is one singular branch extending towards the soma
@@ -4173,9 +4207,10 @@ def create_soma_extending_branches(
         
     print(f"endpoints_must_keep = {endpoints_must_keep}")
     #check if skeleton is connected component when finishes
-    if nx.number_connected_components(convert_skeleton_to_graph(current_skeleton)) != 1:
-        su.compressed_pickle(current_skeleton,"current_skeleton")
-        raise Exception("The skeleton at end wasn't a connected component")
+    if check_connected_skeleton:
+        if nx.number_connected_components(convert_skeleton_to_graph(current_skeleton)) != 1:
+            su.compressed_pickle(current_skeleton,"current_skeleton")
+            raise Exception("The skeleton at end wasn't a connected component")
     
     return_value = [current_skeleton]
     
@@ -4362,7 +4397,7 @@ def skeletonize_and_clean_connected_branch_CGAL(mesh,
     else:
         coordinates_to_keep = None
     
-    
+    check_skeleton_connected_component(current_skeleton)
     new_cleaned_skeleton = clean_skeleton(current_skeleton,
                             distance_func=skeletal_distance,
                       min_distance_to_junction=filter_end_node_length, #this used to be a tuple i think when moved the parameter up to function defintion
@@ -4378,9 +4413,13 @@ def skeletonize_and_clean_connected_branch_CGAL(mesh,
 #                         print("**Saving the skeletons**")
 #                         su.compressed_pickle(new_cleaned_skeleton,
 #                                             "new_cleaned_skeleton")
-
+    
     print("Checking connected components after clean_skeleton")
-    check_skeleton_connected_component(new_cleaned_skeleton)
+    try:
+        check_skeleton_connected_component(new_cleaned_skeleton)
+    except:
+        print("No connected skeleton after cleaning so just going with older skeleton")
+        new_cleaned_skeleton = current_skeleton
     
     #--- 1) Cleaning each limb through distance and decomposition, checking that all cleaned branches are connected components and then visualizing
     distance_cleaned_skeleton = new_cleaned_skeleton
@@ -4426,7 +4465,8 @@ def check_skeleton_connected_component(skeleton):
 def remove_cycles_from_skeleton(skeleton,
     max_cycle_distance = 5000,
     verbose = False,
-    check_cycles_at_end=True):
+    check_cycles_at_end=True,
+    return_original_if_error=False):
     
     """
     Purpose: To remove small cycles from a skeleton
@@ -4457,84 +4497,104 @@ def remove_cycles_from_skeleton(skeleton,
     
     
     """
+    
+    try:
 
-    #A) Convert the skeleton into a graph
-    skeleton_graph = convert_skeleton_to_graph(skeleton)
-    #B) Find all cycles in the graph
-    cycles_list = xu.find_all_cycles(skeleton_graph)
+        #A) Convert the skeleton into a graph
+        skeleton_graph = convert_skeleton_to_graph(skeleton)
+        #B) Find all cycles in the graph
+        cycles_list = xu.find_all_cycles(skeleton_graph)
 
-    number_skipped = 0
-    for j,cyc in enumerate(cycles_list):
-        if verbose:
-            print(f"\n ---- Working on cycle {j}: {cyc} ----")
-        #1) Get the length of the cycle 
-        #--> if length if too big then skip
-        cyc = np.array(cyc)
-
-        sk_dist_of_cycle = xu.find_skeletal_distance_along_graph_node_path(skeleton_graph,cyc)
-
-        if max_cycle_distance < sk_dist_of_cycle:
+        number_skipped = 0
+        for j,cyc in enumerate(cycles_list):
             if verbose:
-                print(f"Skipping cycle {j} because total distance ({sk_dist_of_cycle}) is larger than max_cycle_distance ({max_cycle_distance}): {cyc} ")
-            number_skipped += 1
-            continue
+                print(f"\n ---- Working on cycle {j}: {cyc} ----")
+            #1) Get the length of the cycle 
+            #--> if length if too big then skip
+            cyc = np.array(cyc)
+            
+            if len(np.setdiff1d(cyc,skeleton_graph.nodes()))>0:
+                print(f"--- cycle {j} has nodes that don't exist anymore so skipping --")
+                continue
+
+            sk_dist_of_cycle = xu.find_skeletal_distance_along_graph_node_path(skeleton_graph,cyc)
+
+            if max_cycle_distance < sk_dist_of_cycle:
+                if verbose:
+                    print(f"Skipping cycle {j} because total distance ({sk_dist_of_cycle}) is larger than max_cycle_distance ({max_cycle_distance}): {cyc} ")
+                number_skipped += 1
+                continue
 
 
-        #Find the degrees of all of the nodes
-        node_degrees = np.array([xu.get_node_degree(skeleton_graph,c) for c in cyc])
-        print(f"node_degrees = {node_degrees}")
+            #Find the degrees of all of the nodes
+            node_degrees = np.array([xu.get_node_degree(skeleton_graph,c) for c in cyc])
+            print(f"node_degrees = {node_degrees}")
 
-        #2) If only 1 high degree node, then just delete the other non high degree nodes
-        if np.sum(node_degrees>2) == 1:
+            #2) If only 1 high degree node, then just delete the other non high degree nodes
+            if np.sum(node_degrees>2) == 1:
+                if verbose:
+                    print(f"Deleting non-high degree nodes in cycle {j}: {cyc} becuase there was only one high degree node: {node_degrees}")
+                nodes_to_delete = cyc[np.where(node_degrees<=2)[0]]
+
+                skeleton_graph.remove_nodes_from(nodes_to_delete)
+                continue
+
+
+            #3) Else, there should only be 2 high degree nodes in the vertices of the cycle
+            #--> if more or less then skip
+
+            if np.sum(node_degrees>2) > 2:
+                if verbose:
+                    print(f"Skipping cycle {j} because had {np.sum(node_degrees>2)} number of high degree nodes: {node_degrees} ")
+                number_skipped += 1
+                continue
+
+            high_degree_nodes = cyc[np.where(node_degrees>2)[0]]
+            cycle_graph = skeleton_graph.subgraph(cyc)
+
+            #3) Get the 2 paths between the high degree nodes
+            both_paths = list(nx.all_simple_paths(cycle_graph,high_degree_nodes[0],high_degree_nodes[1],len(cycle_graph)))
+
+            if len(both_paths) != 2:
+                su.compressed_pickle(skeleton,"skeleton")
+                raise Exception(f"Did not come up with only 2 paths between high degree nodes: both_paths = {both_paths} ")
+
+            path_lengths = [xu.find_skeletal_distance_along_graph_node_path(skeleton_graph,g) for g in both_paths]
+
+
+            #4) Delete nodes on the path for the longer distance one
+            longest_path_idx = np.argmax(path_lengths)
+            longest_path = both_paths[longest_path_idx]
+            if len(longest_path) <= 2:
+                raise Exception(f"Longest path for deletion was only of size 2 or less: both_paths = {both_paths}, longest_path = {longest_path}")
+
             if verbose:
-                print(f"Deleting non-high degree nodes in cycle {j}: {cyc} becuase there was only one high degree node: {node_degrees}")
-            nodes_to_delete = cyc[np.where(node_degrees<=2)[0]]
+                print(f"For cycle {j} deleting the following path because longest distance {path_lengths[longest_path_idx]}: {longest_path[1:-1]}")
 
-            skeleton_graph.remove_nodes_from(nodes_to_delete)
-            continue
+            skeleton_graph.remove_nodes_from(longest_path[1:-1])
 
 
-        #3) Else, there should only be 2 high degree nodes in the vertices of the cycle
-        #--> if more or less then skip
-
-        if np.sum(node_degrees>2) > 2:
-            if verbose:
-                print(f"Skipping cycle {j} because had {np.sum(node_degrees>2)} number of high degree nodes: {node_degrees} ")
-            number_skipped += 1
-            continue
-
-        high_degree_nodes = cyc[np.where(node_degrees>2)[0]]
-        cycle_graph = skeleton_graph.subgraph(cyc)
-
-        #3) Get the 2 paths between the high degree nodes
-        both_paths = list(nx.all_simple_paths(cycle_graph,high_degree_nodes[0],high_degree_nodes[1],len(cycle_graph)))
-
-        if len(both_paths) != 2:
-            raise Exception(f"Did not come up with only 2 paths between high degree nodes: both_paths = {both_paths} ")
-
-        path_lengths = [xu.find_skeletal_distance_along_graph_node_path(skeleton_graph,g) for g in both_paths]
-
-
-        #4) Delete nodes on the path for the longer distance one
-        longest_path_idx = np.argmax(path_lengths)
-        longest_path = both_paths[longest_path_idx]
-        if len(longest_path) <= 2:
-            raise Exception(f"Longest path for deletion was only of size 2 or less: both_paths = {both_paths}, longest_path = {longest_path}")
-
-        if verbose:
-            print(f"For cycle {j} deleting the following path because longest distance {path_lengths[longest_path_idx]}: {longest_path[1:-1]}")
-
-        skeleton_graph.remove_nodes_from(longest_path[1:-1])
-
-
-    #C) check that all cycles removed except for those ones
-    if check_cycles_at_end:
-        cycles_at_end = xu.find_all_cycles(skeleton_graph)
-        if number_skipped != len(cycles_at_end):
-            print(f"The number of cycles skipped ({number_skipped}) does not equal the number of cycles at the end ({len(cycles_at_end)})")
-    #C) convert the graph back into a skeleton
-    skeleton_removed_cycles = convert_graph_to_skeleton(skeleton_graph)
-    return skeleton_removed_cycles
+        #C) check that all cycles removed except for those ones
+        if check_cycles_at_end:
+            cycles_at_end = xu.find_all_cycles(skeleton_graph)
+            if number_skipped != len(cycles_at_end):
+                print(f"The number of cycles skipped ({number_skipped}) does not equal the number of cycles at the end ({len(cycles_at_end)})")
+        #C) convert the graph back into a skeleton
+        skeleton_removed_cycles = convert_graph_to_skeleton(skeleton_graph)
+        
+        if len(skeleton_removed_cycles) == 0:
+            #su.compressed_pickle(skeleton,"remove_cycles_skeleton")
+            #raise Exception("Removing the cycles made the skeleton of 0 size so returning old skeleton")
+            print("Removing the cycles made the skeleton of 0 size so returning old skeleton")
+            return skeleton
+        
+        return skeleton_removed_cycles
+    except:
+        if return_original_if_error:
+            return skeleton
+        else:
+            su.compressed_pickle(skeleton,"remove_cycles_skeleton")
+            raise Exception("Something went wrong in remove_cycles_from_skeleton")
 
 
 
@@ -4608,12 +4668,16 @@ def move_point_to_nearest_branch_end_point_within_threshold(
         return_coordinate=True,
         return_change_status=True,
         verbose=False,
-        consider_high_degree_nodes=True
+        consider_high_degree_nodes=True,
+        possible_node_coordinates=None,
         ):
     """
     Purpose: To pick a branch or endpoint node that
     is within a certain a certain distance of the original 
     node (if none in certain distance then return original)
+    
+    Arguments: 
+    possible_node_coordinates: this allows you to specify nodes that you want to select
     
     """
     
@@ -4625,12 +4689,17 @@ def move_point_to_nearest_branch_end_point_within_threshold(
     #get the node where the stitching will take place
     node_for_stitch = xu.get_nodes_with_attributes_dict(curr_skeleton_MAP_graph,dict(coordinates=MAP_stitch_point))[0]
     #get all of the endnodes or high degree nodes
-    curr_MAP_end_nodes = xu.get_nodes_of_degree_k(curr_skeleton_MAP_graph,1)
-    if consider_high_degree_nodes:
-        curr_MAP_branch_nodes = xu.get_nodes_greater_or_equal_degree_k(curr_skeleton_MAP_graph,3)
+    
+    # ----- 11/13 addition: Use the node locations sent or just use the high degree or end nodes from the graph
+    if possible_node_coordinates is None:
+        curr_MAP_end_nodes = xu.get_nodes_of_degree_k(curr_skeleton_MAP_graph,1)
+        if consider_high_degree_nodes:
+            curr_MAP_branch_nodes = xu.get_nodes_greater_or_equal_degree_k(curr_skeleton_MAP_graph,3)
+        else:
+            curr_MAP_branch_nodes = []
+        possible_node_loc = np.array(curr_MAP_end_nodes + curr_MAP_branch_nodes)
     else:
-        curr_MAP_branch_nodes = []
-    possible_node_loc = np.array(curr_MAP_end_nodes + curr_MAP_branch_nodes)
+        possible_node_loc = np.array([xu.get_graph_node_by_coordinate(curr_skeleton_MAP_graph,zz) for zz in possible_node_coordinates])
 
     #get the distance along the skeleton from the stitch point to all of the end or branch nodes
     curr_shortest_path,end_node_1,end_node_2 = xu.shortest_path_between_two_sets_of_nodes(curr_skeleton_MAP_graph,
@@ -4839,6 +4908,7 @@ def add_and_smooth_segment_to_branch(skeleton,
                                smooth_branch_at_end=True,
                                 n_resized_cutoff_to_smooth=None,
                                      smooth_width = 100,
+                                max_stitch_distance_for_smoothing=300,
                                **kwargs,
                               ):
     """
@@ -4881,6 +4951,11 @@ def add_and_smooth_segment_to_branch(skeleton,
 
     #1) Get the distance of the stitch point = A
     stitch_distance = np.linalg.norm(stitch_point_MAP-stitch_point_MP)
+    if stitch_distance > max_stitch_distance_for_smoothing:
+        print(f"Using max stitch distance ({max_stitch_distance_for_smoothing}) for smoothing because stitch_distance greater ({stitch_distance}) ")
+        stitch_distance = max_stitch_distance_for_smoothing
+    
+        
 
     #2) Resize the skeleton to B*A (where B < 1)
     
@@ -4917,7 +4992,8 @@ def add_and_smooth_segment_to_branch(skeleton,
 
     # nodes_to_delete = np.delete(nodes_within_dist[:,0],farthest_node_idx)
     new_seg = np.array([[new_stitch_point_MP],[stitch_point_MAP]]).reshape(-1,2,3)
-    final_sk = sk.stack_skeletons([new_seg,keep_branch])  
+    final_sk = sk.stack_skeletons([new_seg,keep_branch]) 
+    final_sk=sk.convert_graph_to_skeleton(sk.convert_skeleton_to_graph(final_sk))
     
     
 
@@ -4943,11 +5019,17 @@ def add_and_smooth_segment_to_branch(skeleton,
             sk_gr = convert_skeleton_to_graph(skeleton_reshaped)
             #2) Find the node with the MP stitch point
             MP_stitch_node = xu.get_graph_node_by_coordinate(sk_gr,new_stitch_point_MP)
+            MAP_stitch_node = xu.get_graph_node_by_coordinate(sk_gr,stitch_point_MAP)
 
             #3) Find all nodes within n_resized_cutoff_to_smooth*stitch_distance
             distance_to_smooth = n_resized_cutoff_to_smooth*stitch_distance
-            nodes_to_smooth = xu.find_nodes_within_certain_distance_of_target_node(sk_gr,target_node=MP_stitch_node,
+            nodes_to_smooth_pre = xu.find_nodes_within_certain_distance_of_target_node(sk_gr,target_node=MP_stitch_node,
                                                                 cutoff_distance=distance_to_smooth)
+            
+            #need to add in nodes to endpoint in case the distance_to_smooth doesn't exend there
+            nodes_to_MAP = nx.shortest_path(sk_gr,MP_stitch_node,MAP_stitch_node)
+
+            nodes_to_smooth = np.unique(list(nodes_to_smooth_pre) + list(nodes_to_MAP))
             #print(f"nodes_to_smooth = {nodes_to_smooth}")
 
             #4) Get all nodes not in that list

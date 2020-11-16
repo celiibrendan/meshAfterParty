@@ -778,16 +778,19 @@ class Limb:
     
     def set_attribute_dict(self,attribute_name,attribute_dict):
         for branch_idx,curr_branch in enumerate(self):
-            
-            if attribute_name == "spines":
-                print(f"     Branch {branch_idx}")
-                if not attribute_dict[branch_idx] is None:
-                    print(f"curr_branch.mesh = {curr_branch.mesh}")
-                    curr_branch.spines = [curr_branch.mesh.submesh([k],append=True,repair=False) for k in attribute_dict[branch_idx]]
+            if branch_idx in list(attribute_dict.keys()):
+                if attribute_name == "spines":
+                    print(f"     Branch {branch_idx}")
+                    if not attribute_dict[branch_idx] is None:
+                        print(f"curr_branch.mesh = {curr_branch.mesh}")
+                        curr_branch.spines = [curr_branch.mesh.submesh([k],append=True,repair=False) for k in attribute_dict[branch_idx]]
+                    else:
+                        curr_branch.spines = None
                 else:
-                    curr_branch.spines = None
+                    setattr(curr_branch,attribute_name,attribute_dict[branch_idx])
             else:
-                setattr(curr_branch,attribute_name,attribute_dict[branch_idx])
+                print(f"Skipping attributes for Branch {branch_idx} because not in dictionary")
+                
         
     # Defining some useful built in functions
     def __getitem__(self,key):
@@ -1021,7 +1024,7 @@ class Soma:
     
     """
     
-    def __init__(self,mesh,mesh_face_idx=None,sdf=None):
+    def __init__(self,mesh,mesh_face_idx=None,sdf=None,volume_ratio=None):
         #Accounting for the fact that could recieve soma object
         if str(type(mesh)) == str(Soma):
             #print("Recived Soma object so copying object")
@@ -1040,9 +1043,13 @@ class Soma:
         self.mesh=mesh
         self.sdf=sdf
         self.mesh_face_idx = mesh_face_idx
-        self.volume_ratio = sm.soma_volume_ratio(self.mesh,
-                                                 #watertight_method="fill_holes"
-                                                )
+        if volume_ratio is None:
+            self.volume_ratio = sm.soma_volume_ratio(self.mesh,
+                                                     #watertight_method="fill_holes"
+                                                    )
+        else:
+            print("Using precomputed volume ratio")
+            self.volume_ratio = volume_ratio
         self.side_length_ratios = sm.side_length_ratios(self.mesh)
         self.mesh_center = tu.mesh_center_vertex_average(self.mesh)
         
@@ -1134,6 +1141,7 @@ class Soma:
 
 
 import preprocess_neuron as pn
+import preprocessing_vp2 as pre
 
 class Neuron:
     """
@@ -1285,7 +1293,10 @@ class Neuron:
     def set_attribute_dict(self,attribute_name,attribute_dict):
         for limb_idx,curr_limb in enumerate(self):
             print(f"Working on Limb {limb_idx}:")
-            curr_limb.set_attribute_dict(attribute_name,attribute_dict[limb_idx])
+            if limb_idx in list(attribute_dict.keys()):
+                curr_limb.set_attribute_dict(attribute_name,attribute_dict[limb_idx])
+            else:
+                print(f"Limb {limb_idx} not in attribute dict so skipping")
             
     def set_computed_attribute_data(self,computed_attribute_data,print_flag=False):
         start_time = time.time()
@@ -1412,11 +1423,12 @@ class Neuron:
                  segment_id=None,
                  description=None,
                  preprocessed_data=None,
+                 
                  decomposition_type="meshafterparty",
                  mesh_correspondence="meshparty", #meshafterparty_adaptive
                  distance_by_mesh_center=True, #how the distance is calculated for mesh correspondence
-                 meshparty_segment_size = 0,
-                 meshparty_n_surface_downsampling = 0,
+                 meshparty_segment_size = 100,
+                 meshparty_n_surface_downsampling = 2,
                  meshparty_adaptive_correspondence_after_creation=False,
                 suppress_preprocessing_print=True,
                  computed_attribute_dict=None,
@@ -1424,12 +1436,14 @@ class Neuron:
                  branch_skeleton_data=None,
                  combine_close_skeleton_nodes = True,
                 combine_close_skeleton_nodes_threshold=700,
+                 
                 ignore_warnings=True,
                 suppress_output=False,
                 calculate_spines=True,
-                widths_to_calculate=["no_spine_median_mesh_center",
-                                    "no_spine_mean_mesh_center"],
-                fill_hole_size=2000,
+                widths_to_calculate=["no_spine_median_mesh_center"],
+                fill_hole_size=0,# The old value for the parameter when performing 2000,
+                 
+                 preprocessing_version=2,
                 ):
 #                  concept_network=None,
 #                  non_graph_meshes=dict(),
@@ -1465,6 +1479,7 @@ class Neuron:
                 #mesh pieces
                 self.inside_pieces = dc(mesh.inside_pieces)
                 self.insignificant_limbs = dc(mesh.insignificant_limbs)
+                self.not_processed_soma_containing_meshes = dc(mesh.not_processed_soma_containing_meshes)
                 self.non_soma_touching_meshes = dc(mesh.non_soma_touching_meshes)
                 
                 if hasattr(mesh,"decomposition_type"):
@@ -1525,44 +1540,48 @@ class Neuron:
                             vert_holes_size = np.array([len(k) for k in vert_holes])
                             print(f"Successfully filled all holes up to size {fill_hole_size}")
                             print(f"Still existing holes = {vert_holes_size}")
-                            
-                    preprocessed_data = pn.preprocess_neuron(mesh,
-                                     segment_id=segment_id,
-                                     description=description,
-                                      decomposition_type=decomposition_type,
-                                        mesh_correspondence=mesh_correspondence,
-                                        distance_by_mesh_center=distance_by_mesh_center,
-                                        meshparty_segment_size =meshparty_segment_size,
-                                         meshparty_n_surface_downsampling = meshparty_n_surface_downsampling,
-                                      somas=somas,
-                                                            branch_skeleton_data=branch_skeleton_data,
-                                                            combine_close_skeleton_nodes = combine_close_skeleton_nodes,
-                                                            combine_close_skeleton_nodes_threshold=combine_close_skeleton_nodes_threshold)
-                    #print(f"preprocessed_data inside with = {preprocessed_data}")
+                    else:
+                        print("Skipping the hole filling")
                         
-                        
-                """ DON'T NEED THIS BRANCH ANYMORE BECAUSE CONDITIONALLY BLOCKING THE OUTPUT
-                else:
-                    if fill_hole_size > 0:
-                        print("Fixing holes in mesh before processing")
-                        mesh = tu.fill_holes(mesh,max_hole_size=fill_hole_size)
-                        self.mesh = mesh
-                    preprocessed_data = pn.preprocess_neuron(mesh,
+                    if preprocessing_version == 1:
+                        preprocessed_data = pn.preprocess_neuron(mesh,
                                          segment_id=segment_id,
                                          description=description,
-                                        decomposition_type=decomposition_type,
-                                        mesh_correspondence=mesh_correspondence,
+                                          decomposition_type=decomposition_type,
+                                            mesh_correspondence=mesh_correspondence,
                                             distance_by_mesh_center=distance_by_mesh_center,
                                             meshparty_segment_size =meshparty_segment_size,
                                              meshparty_n_surface_downsampling = meshparty_n_surface_downsampling,
-                                         somas=somas,
-                                                            branch_skeleton_data=branch_skeleton_data,
-                                                            combine_close_skeleton_nodes = combine_close_skeleton_nodes,
-                                                            combine_close_skeleton_nodes_threshold=combine_close_skeleton_nodes_threshold)
-
-                print(f"--- 0) Total time for preprocessing: {time.time() - neuron_start_time}\n\n\n\n")
-                neuron_start_time = time.time()
-                """
+                                          somas=somas,
+                                            branch_skeleton_data=branch_skeleton_data,
+                                            combine_close_skeleton_nodes = combine_close_skeleton_nodes,
+                                            combine_close_skeleton_nodes_threshold=combine_close_skeleton_nodes_threshold)
+                    elif preprocessing_version == 2:
+                        
+                        if "meshafterparty" in decomposition_type.lower():
+                            use_meshafterparty = True
+                        else:
+                            use_meshafterparty = False
+                        
+                        preprocessed_data = pre.preprocess_neuron(
+                                                mesh,
+                                        segment_id=segment_id,
+                                         description=description,
+                                          decomposition_type=decomposition_type,
+                                        distance_by_mesh_center=distance_by_mesh_center,
+                                        meshparty_segment_size =meshparty_segment_size,
+                                        
+                                        somas=somas, #the precomputed somas
+                                        combine_close_skeleton_nodes = combine_close_skeleton_nodes,
+                                        combine_close_skeleton_nodes_threshold=combine_close_skeleton_nodes_threshold,
+                        
+                                        use_meshafterparty=use_meshafterparty)
+                        
+                    
+                    
+                    
+                    #print(f"preprocessed_data inside with = {preprocessed_data}")
+                        
             else:
                 print("Already have preprocessed data")
 
@@ -1579,12 +1598,23 @@ class Neuron:
             limb_labels = preprocessed_data["limb_labels"]
 
             self.insignificant_limbs = preprocessed_data["insignificant_limbs"]
+            self.not_processed_soma_containing_meshes = preprocessed_data["not_processed_soma_containing_meshes"]
             self.non_soma_touching_meshes = preprocessed_data["non_soma_touching_meshes"]
             self.inside_pieces = preprocessed_data["inside_pieces"]
 
             soma_meshes = preprocessed_data["soma_meshes"]
             soma_to_piece_connectivity = preprocessed_data["soma_to_piece_connectivity"]
             soma_sdfs = preprocessed_data["soma_sdfs"]
+            
+            if "soma_volume_ratios" in preprocessed_data.keys() and (not preprocessed_data["soma_volume_ratios"] is None):
+                pass
+            else:
+                print("No soma volume ratios so computing them now")                                                          
+                preprocessed_data["soma_volume_ratios"] = [sm.soma_volume_ratio(j) for j in soma_meshes]
+                
+            soma_volume_ratios = preprocessed_data["soma_volume_ratios"]
+                
+            
             print(f"--- 1) Finished unpacking preprocessed materials: {time.time() - neuron_start_time}")
             neuron_start_time =time.time()
 
@@ -1621,8 +1651,8 @@ class Neuron:
                 print(f"--- 3a) Finshed generating soma_meshes_face_idx: {time.time() - neuron_start_time}")
                 neuron_start_time =time.time()
 
-            for j,(curr_soma,curr_soma_face_idx,current_sdf) in enumerate(zip(soma_meshes,soma_meshes_face_idx,soma_sdfs)):
-                Soma_obj = Soma(curr_soma,mesh_face_idx=curr_soma_face_idx,sdf=current_sdf)
+            for j,(curr_soma,curr_soma_face_idx,current_sdf,curr_volume_ratio) in enumerate(zip(soma_meshes,soma_meshes_face_idx,soma_sdfs,soma_volume_ratios)):
+                Soma_obj = Soma(curr_soma,mesh_face_idx=curr_soma_face_idx,sdf=current_sdf,volume_ratio=curr_volume_ratio)
                 soma_name = f"S{j}"
                 #Add the soma object as data in 
                 xu.set_node_data(curr_network=self.concept_network,
@@ -1846,6 +1876,7 @@ class Neuron:
         #comparing the mesh lists
         mesh_lists_to_check = ["inside_pieces",
                                 "insignificant_limbs",
+                               "not_processed_soma_containing_meshes",
                                 "non_soma_touching_meshes"]
         
         

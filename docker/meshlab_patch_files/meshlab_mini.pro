@@ -23,13 +23,13 @@ SUBDIRS       = common \
 #                meshlabplugins/edit_manipulators \
 #                meshlabplugins/edit_select \
                 meshlabplugins/filter_clean\
-#                meshlabplugins/filter_colorize\
+                meshlabplugins/filter_colorize\
 #                meshlabplugins/filter_create\
                 meshlabplugins/filter_layer\
                 meshlabplugins/filter_measure\
 #                meshlabplugins/filter_sampling\
-#                meshlabplugins/filter_select \
-#                meshlabplugins/filter_quality \
+                meshlabplugins/filter_select \
+                meshlabplugins/filter_quality \
 #                meshlabplugins/filter_unsharp \
 #                meshlabplugins/io_collada \
 #                meshlabplugins/io_x3d \

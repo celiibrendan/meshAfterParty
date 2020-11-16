@@ -178,7 +178,7 @@ def find_matching_endpoints_row(branch_idx_to_endpoints,end_coordinates):
     match_2 = (branch_idx_to_endpoints.reshape(-1,3) == end_coordinates[1]).all(axis=1).reshape(-1,2)
     return np.where(np.sum(match_1 + match_2,axis=1)>1)[0]
 
-def matching_rows(vals,row,print_flag=False):
+def matching_rows_old(vals,row,print_flag=False):
 
     if len(vals) == 0:
         return np.array([])
@@ -187,6 +187,22 @@ def matching_rows(vals,row,print_flag=False):
         print(f"vals = {vals}")
         print(f"row = {row}")
     return np.where((np.array(vals) == np.array(row)).all(axis=1))[0]
+
+def matching_rows(vals,row,
+                      print_flag=False,
+                      equiv_distance = 0.0001):
+
+    if len(vals) == 0:
+        return np.array([])
+    vals = np.array(vals)
+    row = np.array(row).reshape(-1,3)
+    if print_flag:
+        print(f"vals = {vals}")
+        print(f"row = {row}")
+    return np.where(np.linalg.norm(vals-row,axis=1)<equiv_distance)[0]
+
+
+
 
 # ----------- made when developing the neuron class ------------- #
 def sort_multidim_array_by_rows(edge_array,order_row_items=False):
@@ -230,3 +246,46 @@ def sort_elements_in_every_row(current_array):
 # --------- Functions pulled from trimesh.grouping ---------- #
 
 
+def intersect1d(arr1,arr2,assume_unique=False,return_indices=False):
+    """
+    Will return the common elements from 2 possibly different sized arrays
+    
+    If select the return indices = True,
+    will also return the indexes of the common elements
+    
+    
+    """
+    return np.intersect1d(arr1,arr2,
+                         assume_unique=assume_unique,
+                         return_indices=return_indices)
+
+def setdiff1d(arr1,arr2,assume_unique=False,return_indices=True):
+    """
+    Purpose: To get the elements in arr1 that aren't in arr2
+    and then to possibly return the indices of those that were
+    unique in the first array
+    
+    
+    
+    """
+    
+    arr1 = np.array(arr1)
+    leftout = np.setdiff1d(arr1,arr2,assume_unique=assume_unique)
+    _, arr_1_indices, _ = np.intersect1d(arr1,leftout,return_indices=True)
+    arr_1_indices_sorted= np.sort(arr_1_indices)
+    if return_indices:
+        return arr1[arr_1_indices_sorted],arr_1_indices_sorted
+    else:
+        return arr1[arr_1_indices_sorted]
+    
+    
+def divide_into_label_indexes(mapping):
+    """
+    Purpose: To take an array that attributes labels to indices
+    and divide it into a list of the arrays that correspond to the indices of
+    all of the labels
+    
+    """
+    unique_labels = np.sort(np.unique(mapping))
+    final_list = [np.where(mapping==lab)[0] for lab in unique_labels]
+    return final_list

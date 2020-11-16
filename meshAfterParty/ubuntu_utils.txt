@@ -1,0 +1,7 @@
+#Find file from specific date
+
+Example find files modified between Feb/1/2013 and Feb/1/2014, in /data/docs directory:
+
+touch --date "2013-02-01" /tmp/start
+touch --date "2014-02-01" /tmp/end
+find /data/docs -type f -newer /tmp/start -not -newer /tmp/end

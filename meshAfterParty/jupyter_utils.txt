@@ -1,0 +1,6 @@
+Magic commands:
+
+#to help with the autoreload
+
+%load_ext autoreload
+%autoreload 2

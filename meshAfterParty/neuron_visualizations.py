@@ -647,7 +647,7 @@ def plot_ipv_scatter(scatter_points,scatter_color=[1.,0.,0.,0.5],
         scatter_points = scatter_points.copy()
         scatter_points[...,1] = -scatter_points[...,1]
         
-    if len(scatter_points):
+    if len(scatter_points) <= 0:
         print("No scatter points to plot")
         return
     
@@ -664,7 +664,8 @@ import matplotlib_utils as mu
 import numpy_utils as nu
 import trimesh_utils as tu
 import copy
-
+import itertools
+import numpy as np
 
 import sys
 current_module = sys.modules[__name__]
@@ -784,7 +785,16 @@ def visualize_neuron(
     
     print_flag = False,
     print_time = False,
-    flip_y=True
+    flip_y=True,
+    
+    #arguments for scatter
+    scatters=[],
+    scatters_colors=[],
+    scatter_size=0.3,
+    main_scatter_color = "red",
+    
+    soma_border_vertices = True,
+    soma_border_vertices_color="random",
     
     ):
     
@@ -1097,6 +1107,7 @@ def visualize_neuron(
         
         if print_flag:
             print(f"color_list_correct_size = {color_list_correct_size}")
+            print(f"plot_items = {plot_items}")
             print(f"plot_items_order = {plot_items_order}")
             
             
@@ -1464,7 +1475,47 @@ def visualize_neuron(
             print(f"Plotting mesh pieces of {m_type} = {time.time() - local_time}")
             local_time = time.time()
     
+    # ----- doing any extra scatter plotting you may need ---- #
+    """
+    scatters=[],
+    scatters_colors=[],
+    scatter_size=0.3,
+    main_scatter_color="red"
     
+    soma_border_vertices
+    soma_border_vertices_color
+    """
+    
+    if soma_border_vertices:
+        if len(plot_items_order) > 0:
+            print("working on soma border vertices")
+            unique_limb_names = np.unique([k[0] for k in plot_items_order])
+            all_soma_verts = [[k["touching_soma_vertices"] for k in 
+                                        input_neuron[curr_limb_idx].all_concept_network_data] for curr_limb_idx in unique_limb_names]
+
+            
+            new_borders = list(itertools.chain.from_iterable(all_soma_verts))
+            if soma_border_vertices_color != "random":
+                new_borders_colors = [soma_border_vertices_color]*len(new_borders)
+            else:
+                new_borders_colors = mu.generate_color_list(n_colors=len(new_borders),alpha_level=1)
+            
+            for curr_scatter,curr_color in zip(new_borders,new_borders_colors):
+                plot_ipv_scatter(curr_scatter,scatter_color=curr_color,
+                            scatter_size=scatter_size,flip_y=flip_y)
+                main_vertices.append(curr_scatter)
+
+    
+    if len(scatters) > 0 and len(scatters_colors) == 0:
+        scatters_colors = [main_scatter_color]*len(scatters)
+    
+    print("Working on  new stand alone scatter points")
+    for curr_scatter,curr_color in zip(scatters,scatters_colors):
+        
+        plot_ipv_scatter(curr_scatter,scatter_color=curr_color,
+                    scatter_size=scatter_size,flip_y=flip_y)
+        main_vertices.append(curr_scatter)        
+        
         
     #To uncomment for full graphing
     

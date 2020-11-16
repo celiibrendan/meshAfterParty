@@ -146,12 +146,21 @@ class Scripter:
 
                 for param_name, param in data.items():
                     if filter_type == "filter":
+                        """ OLD WAY OF DOING IT THAT DID NOT ACCOUNT FOR DIFFERENT LENGTHS AND TYPES OF PARAMETERS
                         f.write('    <{param_type} type="{type}" value="{value}" name="{name}" />\n'.format(
                             param_type=param_type,
                             type=param['type'],
                             value=param['value'],
                             name=param_name
                         ))
+                        """
+                        
+                        # -- 11/12: Accounting for a different number of parameters
+                        new_string = f'    <{param_type} name="{param_name}" '
+                        for k,v in param.items():
+                            new_string += f'{k}="{v}" '
+                        new_string += ' />\n'
+                        f.write(new_string)
                     else:
                         f.write('    <{param_type} value="{value}" name="{name}" />\n'.format(
                             param_type=param_type,
@@ -740,7 +749,7 @@ class FillHoles(FilterBase):
     
     def initialize_script_filters(self,
                                   max_hole_size = 2000,
-                                  self_itersect_faces=True):
+                                  self_itersect_faces=False):
         default_filters = {
             'Remove Duplicate Vertices': {},
             'Remove Faces from Non Manifold Edges':{},
@@ -765,4 +774,79 @@ class FillHoles(FilterBase):
         super().__init__(temp_folder=temp_folder,
             script_filters=current_script_filters, 
             name="fill_holes",overwrite=overwrite, **kwargs)
+        
+        
+class Interior(FilterBase):
+    """
+    Class that will apply hole filling filters to meshes
+    """
+    
+    def initialize_script_filters(self,
+                                  return_interior=True,
+                                  quality_max = 0.1):
+        
+        default_filters = {
+#             #filters for closing the holes
+#             'Remove Duplicate Vertices': {},
+#             'Remove Faces from Non Manifold Edges':{},
+#             'Close Holes': {
+#                 'MaxHoleSize': dict(type='RichInt', value=str(max_hole_size)),
+#                 'Selected': dict(type='RichBool', value='false'),
+#                 'NewFaceSelected': dict(type='RichBool', value='false'),
+#                 'SelfIntersection': dict(type='RichBool', value=str(self_itersect_faces).lower()),
+#             },
+            
+            #filters for finding the 
+            'Ambient Occlusion': {
+                'dirBias': dict(type='RichFloat', value="0"),
+                'reqViews': dict(type='RichInt', value="128"),
+                'coneDir': dict(type='RichPoint3f', x="0", y="1", z="0"),
+                
+                'coneAngle': dict(type='RichFloat', value="30"),
+                'useGPU': dict(type='RichBool', value="false"),
+                'depthTexSize': dict(type='RichInt', value="512")
+            },
+            'Select by Vertex Quality': {
+                'minQ': {"type":"RichDynamicFloat","value":"0","min":"0","max":"1"},
+                'maxQ': {"type":"RichDynamicFloat","value":f"{quality_max}","min":"0","max":"1"},
+                'Inclusive': dict(type='RichBool', value="true"),
+            },
+            
+        }
+        
+        if return_interior:
+            last_filter = {
+                "Select Faces from Vertices":{
+                    "Inclusive":dict(type="RichBool",value="false")
+                                             },
+                "Invert Selection":{
+                    "InvFaces":dict(type="RichBool",value="true"),
+                    "InvVerts":dict(type="RichBool",value="true")
+                                   },
+            }
+            default_filters.update(last_filter)
+            
+        delete_dict={'Delete Selected Faces and Vertices': {}}
+        default_filters.update(delete_dict)
+
+        
+        return default_filters
+
+    def __init__(self,temp_folder="./temp",
+                 overwrite=False, 
+                 return_interior=True,
+                 quality_max=0.1,
+                 
+                # No longer doing the hole filling with it
+#                  max_hole_size = 10000,
+#                  self_itersect_faces=False,
+                 **kwargs):
+        
+        #calling the super script:
+        current_script_filters = self.initialize_script_filters(return_interior=return_interior,
+                                                                quality_max=quality_max)
+        
+        super().__init__(temp_folder=temp_folder,
+            script_filters=current_script_filters, 
+            name="remove_interior",overwrite=overwrite, **kwargs)
 

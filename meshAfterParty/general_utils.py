@@ -107,3 +107,22 @@ def order_dict_by_keys(current_dict):
 
 def dict_to_array(current_dict):
     return np.vstack([list(current_dict.keys()),list(current_dict.values())]).T
+
+
+
+
+# ------------ Help  with raising errors --------------- #
+class Error(Exception): 
+  
+    # Error is derived class for Exception, but 
+    # Base class for exceptions in this module 
+    pass
+  
+class CGAL_skel_error(Error): 
+  
+    # Raised when an operation attempts a state  
+    # transition that's not allowed. 
+    def __init__(self,  msg): 
+  
+        # Error message thrown is saved in msg 
+        self.msg = msg 

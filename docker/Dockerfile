@@ -61,8 +61,15 @@ WORKDIR /meshlab/src
 RUN qmake -qt=5 meshlab_mini.pro $QMAKE_FLAGS && make $MAKE_FLAGS
 
 
+
 #fixing the trimesh version
 RUN pip3 install --upgrade --force-reinstall trimesh==3.8.1
+
+#---- 11/11 adding the open3d -----
+RUN pip3 install open3d
+
+WORKDIR /meshlab/src/meshlabplugins/filter_ao/
+RUN qmake -qt=5 filter_ao.pro $QMAKE_FLAGS && make $MAKE_FLAGS
 
 #creating starting folder as the root
 WORKDIR /

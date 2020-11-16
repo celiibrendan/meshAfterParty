@@ -60,9 +60,76 @@ def print_minnie65_config_paths(minfig):
         
         
 # ------ Functions that will help decimate meshes ------------ #
+
+# --------- Adapter that will be used for decomposition ----------- #
+import neuron_utils as nru
+import os
+class DecompositionAdapter(dj.AttributeAdapter):
+    # Initialize the correct attribute type (allows for use with multiple stores)
+    def __init__(self, attribute_type):
+        self.attribute_type = attribute_type
+        super().__init__()
+
+    #?
+    attribute_type = '' # this is how the attribute will be declared
+    has_version = False # used for file name recognition
+    
+    def put(self, filepath):
+        # save the filepath to the mesh
+        filepath = os.path.abspath(filepath)
+        assert os.path.exists(filepath)
+        return filepath
+    
+    def get(self,filepath):
+        """
+        1) Get the filepath of the decimated mesh
+        2) Make sure that both file paths exist
+        3) use the decompress method
+        
+        """
+        #1) Get the filepath of the decimated mesh
+        
+        filepath = Path(filepath)
+        dec_filepath = get_decimated_mesh_path_from_decomposition_path(filepath)
+        
+        #2) Get the filepath of the decimated mesh
+        assert os.path.exists(filepath)
+        assert os.path.exists(dec_filepath)
+        
+        #3) use the decompress method
+        recovered_neuron = nru.decompress_neuron(filepath=filepath,
+                     original_mesh=dec_filepath)
+        
+        return recovered_neuron
+        
+        
+decomposition = DecompositionAdapter('filepath@decomposition')
+
+adapter_decomp_obj = {
+    'decomposition':decomposition
+}
+
+
+# --------- DONE Adapter that will be used for decomposition ----------- #
+
+
+from minfig import adapter_objects
+def get_adapter_object():
+    if "decomposition" not in adapter_objects.keys():
+        adapter_objects.update(adapter_decomp_obj)
+    return adapter_objects
+
 import datajoint as dj
+import minfig
+def get_decomposition_path():
+    return minfig.minnie65_config.external_segmentation_path / Path("decomposition/")
+def get_decimated_mesh_path_from_decomposition_path(filepath):
+    filepath = Path(filepath)
+    dec_filepath = filepath.parents[1] / Path(f"decimation_meshes/{filepath.stem}.off")
+    return dec_filepath
+    
 def configure_minnie_vm():
-    import minfig
+    
     set_minnie65_config_segmentation(minfig)
     minnie = minfig.configure_minnie(return_virtual_module=True)
 
@@ -71,11 +138,31 @@ def configure_minnie_vm():
 
     #New way of getting access to module
     
-    from minfig import adapter_objects # included with wildcard imports
-    minnie = dj.create_virtual_module('minnie', 'microns_minnie65_02', add_objects=adapter_objects)
+     # included with wildcard imports
+    
+    minnie = dj.create_virtual_module('minnie', 'microns_minnie65_02', add_objects=get_adapter_object())
 
     schema = dj.schema("microns_minnie65_02")
     dj.config["enable_python_native_blobs"] = True
+    
+    #confiugre the storage
+    decomp_path = get_decomposition_path()
+    if not decomp_path.exists():
+        raise Exception("The decomposition path does not exist")
+
+
+    stores_config = {'decomposition': {
+                'protocol': 'file',
+                'location': str(decomp_path),
+                'stage': str(decomp_path)
+            }}    
+
+    if 'stores' not in dj.config:
+        dj.config['stores'] = stores_config
+    else:
+        dj.config['stores'].update(stores_config)
+        
+        
     return minnie,schema
 
 minnie,schema = configure_minnie_vm()

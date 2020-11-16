@@ -214,6 +214,19 @@ The submesh function if doesn't have repair = False might
 end up adding on some faces that you don't want!
 *******
 """
+
+def sort_meshes_largest_to_smallest(meshes,
+                                    sort_attribute="faces",
+                                    return_idx=False):
+    x = [len(getattr(k,sort_attribute)) for k in meshes]
+    sorted_indexes = sorted(range(len(x)), key=lambda k: x[k])
+    sorted_indexes = sorted_indexes[::-1]
+    sorted_meshes = [meshes[k] for k in sorted_indexes]
+    if return_idx:
+        return sorted_meshes,sorted_indexes
+    else:
+        return sorted_meshes
+    
     
 from trimesh.graph import *
 def split(mesh, only_watertight=False, adjacency=None, engine=None, return_components=True, **kwargs):
@@ -434,8 +447,19 @@ def original_mesh_vertices_map(original_mesh, submesh=None,
 
     return closest_node
     
+def subtract_mesh(original_mesh,subtract_mesh,
+                    return_mesh=True
+                   ):
     
-    
+    if nu.is_array_like(subtract_mesh):
+        subtract_mesh = combine_meshes(subtract_mesh)
+        
+    return original_mesh_faces_map(original_mesh=original_mesh,
+                                   submesh=subtract_mesh,
+                                   matching=False,
+                                   return_mesh=return_mesh
+                                  )
+
 def original_mesh_faces_map(original_mesh, submesh,
                            matching=True,
                            print_flag=False,
@@ -1148,15 +1172,23 @@ def vertices_to_faces(current_mesh,vertices,
     """
     Purpose: If have a list of vertex indices, to get the face indices associated with them
     """
-    
-    intermediate_face_list = current_mesh.vertex_faces[vertices]
-    faces_list = [k[k!=-1] for k in intermediate_face_list]
-    if concatenate_unique_list:
-        return np.unique(np.concatenate(faces_list))
-    else:
-        return faces_list
+    try:
+        vertices = np.array(vertices)
+
+        intermediate_face_list = current_mesh.vertex_faces[vertices]
+        faces_list = [k[k!=-1] for k in intermediate_face_list]
+        if concatenate_unique_list:
+            return np.unique(np.concatenate(faces_list))
+        else:
+            return faces_list
+    except:
+        print(f"vertices = {vertices}")
+        su.compressed_pickle(current_mesh,"current_mesh_error_v_to_f")
+        su.compressed_pickle(vertices,"vertices_error_v_to_f")
+        raise Exception("Something went wrong in vertices to faces")
 
 import numpy_utils as nu
+import system_utils as su
 def vertices_coordinates_to_faces(current_mesh,vertex_coordinates):
     """
     
@@ -1170,7 +1202,18 @@ def vertices_coordinates_to_faces(current_mesh,vertex_coordinates):
     
     
     """
-    border_vertices_idx = [nu.matching_rows(current_mesh.vertices,v)[0] for v in vertex_coordinates]
+    try:
+        border_vertices_idx = []
+        for v in vertex_coordinates:
+            curr_match_idx = nu.matching_rows(current_mesh.vertices,v)
+            if len(curr_match_idx) > 0:
+                border_vertices_idx.append(curr_match_idx)
+        border_vertices_idx = np.array(border_vertices_idx)
+    except:
+        su.compressed_pickle(current_mesh,"current_mesh")
+        su.compressed_pickle(vertex_coordinates,"vertex_coordinates")
+        raise Exception("Something went from for matching_rows")
+        
     border_faces = vertices_to_faces(current_mesh,vertices=border_vertices_idx)
     unique_border_faces = np.unique(np.concatenate(border_faces))
     return unique_border_faces
@@ -1585,6 +1628,7 @@ def max_distance_betwee_mesh_vertices(mesh_1,mesh_2,
             return True
 
 import meshlab
+
 def fill_holes(mesh,
               max_hole_size=2000,
               self_itersect_faces=False):
@@ -1603,7 +1647,8 @@ def filter_meshes_by_containing_coordinates(mesh_list,nullifying_points,
                                                 filter_away=True,
                                            method="distance",
                                            distance_threshold=500,
-                                           verbose=False):
+                                           verbose=False,
+                                           return_indices=False):
     """
     Purpose: Will either filter away or keep meshes from a list of meshes
     based on points based to the function
@@ -1640,7 +1685,10 @@ def filter_meshes_by_containing_coordinates(mesh_list,nullifying_points,
     nullifying_points = np.array(nullifying_points).reshape(-1,3)
     
     containing_meshes = []
+    containing_meshes_idx = []
+    
     non_containing_meshes = []
+    non_containing_meshes_idx = []
     for j,sp_m in enumerate(mesh_list):
         # tried filling hole and using contains
         #sp_m_filled = tu.fill_holes(sp_m)
@@ -1655,7 +1703,7 @@ def filter_meshes_by_containing_coordinates(mesh_list,nullifying_points,
         elif method == "distance":
             sp_m_kdtree = KDTree(sp_m.vertices)
             distances,closest_nodes = sp_m_kdtree.query(nullifying_points.reshape(-1,3))
-            contains_results = distances < distance_threshold
+            contains_results = distances <= distance_threshold
             if verbose:
                 print(f"Submesh {j} ({sp_m}) distances = {distances}")
                 print(f"Min distance {np.min(distances)}")
@@ -1665,11 +1713,334 @@ def filter_meshes_by_containing_coordinates(mesh_list,nullifying_points,
             
         if np.sum(contains_results) > 0:
             containing_meshes.append(sp_m)
+            containing_meshes_idx.append(j)
+            
         else:
             non_containing_meshes.append(sp_m)
+            non_containing_meshes_idx.append(j)
     
     if filter_away:
-        return non_containing_meshes
+        if return_indices:
+            return non_containing_meshes_idx
+        else:
+            return non_containing_meshes
     else:
-        return containing_meshes
+        if return_indices:
+            return containing_meshes_idx
+        else:
+            return containing_meshes
     
+
+# --------------- 11/11 ---------------------- #
+import meshlab 
+def poisson_surface_reconstruction(mesh,
+                                   output_folder="./temp",
+                                  delete_temp_files=True,
+                                   name=None,
+                                  verbose=False):
+    if type(output_folder) != type(Path()):
+        output_folder = Path(str(output_folder))
+        output_folder.mkdir(parents=True,exist_ok=True)
+
+    # CGAL Step 1: Do Poisson Surface Reconstruction
+    Poisson_obj = meshlab.Poisson(output_folder,overwrite=True)
+
+    if name is None:
+        name = f"mesh_{np.random.randint(10,1000)}"
+
+    
+    skeleton_start = time.time()
+    
+    if verbose:
+        print("     Starting Screened Poisson")
+    new_mesh,output_subprocess_obj = Poisson_obj(   
+                                vertices=mesh.vertices,
+                                 faces=mesh.faces,
+                                mesh_filename=name + ".off",
+                                 return_mesh=True,
+                                 delete_temp_files=delete_temp_files,
+                                )
+    if verbose:
+        print(f"-----Time for Screened Poisson= {time.time()-skeleton_start}")
+        
+    return new_mesh
+
+
+def decimate(mesh,
+               decimation_ratio=0.25,
+               output_folder="./temp",
+              delete_temp_files=True,
+               name=None,
+              verbose=False):
+    if type(output_folder) != type(Path()):
+        output_folder = Path(str(output_folder))
+        output_folder.mkdir(parents=True,exist_ok=True)
+
+    # CGAL Step 1: Do Poisson Surface Reconstruction
+    Decimator_obj = meshlab.Decimator(decimation_ratio,output_folder,overwrite=True)
+
+    if name is None:
+        name = f"mesh_{np.random.randint(10,1000)}"
+
+    skeleton_start = time.time()
+    
+    if verbose:
+        print("     Starting Screened Poisson")
+    #Step 1: Decimate the Mesh and then split into the seperate pieces
+    new_mesh,output_obj = Decimator_obj(vertices=mesh.vertices,
+             faces=mesh.faces,
+             segment_id=None,
+             return_mesh=True,
+             delete_temp_files=False)
+    
+    if verbose:
+        print(f"-----Time for Screened Poisson= {time.time()-skeleton_start}")
+        
+    return new_mesh
+        
+
+import pymeshfix
+import time
+
+def pymeshfix_clean(mesh,
+                    joincomp = True,
+                   remove_smallest_components = False,
+                   verbose=False):
+    """
+    Purpose: Will apply the pymeshfix algorithm
+    to clean the mesh
+    
+    Application: Can help with soma identificaiton
+    because otherwise nucleus could interfere with the segmentation
+    
+    
+    """
+    if verbose:
+        print(f"Staring pymeshfix on {mesh}")
+    start_time = time.time()
+
+    meshfix = pymeshfix.MeshFix(mesh.vertices,mesh.faces)
+    
+    meshfix.repair(
+                   verbose=False,
+                   joincomp=joincomp,
+                   remove_smallest_components=remove_smallest_components
+                  )
+    current_neuron_poisson_pymeshfix = trimesh.Trimesh(vertices=meshfix.v,faces=meshfix.f)
+
+    if verbose:
+        print(f"Total time for pymeshfix = {time.time() - start_time}")
+    return current_neuron_poisson_pymeshfix
+
+
+from pathlib import Path
+import trimesh_utils as tu
+import numpy as np
+import time
+
+
+import cgal_Segmentation_Module as csm
+def mesh_segmentation(
+        mesh = None,
+        filepath = None,
+        clusters=2,
+        smoothness=0.2,
+        cgal_folder = Path("./"),
+        return_sdf = True,
+
+
+        delete_temp_files = True,
+        return_meshes = True ,
+        check_connect_comp = True, #will only be used if returning meshes
+        return_ordered_by_size = True,
+
+        verbose = False,
+
+    ):
+    """
+    Function tha segments the mesh and then 
+    either returns:
+    1) Face indexes of different mesh segments
+    2) The cut up mesh into different mesh segments
+    3) Can optionally return the sdf values of the different mesh
+
+    Example: 
+    tu = reload(tu)
+
+    meshes_split,meshes_split_sdf = tu.mesh_segmentation(
+        mesh = real_soma
+    )
+    
+    """
+    
+    if not cgal_folder.exists():
+        cgal_folder.mkdir(parents=True,exist_ok=False)
+
+    mesh_temp_file = False
+    if filepath is None:
+        if mesh is None:
+            raise Exception("Both mesh and filepath are None")
+        file_dest = cgal_folder / Path(f"{np.random.randint(10,1000)}_mesh.off")
+        filepath = write_neuron_off(mesh,file_dest)
+        mesh_temp_file = True
+
+    filepath = Path(filepath)
+
+    assert(filepath.exists())
+    filepath_no_ext = filepath.absolute().parents[0] / filepath.stem
+
+
+    start_time = time.time()
+
+    if verbose:
+        print(f"Going to run cgal segmentation with:"
+             f"\nFile: {str(filepath_no_ext)} \nclusters:{clusters} \nsmoothness:{smoothness}")
+
+    csm.cgal_segmentation(str(filepath_no_ext),clusters,smoothness)
+
+    #read in the csv file
+    cgal_output_file = Path(str(filepath_no_ext) + "-cgal_" + str(np.round(clusters,2)) + "_" + "{:.2f}".format(smoothness) + ".csv" )
+    cgal_output_file_sdf = Path(str(filepath_no_ext) + "-cgal_" + str(np.round(clusters,2)) + "_" + "{:.2f}".format(smoothness) + "_sdf.csv" )
+
+    cgal_data = np.genfromtxt(str(cgal_output_file.absolute()), delimiter='\n')
+    cgal_sdf_data = np.genfromtxt(str(cgal_output_file_sdf.absolute()), delimiter='\n')
+
+    if return_meshes:
+        if mesh is None:
+            mesh = load_mesh_no_processing(filepath)
+        split_meshes,split_meshes_idx = split_mesh_into_face_groups(mesh,cgal_data,return_idx=True,
+                                       check_connect_comp = check_connect_comp,
+                                                                      return_dict=False)
+
+        if return_ordered_by_size:
+            split_meshes,split_meshes_sort_idx = sort_meshes_largest_to_smallest(split_meshes,return_idx=True)
+
+        if return_sdf:
+            #will return sdf data for all of the meshes
+            sdf_medains_for_mesh = np.array([np.median(cgal_sdf_data[k]) for k in split_meshes_idx])
+
+            if return_ordered_by_size:
+                sdf_medains_for_mesh = sdf_medains_for_mesh[split_meshes_sort_idx]
+            return_value= split_meshes,sdf_medains_for_mesh
+        else:
+            return_value= split_meshes
+    else:
+        if return_sdf:
+            return_value= cgal_data,cgal_sdf_data
+        else:
+            return_value= cgal_data
+
+    if delete_temp_files:
+        cgal_output_file.unlink()
+        cgal_output_file_sdf.unlink()
+        if mesh_temp_file:
+            filepath.unlink()
+
+    return return_value
+
+
+"""Purpose: crude check to see if mesh is manifold:
+
+https://gamedev.stackexchange.com/questions/61878/how-check-if-an-arbitrary-given-mesh-is-a-single-closed-mesh
+"""
+
+import trimesh
+import open3d as o3d
+def convert_trimesh_to_o3d(mesh):
+    if not type(mesh) == type(o3d.geometry.TriangleMesh()):
+        new_o3d_mesh = o3d.geometry.TriangleMesh()
+        new_o3d_mesh.vertices = o3d.utility.Vector3dVector(mesh.vertices)
+        new_o3d_mesh.triangles = o3d.utility.Vector3iVector(mesh.faces)
+    else:
+        new_o3d_mesh = mesh
+    return new_o3d_mesh
+
+def convert_o3d_to_trimesh(mesh):
+    if not type(mesh) == type(trimesh.Trimesh()):
+        new_mesh = trimesh.Trimesh(
+                                    vertices=np.asarray(mesh.vertices),
+                                   faces=np.asarray(mesh.triangles)
+                                  )
+    else:
+        new_mesh = mesh
+    return new_mesh
+    
+
+def is_manifold(mesh):
+    mesh_o3d = convert_trimesh_to_o3d(mesh)  
+    return mesh_o3d.is_vertex_manifold()
+
+def get_non_manifold_edges(mesh):
+    mesh_o3d = convert_trimesh_to_o3d(mesh)  
+    return np.asarray(mesh_o3d.get_non_manifold_edges())
+
+def get_non_manifold_vertices(mesh):
+    mesh_o3d = convert_trimesh_to_o3d(mesh)  
+    return np.asarray(mesh_o3d.get_non_manifold_vertices())
+
+
+def mesh_interior(mesh,
+                    return_interior=True,
+                    quality_max=0.1,
+                  try_hole_close=True,
+                      max_hole_size = 10000,
+                     self_itersect_faces=False,
+                  verbose=True,
+                    
+                    **kwargs
+              ):
+    
+    if try_hole_close:
+        try:
+            mesh = fill_holes(mesh,
+                  max_hole_size=max_hole_size,
+                  self_itersect_faces=self_itersect_faces)
+        except:
+            if verbose: 
+                print("The hole closing did not work so continuing without")
+            pass
+                
+    with meshlab.Interior(return_interior=return_interior,
+                                quality_max=quality_max,
+                                 **kwargs) as remove_obj:
+
+        mesh_remove_interior,remove_file_obj = remove_obj(   
+                                            vertices=mesh.vertices,
+                                             faces=mesh.faces,
+                                             return_mesh=True,
+                                             delete_temp_files=True,
+                                            )
+    return mesh_remove_interior
+
+def remove_mesh_interior(mesh,
+                         size_threshold_to_remove=5000,
+                         verbose=True,
+                         return_removed_pieces=False,
+                         **kwargs):
+    """
+    Will remove interior faces of a mesh with a certain significant size
+    
+    """
+    curr_interior_mesh = mesh_interior(mesh,return_interior=True,**kwargs)
+    sig_inside = tu.split_significant_pieces(curr_interior_mesh,significance_threshold=size_threshold_to_remove)
+    if len(sig_inside) == 0:
+        sig_meshes_no_threshold = split_significant_pieces(curr_interior_mesh,significance_threshold=1)
+        meshes_sizes = np.array([len(k.faces) for k in sig_meshes_no_threshold])
+        if verbose:
+            print(f"No significant ({size_threshold_to_remove}) interior meshes present, largest is {(np.max(meshes_sizes))}")
+        return_mesh= mesh
+    else:
+        if verbose:
+            print(f"Removing the following inside neurons: {sig_inside}")
+        return_mesh= subtract_mesh(mesh,sig_inside)
+        
+
+    if return_removed_pieces:
+        # --- 11/15: Need to only return inside pieces that are mapped to the original face ---
+        sig_inside_remapped = [tu.original_mesh_faces_map(mesh,jj,
+                                                          return_mesh=True) for jj in sig_inside]
+        sig_inside_remapped = [k for k in sig_inside_remapped if len(k.faces) >= 1] 
+        return return_mesh,sig_inside_remapped
+    else:
+        return return_mesh
+        
