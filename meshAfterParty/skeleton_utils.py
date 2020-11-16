@@ -2565,9 +2565,6 @@ import pathlib
 
 
 import meshlab
-from importlib import reload
-meshlab = reload(meshlab)
-from meshlab import Decimator , Poisson
 import skeleton_utils as sk
 
 from shutil import rmtree
@@ -2672,7 +2669,7 @@ def skeletonize_connected_branch(current_mesh,
             output_folder.mkdir(parents=True,exist_ok=True)
             
         # CGAL Step 1: Do Poisson Surface Reconstruction
-        Poisson_obj = Poisson(output_folder,overwrite=True)
+        Poisson_obj = meshlab.Poisson(output_folder,overwrite=True)
         
 
         skeleton_start = time.time()

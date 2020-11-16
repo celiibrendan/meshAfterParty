@@ -7,8 +7,20 @@ import copy
 import os
 import random
 import trimesh_utils as tu
+import numpy as np
 
-
+def set_meshlab_port(current_port=None):
+    if current_port is None:
+        current_port = np.random.randint(100,10000)
+        print(f"No port chosen so picked random port {current_port}")
+    if current_port >= 0:
+        Meshlab.unique_port = current_port
+    else:
+        raise Exception(f"Requested port ({current_port}) was invalid")
+        
+def clear_meshlab_port(current_port):
+    Meshlab.unique_port = None
+    
 class Scripter:
     def __init__(self, filters=None, deepcopy=True):
         """
@@ -23,6 +35,7 @@ class Scripter:
             self._filters = self._copy(filters)
             
         self.test_filters()
+        
     
     def test_filters(self):
         filters = self._filters
@@ -191,12 +204,14 @@ class Scripter:
 
 
 class Meshlab:
+    unique_port = None
     def __init__(self, mls_script_path):
         self.mls_script_obj = Path(mls_script_path).absolute()
         if not self.mls_script_obj.exists():
             raise FileNotFoundError('meshlab script missing')
         if self.mls_script_obj.suffix != '.mls':
             raise TypeError('meshlab script path must be to an .mls file')
+        self.unique_port = type(self).unique_port
             
     @staticmethod
     def mesh_to_off(vertices, faces, output_path=None):
@@ -232,15 +247,18 @@ class Meshlab:
         script_command = (" -i " + str(input_obj) + " -o " + 
                                         str(output_obj) + " -s " + str(self.mls_script_obj))
 
-        if not random_port:
-            command_to_run = 'xvfb-run -a -s "-screen 0 800x600x24" meshlabserver $@ ' + script_command
+        if not self.unique_port is None:
+            command_to_run = f'xvfb-run -n {self.unique_port} -s "-screen 0 800x600x24" meshlabserver $@ ' + script_command
         else:
-            if port_number < 0:
-                #generate the random port
-                port_number = random.randint(100,10000)
-            
-            #print(f"Using port = {port_number}")
-            command_to_run = f'xvfb-run -n {port_number} -s "-screen 0 800x600x24" meshlabserver $@ ' + script_command
+            if not random_port:
+                command_to_run = 'xvfb-run -a -s "-screen 0 800x600x24" meshlabserver $@ ' + script_command
+            else:
+                if port_number < 0:
+                    #generate the random port
+                    port_number = random.randint(100,10000)
+
+                #print(f"Using port = {port_number}")
+                command_to_run = f'xvfb-run -n {port_number} -s "-screen 0 800x600x24" meshlabserver $@ ' + script_command
             
         from subprocess import PIPE
         if printout:
