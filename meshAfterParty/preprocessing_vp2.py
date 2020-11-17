@@ -681,12 +681,24 @@ def calculate_limb_concept_networks(limb_correspondence,
             if len(soma_t_verts_list) != len(soma_endpt_list):
                 raise Exception(f"soma_t_verts_list length ({len(soma_t_verts_list)}) not equal to soma_endpt_list length ({soma_endpt_list})")
             for soma_group_idx,(t_verts,endpt) in enumerate(zip(soma_t_verts_list,soma_endpt_list)):
+                print(f"\n\n---------Working on soma_idx = {soma_idx}, soma_group_idx {soma_group_idx}, endpt = {endpt}---------")
 
 
 
                 #1) find the branch with the endoint that must keep
-                start_branch = sk.find_branch_skeleton_with_specific_coordinate(divded_skeleton=divided_skeletons,
-                                                                current_coordinate=endpt)[0]
+                # ---------------- 11/17 Addition: If the endpoint does not match a skeleton point anymore then just get the closest endpoint of mesh that has touching vertices
+                try:
+                    start_branch = sk.find_branch_skeleton_with_specific_coordinate(divded_skeleton=divided_skeletons,
+                                                                    current_coordinate=endpt)[0]
+                except:
+                    """
+                    Pseudocode:
+                    
+                    
+                    
+                    """
+                    
+                
                 #print(f"Starting_branch = {start_branch}")
                 #print(f"Start endpt = {endpt}")
                 start_branch_endpoints = sk.find_branch_endpoints(divided_skeletons[start_branch])

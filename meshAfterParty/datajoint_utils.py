@@ -165,8 +165,6 @@ def configure_minnie_vm():
         
     return minnie,schema
 
-minnie,schema = configure_minnie_vm()
-
 import trimesh
 def get_decimated_mesh(seg_id,decimation_ratio=0.25):
     key = dict(segment_id=seg_id,decimation_ratio=decimation_ratio)

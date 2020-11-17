@@ -1287,7 +1287,7 @@ def find_border_faces(mesh):
     return border_faces
 
 
-def find_border_vertex_groups(mesh):
+def find_border_vertex_groups(mesh,return_coordinates=False):
     """
     Will return all borders as faces and grouped together
     """
@@ -1322,7 +1322,10 @@ def find_border_vertex_groups(mesh):
     list of faces
 
     """
-    return [list(k) for k in border_edge_groups]
+    if return_coordinates:
+        return [mesh.vertices[list(k)] for k in border_edge_groups]
+    else:
+        return [list(k) for k in border_edge_groups]
     
 
 def find_border_face_groups(mesh):
