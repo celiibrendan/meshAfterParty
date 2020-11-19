@@ -612,8 +612,7 @@ def attach_floating_pieces_to_limb_correspondence(
 
 
 def calculate_limb_concept_networks(limb_correspondence,
-                                   touching_verts_list,
-                                    endpoints_must_keep,
+                                    network_starting_info,
                                    run_concept_network_checks=True):
     """
     Can take a limb correspondence and the starting vertices and endpoints
@@ -622,8 +621,7 @@ def calculate_limb_concept_networks(limb_correspondence,
                     (because could possibly have mulitple starting points on the same soma)
     
     """
-    curr_touching_verts_list = touching_verts_list
-    curr_endpoints_must_keep = endpoints_must_keep
+    
     limb_correspondence_individual = limb_correspondence
     divided_skeletons = np.array([limb_correspondence_individual[k]["branch_skeleton"] for k in np.sort(list(limb_correspondence_individual.keys()))])
 
@@ -665,99 +663,84 @@ def calculate_limb_concept_networks(limb_correspondence,
 
     limb_to_soma_concept_networks = dict()
 
-    if len(curr_touching_verts_list) != len(curr_endpoints_must_keep):
-        raise Exception(f"curr_touching_verts_list ({curr_touching_verts_list}) not same size as curr_endpoints_must_keep ({len(curr_endpoints_must_keep)})")
-
-    for touch_vert_dict,endpoints_keep_dict in zip(curr_touching_verts_list,curr_endpoints_must_keep):
-        if not np.array_equal(list(touch_vert_dict.keys()),list(endpoints_keep_dict.keys())):
-            raise Exception(f"touch_vert_dict keys ({touch_vert_dict.keys()}) don't match endpoints_keep_dict keys ({endpoints_keep_dict.keys()})")
-        for soma_idx in touch_vert_dict.keys():
-            soma_t_verts_list = touch_vert_dict[soma_idx]
-            soma_endpt_list = endpoints_keep_dict[soma_idx]
-
-            if soma_idx not in list(limb_to_soma_concept_networks.keys()):
-                limb_to_soma_concept_networks[soma_idx] = []
-
-            if len(soma_t_verts_list) != len(soma_endpt_list):
-                raise Exception(f"soma_t_verts_list length ({len(soma_t_verts_list)}) not equal to soma_endpt_list length ({soma_endpt_list})")
-            for soma_group_idx,(t_verts,endpt) in enumerate(zip(soma_t_verts_list,soma_endpt_list)):
-                print(f"\n\n---------Working on soma_idx = {soma_idx}, soma_group_idx {soma_group_idx}, endpt = {endpt}---------")
+    for soma_idx in network_starting_info.keys():
+        
+        if soma_idx not in list(limb_to_soma_concept_networks.keys()):
+            limb_to_soma_concept_networks[soma_idx] = []
+        for soma_group_idx,st_dict in network_starting_info[soma_idx].items():
+            t_verts = st_dict["touching_verts"]
+            endpt = st_dict["endpoint"]
+            print(f"\n\n---------Working on soma_idx = {soma_idx}, soma_group_idx {soma_group_idx}, endpt = {endpt}---------")
 
 
 
-                #1) find the branch with the endoint that must keep
-                # ---------------- 11/17 Addition: If the endpoint does not match a skeleton point anymore then just get the closest endpoint of mesh that has touching vertices
-                try:
-                    start_branch = sk.find_branch_skeleton_with_specific_coordinate(divded_skeleton=divided_skeletons,
-                                                                    current_coordinate=endpt)[0]
-                except:
+            #1) find the branch with the endoint that must keep
+            # ---------------- 11/17 Addition: If the endpoint does not match a skeleton point anymore then just get the closest endpoint of mesh that has touching vertices
+
+            start_branch = sk.find_branch_skeleton_with_specific_coordinate(divded_skeleton=divided_skeletons,
+                                                            current_coordinate=endpt)[0]
+
+
+
+            #print(f"Starting_branch = {start_branch}")
+            #print(f"Start endpt = {endpt}")
+            start_branch_endpoints = sk.find_branch_endpoints(divided_skeletons[start_branch])
+            #print(f"Starting_branch endpoints = {start_branch_endpoints}")
+
+            #2) Call the branches_to_concept_network with the
+            curr_limb_concept_network = nru.branches_to_concept_network(curr_branch_skeletons=divided_skeletons,
+                                                                  starting_coordinate=endpt,
+                                                                  starting_edge=start_branch_endpoints,
+                                                                  touching_soma_vertices=t_verts,
+                                                                       soma_group_idx=soma_group_idx)
+            print("Done generating concept network \n\n")
+
+
+            run_checks = True
+            check_print_flag = True
+
+            if run_concept_network_checks:
+                #3) Run the checks on the concept network
+                #3.1: check to make sure the starting coordinate was recovered
+
+                recovered_touching_piece = xu.get_nodes_with_attributes_dict(curr_limb_concept_network,dict(starting_coordinate=endpt))
+
+                if check_print_flag:
+                    print(f"recovered_touching_piece = {recovered_touching_piece}")
+                if recovered_touching_piece[0] != start_branch:
+                    raise Exception(f"For limb and soma {soma_idx} the recovered_touching and original touching do not match\n"
+                                   f"recovered_touching_piece = {recovered_touching_piece}, original_touching_pieces = {start_branch}")
+
+
+                #3.2: Check number of nodes match the number of divided skeletons
+                if len(curr_limb_concept_network.nodes()) != len(divided_skeletons):
+                    raise Exception("The number of nodes in the concept graph and number of branches passed to it did not match\n"
+                                  f"len(curr_limb_concept_network.nodes())={len(curr_limb_concept_network.nodes())}, len(curr_limb_divided_skeletons)= {len(divided_skeletons)}")
+
+                #3.3: Check that concept network is a connected component
+                if nx.number_connected_components(curr_limb_concept_network) > 1:
+                    raise Exception("There was more than 1 connected components in the concept network")
+
+
+                #3.4 Make sure the oriiginal divided skeleton endpoints match the concept map endpoints
+                for j,un_resized_b in enumerate(divided_skeletons):
                     """
-                    Pseudocode:
-                    
-                    
-                    
+                    Pseudocode: 
+                    1) get the endpoints of the current branch
+                    2) get the endpoints in the concept map
+                    3) compare
+                    - if not equalt then break
                     """
-                    
-                
-                #print(f"Starting_branch = {start_branch}")
-                #print(f"Start endpt = {endpt}")
-                start_branch_endpoints = sk.find_branch_endpoints(divided_skeletons[start_branch])
-                #print(f"Starting_branch endpoints = {start_branch_endpoints}")
+                    #1) get the endpoints of the current branch
+                    b_endpoints = neuron.Branch(un_resized_b).endpoints
+                    #2) get the endpoints in the concept map
+                    graph_endpoints = xu.get_node_attributes(curr_limb_concept_network,attribute_name="endpoints",node_list=[j])[0]
+                    #print(f"original_branch_endpoints = {b_endpoints}, concept graph node endpoints = {graph_endpoints}")
+                    if not xu.compare_endpoints(b_endpoints,graph_endpoints):
+                        raise Exception(f"The node {j} in concept graph endpoints do not match the endpoints of the original branch\n"
+                                       f"original_branch_endpoints = {b_endpoints}, concept graph node endpoints = {graph_endpoints}")
 
-                #2) Call the branches_to_concept_network with the
-                curr_limb_concept_network = nru.branches_to_concept_network(curr_branch_skeletons=divided_skeletons,
-                                                                      starting_coordinate=endpt,
-                                                                      starting_edge=start_branch_endpoints,
-                                                                      touching_soma_vertices=t_verts,
-                                                                           soma_group_idx=soma_group_idx)
-                print("Done generating concept network \n\n")
-
-
-                run_checks = True
-                check_print_flag = True
-
-                if run_concept_network_checks:
-                    #3) Run the checks on the concept network
-                    #3.1: check to make sure the starting coordinate was recovered
-
-                    recovered_touching_piece = xu.get_nodes_with_attributes_dict(curr_limb_concept_network,dict(starting_coordinate=endpt))
-
-                    if check_print_flag:
-                        print(f"recovered_touching_piece = {recovered_touching_piece}")
-                    if recovered_touching_piece[0] != start_branch:
-                        raise Exception(f"For limb and soma {soma_idx} the recovered_touching and original touching do not match\n"
-                                       f"recovered_touching_piece = {recovered_touching_piece}, original_touching_pieces = {start_branch}")
-
-
-                    #3.2: Check number of nodes match the number of divided skeletons
-                    if len(curr_limb_concept_network.nodes()) != len(divided_skeletons):
-                        raise Exception("The number of nodes in the concept graph and number of branches passed to it did not match\n"
-                                      f"len(curr_limb_concept_network.nodes())={len(curr_limb_concept_network.nodes())}, len(curr_limb_divided_skeletons)= {len(divided_skeletons)}")
-
-                    #3.3: Check that concept network is a connected component
-                    if nx.number_connected_components(curr_limb_concept_network) > 1:
-                        raise Exception("There was more than 1 connected components in the concept network")
-
-
-                    #3.4 Make sure the oriiginal divided skeleton endpoints match the concept map endpoints
-                    for j,un_resized_b in enumerate(divided_skeletons):
-                        """
-                        Pseudocode: 
-                        1) get the endpoints of the current branch
-                        2) get the endpoints in the concept map
-                        3) compare
-                        - if not equalt then break
-                        """
-                        #1) get the endpoints of the current branch
-                        b_endpoints = neuron.Branch(un_resized_b).endpoints
-                        #2) get the endpoints in the concept map
-                        graph_endpoints = xu.get_node_attributes(curr_limb_concept_network,attribute_name="endpoints",node_list=[j])[0]
-                        #print(f"original_branch_endpoints = {b_endpoints}, concept graph node endpoints = {graph_endpoints}")
-                        if not xu.compare_endpoints(b_endpoints,graph_endpoints):
-                            raise Exception(f"The node {j} in concept graph endpoints do not match the endpoints of the original branch\n"
-                                           f"original_branch_endpoints = {b_endpoints}, concept graph node endpoints = {graph_endpoints}")
-
-                limb_to_soma_concept_networks[soma_idx].append(curr_limb_concept_network)
+            limb_to_soma_concept_networks[soma_idx].append(curr_limb_concept_network)
 
     return limb_to_soma_concept_networks                    
 
@@ -2076,15 +2059,214 @@ def preprocess_limb(mesh,
                 endpoints_must_keep = limb_to_endpoints_must_keep_list
     )
 
+    
+    
+    
+    
+    
+    # -------------- Part 18: 11-17 Addition that filters the network starting info into a more clean presentation ------------ #
+    """
+    Pseudocode: 
+    1) Rearrange the network starting info into a ditionary mapping
+      soma_idx --> branch_broder_group --> list of dict(touching_vertices,endpoint)
+
+    2) iterate through all the somas and border vertex groups
+    a. filter to only those with an endpoint that is on a branch of the skeleton
+    b1: If 1 --> then keep that one
+    b2: If more --> pick the one with the endpoint closest to the average fo the vertex group
+    b3: If 0 --> find the best available soma extending branch endpoint
+
+    """
+
+    # Part 1: Rearrange network info
+
+
+    t_verts_list_total,enpts_list_total = network_starting_info.values()
+    network_starting_info_revised = dict()
+    for j,(v_list_dict,enpts_list_dict) in enumerate(zip(t_verts_list_total,enpts_list_total)):
+        #print(f"---- Working on {j} -----")
+    #     print(v_list_dict)
+    #     print(enpts_list_dict)
+        if set(list(v_list_dict.keys())) != set(list(enpts_list_dict)):
+            raise Exception("Soma keys not match for touching vertices and endpoints")
+        for sm_idx in v_list_dict.keys():
+            v_list_soma = v_list_dict[sm_idx]
+            endpt_soma = enpts_list_dict[sm_idx]
+            if len(v_list_soma) != len(endpt_soma):
+                raise Exception(f"touching vertices list and endpoint list not match size for soma {sm_idx}")
+
+            all_border_vertex_groups = soma_touching_vertices_dict[sm_idx]
+
+            for v_l,endpt in zip(v_list_soma,endpt_soma):
+
+                matching_border_group  = []
+                for i,curr_border_group in enumerate(all_border_vertex_groups):
+                    if nu.test_matching_vertices_in_lists(curr_border_group,v_l,verbose=True):
+                        matching_border_group.append(i)
+
+                if len(matching_border_group) == 0 or len(matching_border_group)>1:
+                    raise Exception(f"Matching border groups was not exactly 1: {matching_border_group}")
+
+                winning_border_group = matching_border_group[0]
+
+                if sm_idx not in network_starting_info_revised.keys():
+                    network_starting_info_revised[sm_idx] = dict()
+
+                if winning_border_group not in network_starting_info_revised[sm_idx].keys():
+                    network_starting_info_revised[sm_idx][winning_border_group] = []
+                network_starting_info_revised[sm_idx][winning_border_group].append(dict(touching_verts=v_l,endpoint=endpt))
+
+
+    # Part 2 Filter
+    """
+    2) iterate through all the somas and border vertex groups
+    a. filter to only those with an endpoint that is on a branch of the skeleton
+    b1: If 1 --> then keep that one
+    b2: If more --> pick the one with the endpoint closest to the average fo the vertex group
+    b3: If 0 --> find the best available soma extending branch endpoint
+
+    Pseudocode for b3:
+    i) get all meshes that touch the vertex group (and keep the vertices that overlap)
+    --> error if none
+    ii) Get all of the endpoints of all matching branches
+    iii) Filter the endpoints to only those that are degree 1 in the overall skeleton
+    --> if none then just keep all endpoints
+    iv) Find the closest viable endpoint to the mean of the boundary group
+    v) save the overlap vertices and the winning endpoint as a dictionary
+
+    """
+
+    sorted_keys = np.sort(list(limb_correspondence_individual.keys()))
+    curr_branches = [limb_correspondence_individual[k]["branch_skeleton"] for k in sorted_keys]
+    curr_meshes = [limb_correspondence_individual[k]["branch_mesh"] for k in sorted_keys]
+
+    network_starting_info_revised_cleaned = dict()
+    for soma_idx in network_starting_info_revised.keys():
+        network_starting_info_revised_cleaned[soma_idx] = dict()
+        for bound_g_idx,endpoint_list in network_starting_info_revised[soma_idx].items():
+            endpoint_list = np.array(endpoint_list)
+
+            filter_on_skeleton_list = []
+            for zz,endpt_dict in enumerate(endpoint_list):
+                #a. filter to only those with an endpoint that is on a branch of the skeleton
+                sk_indices = sk.find_branch_skeleton_with_specific_coordinate(divded_skeleton=curr_branches,
+                                                                            current_coordinate=endpt_dict["endpoint"])
+                if len(sk_indices) > 0:
+                    filter_on_skeleton_list.append(zz)
+
+            endpoint_list_filt = endpoint_list[filter_on_skeleton_list]
+
+
+
+            curr_border_group_coordinates = soma_touching_vertices_dict[soma_idx][bound_g_idx]
+            boundary_mean = np.mean(curr_border_group_coordinates,axis=0)
+
+            if len(endpoint_list_filt) == 1:
+                print("Only one endpoint after filtering away the endpoints that are not on the skeleton")
+                winning_dict = endpoint_list_filt[0]
+            #b2: If more --> pick the one with the endpoint closest to the average fo the vertex group
+            elif len(endpoint_list_filt) > 1:
+                print(f"MORE THAN one endpoint after filtering away the endpoints that are not on the skeleton: {len(endpoint_list_filt)}")
+                viable_endpoints = [endpt_dict["endpoint"] for endpt_dict in endpoint_list_filt]
+
+
+                distanes_from_mean = np.linalg.norm(viable_endpoints-boundary_mean,axis=1)
+                winning_endpoint_idx = np.argmin(distanes_from_mean)
+                winning_dict = endpoint_list_filt[winning_endpoint_idx]
+
+            #if there was no clear winner
+            else:
+                """
+                Pseudocode for no viable options:
+                i) get all meshes that touch the vertex group (and keep the vertices that overlap)
+                --> error if none
+                ii) Get all of the endpoints of all matching branches
+                iii) Filter the endpoints to only those that are degree 1 in the overall skeleton
+                --> if none then just keep all endpoints
+                iv) Find the closest viable endpoint to the mean of the boundary group
+                v) save the overlap vertices and the winning endpoint as a dictionary
+
+
+                """
+                print("Having to find a new branch point")
+                #i) get all meshes that touch the vertex group (and keep the vertices that overlap)
+                mesh_indices_on_border = tu.filter_meshes_by_containing_coordinates(curr_meshes,
+                                              nullifying_points=curr_border_group_coordinates,
+                                              filter_away=False,
+                                              distance_threshold=0,
+                                              return_indices=True)
+                if len(mesh_indices_on_border) == 0:
+                    raise Exception("There were no meshes that were touching the boundary group")
+
+                total_skeleton_graph = sk.convert_skeleton_to_graph(sk.stack_skeletons(curr_branches))
+                skeleton_branches_on_border = [k for n,k in enumerate(curr_branches) if n in mesh_indices_on_border]
+                skeleton_branches_on_border_endpoints = np.array([sk.find_branch_endpoints(k) for k in skeleton_branches_on_border])
+
+
+
+                viable_endpoints = []
+                for enpt in skeleton_branches_on_border_endpoints.reshape(-1,3):
+                    curr_enpt_node = xu.get_graph_node_by_coordinate(total_skeleton_graph,enpt,return_single_value=True)
+                    curr_enpt_degree = xu.get_node_degree(total_skeleton_graph,curr_enpt_node)
+                    #print(f"curr_enpt_degree = {curr_enpt_degree}")
+                    if curr_enpt_degree == 1:
+                        viable_endpoints.append(enpt)
+
+                if len(viable_endpoints) == 0:
+                    print("No branch endpoints were degree 1 so just using all endpoints")
+                    viable_endpoints = skeleton_branches_on_border_endpoints.reshape(-1,3)
+
+                distanes_from_mean = np.linalg.norm(viable_endpoints-boundary_mean,axis=1)
+                winning_endpoint = viable_endpoints[np.argmin(distanes_from_mean)]
+
+
+                sk_indices = sk.find_branch_skeleton_with_specific_coordinate(divded_skeleton=curr_branches,
+                                                                                        current_coordinate=winning_endpoint)
+
+                winning_branch = np.intersect1d(mesh_indices_on_border,sk_indices)
+                if len(winning_branch) == 0:
+                    raise Exception("There was no winning branch for the creation of a new soma extending branch")
+                else:
+                    winning_branch_single = winning_branch[0]
+
+
+                winning_touching_vertices = tu.filter_vertices_by_mesh(curr_meshes[winning_branch_single],curr_border_group_coordinates)
+                winning_dict = dict(touching_verts=winning_touching_vertices,endpoint=winning_endpoint)
+
+
+
+
+
+
+
+
+            network_starting_info_revised_cleaned[soma_idx][bound_g_idx] = winning_dict
+
+
+    # -------------- Part 18: End ------------ #
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     if not return_concept_network:
         if return_concept_network_starting_info: #because may want to calculate the concept networks later
-            return limb_correspondence_individual,network_starting_info
+            return limb_correspondence_individual,network_starting_info_revised_cleaned
         else:
             return limb_correspondence_individual
     else:
         limb_to_soma_concept_networks = calculate_limb_concept_networks(limb_correspondence_individual,
+                                                                        network_starting_info_revised_cleaned,
                                                                         run_concept_network_checks=run_concept_network_checks,
-                                                                       **network_starting_info)
+                                                                       )
 
 
 
@@ -2516,8 +2698,9 @@ def preprocess_neuron(
 
     for curr_limb_idx,limb_mesh_mparty in enumerate(current_mesh_data[0]["branch_meshes"]):
         limb_to_soma_concept_networks = calculate_limb_concept_networks(limb_correspondence_with_floating_pieces[curr_limb_idx],
-                                                                            run_concept_network_checks=True,
-                                                                           **limb_network_stating_info[curr_limb_idx])   
+                                                                        limb_network_stating_info[curr_limb_idx],
+                                                                        run_concept_network_checks=True,
+                                                                           )   
 
 
 

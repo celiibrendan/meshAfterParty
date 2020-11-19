@@ -7,6 +7,8 @@ from skeleton_utils import *
 from tqdm_utils import tqdm
 import networkx as nx
 import system_utils as su
+import skeleton_utils as sk
+
 def get_skeletal_distance_no_skipping(main_mesh,edges,
                                  buffer=0.01,
                                 bbox_ratio=1.2,

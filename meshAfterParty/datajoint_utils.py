@@ -200,12 +200,14 @@ def nucleus_id_to_seg_id(nucleus_id):
     
 import trimesh
 def fetch_segment_id_mesh(seg_id,decimation_ratio=0.25):
+    minnie,schema = configure_minnie_vm()
     key = dict(segment_id=seg_id,decimation_ratio=decimation_ratio)
     new_mesh = (minnie.Decimation() & key).fetch1("mesh")
     current_mesh_verts,current_mesh_faces = new_mesh.vertices,new_mesh.faces
     return trimesh.Trimesh(vertices=current_mesh_verts,faces=current_mesh_faces)
 
 def fetch_undecimated_segment_id_mesh(seg_id,decimation_ratio=0.25):
+    minnie,schema = configure_minnie_vm()
     key = dict(segment_id=seg_id,decimation_ratio=decimation_ratio)
     new_mesh = (minnie.Mesh() & key).fetch1("mesh")
     current_mesh_verts,current_mesh_faces = new_mesh.vertices,new_mesh.faces

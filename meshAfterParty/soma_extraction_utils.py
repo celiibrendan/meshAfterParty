@@ -1068,8 +1068,8 @@ def extract_soma_center(segment_id,
                     mesh = f_soma,
                     smoothness=0.5
                 )
-                print(f"meshes_split = {meshes_split}")
-                print(f"meshes_split_sdf = {meshes_split_sdf}")
+#                 print(f"meshes_split = {meshes_split}")
+#                 print(f"meshes_split_sdf = {meshes_split_sdf}")
 
                 #applying the soma width and the soma size threshold
                 above_width_threshold_mask = meshes_split_sdf>=soma_width_threshold

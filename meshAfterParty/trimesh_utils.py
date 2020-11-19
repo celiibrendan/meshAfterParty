@@ -2046,4 +2046,23 @@ def remove_mesh_interior(mesh,
         return return_mesh,sig_inside_remapped
     else:
         return return_mesh
+    
+    
+def filter_vertices_by_mesh(mesh,vertices):
+    """
+    Purpose: To restrict the vertices to those
+    that only lie on a mesh
+    
+    """
+    
+    #1) Build a KDTree of the mesh
+    curr_mesh_tree = KDTree(mesh.vertices)
+    
+    #2) Query the vertices against the mesh
+    dist,closest_nodes = curr_mesh_tree.query(vertices)
+    match_verts = vertices[dist==0]
+    
+    return match_verts
+    
+
         

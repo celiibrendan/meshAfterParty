@@ -150,7 +150,23 @@ def get_matching_vertices(possible_vertices,ignore_diagonal=True,
         return np.unique(np.sort(result,axis=1),axis=0)
     else:
         return result
-    
+
+def number_matching_vertices_between_lists(arr1,arr2,verbose=False):
+    stacked_vertices = np.vstack([np.unique(arr1,axis=0),np.unique(arr2,axis=0)])
+    stacked_vertices_unique = np.unique(stacked_vertices,axis=0)
+    n_different = len(stacked_vertices) - len(stacked_vertices_unique)
+    return n_different
+
+def test_matching_vertices_in_lists(arr1,arr2,verbose=False):
+    n_different = number_matching_vertices_between_lists(arr1,arr2)
+    if verbose:
+        print(f"Number of matching vertices = {n_different}")
+    if n_different > 0:
+        return True
+    elif n_different == 0:
+        return False
+    else:
+        raise Exception("More vertices in unique list")
 
 """
 How can find pairwise distance:
