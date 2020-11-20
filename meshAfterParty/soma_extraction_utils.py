@@ -763,6 +763,9 @@ def extract_soma_center(segment_id,
 
         n_failed_inner_soma_loops = 0
         for j, largest_mesh_inner in enumerate(list_of_largest_mesh_inner):
+            to_add_list = []
+            to_add_list_sdf = []
+            
             print(f"----- working on mesh after poisson #{j}: {largest_mesh_inner}")
 
             largest_mesh_path_inner = str(poisson_file_obj.stem) + "_largest_inner.off"
@@ -774,81 +777,92 @@ def extract_soma_center(segment_id,
                                 mesh_filename=largest_mesh_path_inner,
                                  return_mesh=True,
                                  delete_temp_files=False)
-
-            print(f"done exporting decimated mesh: {largest_mesh_path_inner}")
-
-            faces = np.array(largest_mesh_path_inner_decimated.faces)
-            verts = np.array(largest_mesh_path_inner_decimated.vertices)
-
-            segment_id_new = int(str(segment_id) + f"{i}{j}")
-            #print(f"Before the classifier the pymeshfix_clean = {pymeshfix_clean}")
-            verts_labels, faces_labels, soma_value,classifier = wcda.extract_branches_whole_neuron(
-                                    import_Off_Flag=False,
-                                    segment_id=segment_id_new,
-                                    vertices=verts,
-                                     triangles=faces,
-                                    pymeshfix_Flag=False,
-                                     import_CGAL_Flag=False,
-                                     return_Only_Labels=True,
-                                     clusters=3,
-                                     smoothness=0.2,
-                                    soma_only=True,
-                                    return_classifier = True
-                                    )
-            print(f"soma_sdf_value = {soma_value}")
-
-            total_classifier_list.append(classifier)
-            #total_poisson_list.append(largest_mesh_path_inner_decimated)
-
-            # Save all of the portions that resemble a soma
-            median_values = np.array([v["median"] for k,v in classifier.sdf_final_dict.items()])
-            segmentation = np.array([k for k,v in classifier.sdf_final_dict.items()])
-
-            #order the compartments by greatest to smallest
-            sorted_medians = np.flip(np.argsort(median_values))
-            print(f"segmentation[sorted_medians],median_values[sorted_medians] = {(segmentation[sorted_medians],median_values[sorted_medians])}")
-            print(f"Sizes = {[classifier.sdf_final_dict[g]['n_faces'] for g in segmentation[sorted_medians]]}")
-            print(f"soma_size_threshold = {soma_size_threshold}")
-            print(f"soma_size_threshold_max={soma_size_threshold_max}")
-
-            valid_soma_segments_width = [g for g,h in zip(segmentation[sorted_medians],median_values[sorted_medians]) if ((h > soma_width_threshold)
-                                                                and (classifier.sdf_final_dict[g]["n_faces"] > soma_size_threshold)
-                                                                and (classifier.sdf_final_dict[g]["n_faces"] < soma_size_threshold_max))]
-            valid_soma_segments_sdf = [h for g,h in zip(segmentation[sorted_medians],median_values[sorted_medians]) if ((h > soma_width_threshold)
-                                                                and (classifier.sdf_final_dict[g]["n_faces"] > soma_size_threshold)
-                                                                and (classifier.sdf_final_dict[g]["n_faces"] < soma_size_threshold_max))]
-
-            print("valid_soma_segments_width")
-            to_add_list = []
-            to_add_list_sdf = []
-            if len(valid_soma_segments_width) > 0:
-                print(f"      ------ Found {len(valid_soma_segments_width)} viable somas: {valid_soma_segments_width}")
-                somas_found_in_big_loop = True
-                #get the meshes only if signfiicant length
-                labels_list = classifier.labels_list
-
-                for v,sdf in zip(valid_soma_segments_width,valid_soma_segments_sdf):
-                    submesh_face_list = np.where(classifier.labels_list == v)[0]
-                    soma_mesh = largest_mesh_path_inner_decimated.submesh([submesh_face_list],append=True)
-
-                    # ---------- No longer doing the extra checks in here --------- #
-
-
-                    curr_side_len_check = side_length_check(soma_mesh,side_length_ratio_threshold)
-                    curr_volume_check = soma_volume_check(soma_mesh,volume_mulitplier)
-                    if curr_side_len_check and curr_volume_check:
-                        to_add_list.append(soma_mesh)
-                        to_add_list_sdf.append(sdf)
-
-                    else:
-                        print(f"--->This soma mesh was not added because it did not pass the sphere validation:\n "
-                             f"soma_mesh = {soma_mesh}, curr_side_len_check = {curr_side_len_check}, curr_volume_check = {curr_volume_check}")
-                        continue
-
-                n_failed_inner_soma_loops = 0
-
-            else:
+            
+            dec_splits = tu.split_significant_pieces(largest_mesh_path_inner_decimated,significance_threshold=15)
+            print(f"\n-------Splits after inner decimation len = {len(dec_splits)}--------\n")
+            
+            if len(dec_splits) == 0:
+                print("There were no signifcant splits after inner decimation")
                 n_failed_inner_soma_loops += 1
+            else:
+                print(f"done exporting decimated mesh: {largest_mesh_path_inner}")
+
+                largest_mesh_path_inner_decimated_clean = dec_splits[0]
+
+                faces = np.array(largest_mesh_path_inner_decimated_clean.faces)
+                verts = np.array(largest_mesh_path_inner_decimated_clean.vertices)
+
+                # may need to do some processing
+
+
+                segment_id_new = int(str(segment_id) + f"{i}{j}")
+                #print(f"Before the classifier the pymeshfix_clean = {pymeshfix_clean}")
+                verts_labels, faces_labels, soma_value,classifier = wcda.extract_branches_whole_neuron(
+                                        import_Off_Flag=False,
+                                        segment_id=segment_id_new,
+                                        vertices=verts,
+                                         triangles=faces,
+                                        pymeshfix_Flag=False,
+                                         import_CGAL_Flag=False,
+                                         return_Only_Labels=True,
+                                         clusters=3,
+                                         smoothness=0.2,
+                                        soma_only=True,
+                                        return_classifier = True
+                                        )
+                print(f"soma_sdf_value = {soma_value}")
+
+                total_classifier_list.append(classifier)
+                #total_poisson_list.append(largest_mesh_path_inner_decimated)
+
+                # Save all of the portions that resemble a soma
+                median_values = np.array([v["median"] for k,v in classifier.sdf_final_dict.items()])
+                segmentation = np.array([k for k,v in classifier.sdf_final_dict.items()])
+
+                #order the compartments by greatest to smallest
+                sorted_medians = np.flip(np.argsort(median_values))
+                print(f"segmentation[sorted_medians],median_values[sorted_medians] = {(segmentation[sorted_medians],median_values[sorted_medians])}")
+                print(f"Sizes = {[classifier.sdf_final_dict[g]['n_faces'] for g in segmentation[sorted_medians]]}")
+                print(f"soma_size_threshold = {soma_size_threshold}")
+                print(f"soma_size_threshold_max={soma_size_threshold_max}")
+
+                valid_soma_segments_width = [g for g,h in zip(segmentation[sorted_medians],median_values[sorted_medians]) if ((h > soma_width_threshold)
+                                                                    and (classifier.sdf_final_dict[g]["n_faces"] > soma_size_threshold)
+                                                                    and (classifier.sdf_final_dict[g]["n_faces"] < soma_size_threshold_max))]
+                valid_soma_segments_sdf = [h for g,h in zip(segmentation[sorted_medians],median_values[sorted_medians]) if ((h > soma_width_threshold)
+                                                                    and (classifier.sdf_final_dict[g]["n_faces"] > soma_size_threshold)
+                                                                    and (classifier.sdf_final_dict[g]["n_faces"] < soma_size_threshold_max))]
+
+                print("valid_soma_segments_width")
+
+                if len(valid_soma_segments_width) > 0:
+                    print(f"      ------ Found {len(valid_soma_segments_width)} viable somas: {valid_soma_segments_width}")
+                    somas_found_in_big_loop = True
+                    #get the meshes only if signfiicant length
+                    labels_list = classifier.labels_list
+
+                    for v,sdf in zip(valid_soma_segments_width,valid_soma_segments_sdf):
+                        submesh_face_list = np.where(classifier.labels_list == v)[0]
+                        soma_mesh = largest_mesh_path_inner_decimated.submesh([submesh_face_list],append=True)
+
+                        # ---------- No longer doing the extra checks in here --------- #
+
+
+                        curr_side_len_check = side_length_check(soma_mesh,side_length_ratio_threshold)
+                        curr_volume_check = soma_volume_check(soma_mesh,volume_mulitplier)
+                        if curr_side_len_check and curr_volume_check:
+                            to_add_list.append(soma_mesh)
+                            to_add_list_sdf.append(sdf)
+
+                        else:
+                            print(f"--->This soma mesh was not added because it did not pass the sphere validation:\n "
+                                 f"soma_mesh = {soma_mesh}, curr_side_len_check = {curr_side_len_check}, curr_volume_check = {curr_volume_check}")
+                            continue
+
+                    n_failed_inner_soma_loops = 0
+
+                else:
+                    n_failed_inner_soma_loops += 1
 
             total_soma_list_sdf += to_add_list_sdf
             total_soma_list += to_add_list

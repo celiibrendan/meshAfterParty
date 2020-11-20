@@ -222,6 +222,7 @@ class WholeNeuronClassifier(object):
 #         with open(new_mesh_file_path_and_name,'a') as fd:
 #             fd.write("\n")
         
+    
         if import_CGAL_Flag == False:
         
             if self.file_name != "":

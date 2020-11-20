@@ -2014,7 +2014,10 @@ def convert_o3d_to_trimesh(mesh):
         new_mesh = mesh
     return new_mesh
     
-
+def mesh_volume_o3d(mesh):
+    mesh_o3d = convert_trimesh_to_o3d(mesh)
+    return mesh_o3d.get_volume()
+    
 def is_manifold(mesh):
     mesh_o3d = convert_trimesh_to_o3d(mesh)  
     return mesh_o3d.is_vertex_manifold()
@@ -2115,4 +2118,39 @@ def filter_vertices_by_mesh(mesh,vertices):
     return match_verts
     
 
-        
+
+import time
+def mesh_volume(mesh,watertight_method="fill_holes",
+                return_closed_mesh=False,
+               verbose=True):
+    """
+    Purpose: To try and compute the volume of spines 
+    with an optional argumet to try and close the mesh beforehand
+    """
+    start_time = time.time()
+    if watertight_method is None:
+        closed_mesh = mesh
+    else:
+        try: 
+            if watertight_method == "poisson":
+                closed_mesh = poisson_surface_reconstruction(mesh)
+            elif watertight_method == "fill_holes":
+                try:
+                    closed_mesh = fill_holes(mesh)
+                except:
+                    if verbose:
+                        print("Filling holes did not work so using poisson reconstruction")
+                    closed_mesh = poisson_surface_reconstruction(mesh)
+            else:
+                raise Exception(f"The watertight method ({watertight_method}) is not one of implemented ones")
+        except:
+            print(f"The watertight method {watertight_method} could not run so not closing mesh")
+            closed_mesh = mesh
+            
+    if verbose:
+        print(f"Total time for mesh closing = {time.time() - start_time}")
+    
+    if return_closed_mesh:
+        return closed_mesh.volume,closed_mesh
+    else:
+        return closed_mesh.volume

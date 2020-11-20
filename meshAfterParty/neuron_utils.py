@@ -2142,4 +2142,35 @@ def error_limb_indexes(neuron_obj):
     return np.where(np.array([len(limb.all_concept_network_data) for limb in neuron_obj])>1)[0]
 
 
+# ---- 11/20 functions that will help compute statistics of the neuron object -----------
+def n_error_limbs(neuron_obj):
+    return len(error_limb_indexes(neuron_obj))
+
+def n_somas(neuron_obj):
+    return len(neuron_obj.get_soma_node_names())
+
+def n_limbs(neuron_obj):
+    return len(neuron_obj.get_limb_node_names())
+
+def n_branches(neuron_obj):
+    n_branches_per_limb = [len(ex_limb.get_branch_names()) for ex_limb in neuron_obj]
+    return np.sum(n_branches_per_limb)
+
+def n_spines(neuron_obj):
+    return len(neuron_obj.spines)
+
+def skeletal_length(neuron_obj):
+    sk_len_per_limb = [sk.calculate_skeleton_distance(limb.skeleton) for limb in recovered_neuron]
+    return np.sum(sk_len_per_limb)
+
+def spine_density(neuron_obj):
+    skeletal_length = skeletal_length()
+    if skeletal_length > 0:
+        spine_density = n_spines/skeletal_length
+    else:
+        spine_density = 0
+    
+
+
+
 import neuron #package where can use the Branches class to help do branch skeleton analysis

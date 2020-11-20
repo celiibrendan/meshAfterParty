@@ -2381,4 +2381,30 @@ class Neuron:
                             scatter_size=node_size,
                             show_at_end=show_at_end,
                             append_figure=append_figure,**kwargs)
-        
+    
+    # ---- 11/20 functions that will help compute statistics of the neuron object ----------
+    
+    @property
+    def n_error_limbs(self):
+        return nru.n_error_limbs(self)
+    @property
+    def n_somas(self):
+        return nru.n_somas(self)
+    
+    @property
+    def n_limbs(self):
+        return nru.n_limbs(self)
+    
+    @property
+    def n_limbs(self):
+        return nru.n_limbs(self)
+    
+    @property
+    def n_branches(self):
+        return nru.n_branches(self)
+    @property
+    def n_spines(self):
+        return nru.n_spines(self)
+    @property
+    def skeletal_length(self):
+        return nru.skeletal_length(self)
