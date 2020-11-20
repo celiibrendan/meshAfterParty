@@ -2152,25 +2152,122 @@ def n_somas(neuron_obj):
 def n_limbs(neuron_obj):
     return len(neuron_obj.get_limb_node_names())
 
+def n_branches_per_limb(neuron_obj):
+    return [len(ex_limb.get_branch_names()) for ex_limb in neuron_obj]
+
 def n_branches(neuron_obj):
-    n_branches_per_limb = [len(ex_limb.get_branch_names()) for ex_limb in neuron_obj]
-    return np.sum(n_branches_per_limb)
+    return np.sum(neuron_obj.n_branches_per_limb)
+
+def skeleton_length_per_limb(neuron_obj):
+    return [sk.calculate_skeleton_distance(limb.skeleton) for limb in neuron_obj]
+
+def skeletal_length(neuron_obj):
+    return np.sum(neuron_obj.skeleton_length_per_limb)
+
+
+def max_limb_n_branches(neuron_obj):
+    return np.max(neuron_obj.n_branches_per_limb)
+
+def max_limb_skeletal_length(neuron_obj):
+    return np.max(neuron_obj.skeleton_length_per_limb)
+
+def all_skeletal_lengths(neuron_obj):
+    all_skeletal_lengths = []
+    for curr_limb in neuron_obj:
+        for curr_branch in curr_limb:
+            curr_branch_sk_len = sk.calculate_skeleton_distance(curr_branch.skeleton)
+            all_skeletal_lengths.append(curr_branch_sk_len)
+    return np.array(all_skeletal_lengths)
+
+def median_branch_length(neuron_obj):
+    return np.round(np.median(all_skeletal_lengths(neuron_obj)),3)
+    
+
+# -- width data --
+def all_medain_mesh_center_widths(neuron_obj):
+    all_widths = []
+    for curr_limb in neuron_obj:
+        for curr_branch in curr_limb:
+            all_widths.append(curr_branch.width_new["median_mesh_center"])
+    return np.array(all_widths)
+
+def all_no_spine_median_mesh_center_widths(neuron_obj):
+    all_widths = []
+    for curr_limb in neuron_obj:
+        for curr_branch in curr_limb:
+            all_widths.append(curr_branch.width_new["no_spine_median_mesh_center"])
+    return np.array(all_widths)
+
+def width_median(neuron_obj):
+    return np.round(np.median(all_medain_mesh_center_widths(neuron_obj)),3)
+
+def width_no_spine_median(neuron_obj):
+    return np.round(np.median(all_no_spine_median_mesh_center_widths(neuron_obj)),3)
+
+def width_perc(neuron_obj,perc=90):
+    return np.round(np.percentile(all_medain_mesh_center_widths(neuron_obj),perc),3)
+
+def width_no_spine_perc(neuron_obj,perc=90):
+    return np.round(np.percentile(all_no_spine_median_mesh_center_widths(neuron_obj),perc),3)
+
+
+
+# -- spine data --
 
 def n_spines(neuron_obj):
     return len(neuron_obj.spines)
 
-def skeletal_length(neuron_obj):
-    sk_len_per_limb = [sk.calculate_skeleton_distance(limb.skeleton) for limb in recovered_neuron]
-    return np.sum(sk_len_per_limb)
-
 def spine_density(neuron_obj):
-    skeletal_length = skeletal_length()
+    skeletal_length = neuron_obj.skeletal_length
     if skeletal_length > 0:
-        spine_density = n_spines/skeletal_length
+        spine_density = neuron_obj.n_spines/skeletal_length
     else:
         spine_density = 0
-    
+    return spine_density
 
+def spines_per_branch(neuron_obj):
+    if neuron_obj.n_branches > 0:
+        spines_per_branch = neuron_obj.n_spines/neuron_obj.n_branches
+    else:
+        spines_per_branch = 0
+    return spines_per_branch
+    
+def n_spine_eligible_branches(neuron_obj):
+    n_spine_eligible_branches = 0
+    for curr_limb in neuron_obj:
+        for curr_branch in curr_limb:
+            if not curr_branch.spines is None:
+                n_spine_eligible_branches += 1
+    return n_spine_eligible_branches
+
+def spine_eligible_branch_lengths(neuron_obj):
+    spine_eligible_branch_lengths = []
+    for curr_limb in neuron_obj:
+        for curr_branch in curr_limb:
+            if not curr_branch.spines is None:
+                curr_branch_sk_len = sk.calculate_skeleton_distance(curr_branch.skeleton)
+                spine_eligible_branch_lengths.append(curr_branch_sk_len)
+    return spine_eligible_branch_lengths
+
+def skeletal_length_eligible(neuron_obj):
+    return np.round(np.sum(neuron_obj.spine_eligible_branch_lengths),3)
+
+def spine_density_eligible(neuron_obj):
+    #spine eligible density and per branch
+    if neuron_obj.skeletal_length_eligible > 0:
+        spine_density_eligible = neuron_obj.n_spines/neuron_obj.skeletal_length_eligible
+    else:
+        spine_density_eligible = 0
+    
+    return spine_density_eligible
+
+def spines_per_branch_eligible(neuron_obj):
+    if neuron_obj.n_branches > 0:
+        spines_per_branch_eligible = np.round(neuron_obj.n_spines/neuron_obj.n_spine_eligible_branches,3)
+    else:
+        spines_per_branch_eligible = 0
+    
+    return spines_per_branch_eligible
 
 
 import neuron #package where can use the Branches class to help do branch skeleton analysis

@@ -788,6 +788,7 @@ def extract_soma_center(segment_id,
                 print(f"done exporting decimated mesh: {largest_mesh_path_inner}")
 
                 largest_mesh_path_inner_decimated_clean = dec_splits[0]
+                print(f"largest_mesh_path_inner_decimated_clean = {largest_mesh_path_inner_decimated_clean}\n")
 
                 faces = np.array(largest_mesh_path_inner_decimated_clean.faces)
                 verts = np.array(largest_mesh_path_inner_decimated_clean.vertices)

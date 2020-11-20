@@ -2384,6 +2384,7 @@ class Neuron:
     
     # ---- 11/20 functions that will help compute statistics of the neuron object ----------
     
+    # -- skeleton and branch data ---
     @property
     def n_error_limbs(self):
         return nru.n_error_limbs(self)
@@ -2400,11 +2401,120 @@ class Neuron:
         return nru.n_limbs(self)
     
     @property
+    def n_branches_per_limb(self):
+        return nru.n_branches_per_limb(self)
+    
+    @property
     def n_branches(self):
         return nru.n_branches(self)
+    
     @property
-    def n_spines(self):
-        return nru.n_spines(self)
+    def skeleton_length_per_limb(self):
+        return nru.skeleton_length_per_limb(self)
+    
     @property
     def skeletal_length(self):
         return nru.skeletal_length(self)
+    
+    @property
+    def max_limb_skeletal_length(self):
+        return nru.max_limb_skeletal_length(self)
+    
+    @property 
+    def max_limb_n_branches(self):
+        return nru.max_limb_n_branches(self)
+    
+    @property
+    def median_branch_length(self):
+        return nru.median_branch_length(self)
+    
+
+    # -- width data --
+    @property
+    def width_median(self):
+        return nru.width_median(self)
+    @property
+    def width_no_spine_median(self):
+        return nru.width_no_spine_median(self)
+
+    @property
+    def width_90_perc(self):
+        return nru.width_perc(self,perc=90)
+    @property
+    def width_no_spine_90_perc(self):
+        return nru.width_no_spine_perc(self,perc=90)
+    
+
+    
+    # -- spine entries--
+    @property
+    def n_spines(self):
+        return nru.n_spines(self)
+
+    @property
+    def spine_density(self):
+        return nru.spine_density(self)
+    
+    @property
+    def spines_per_branch(self):
+        return nru.spines_per_branch(self)
+
+    @property
+    def n_spine_eligible_branches(self):
+        return nru.n_spine_eligible_branches(self)
+
+    @property
+    def spine_eligible_branch_lengths(self):
+        return nru.spine_eligible_branch_lengths(self)
+    @property
+    def skeletal_length_eligible(self):
+        return nru.skeletal_length_eligible(self)
+    
+    @property
+    def spine_density_eligible(self):
+        return nru.spine_density_eligible(self)
+
+    @property
+    def spines_per_branch_eligible(self):
+        return nru.spines_per_branch_eligible(self)
+    
+    
+    def neuron_stats(self):
+        stats_dict = dict(
+                        n_error_limbs=self.n_error_limbs,
+                        n_somas=self.n_somas,
+                        n_limbs=self.n_limbs,
+                        n_branches=self.n_branches,
+                        max_limb_n_branches=self.max_limb_n_branches,
+                       
+                        skeletal_length=self.skeletal_length,
+                        max_limb_skeletal_length=self.max_limb_skeletal_length,
+                        median_branch_length=self.median_branch_length,
+
+                        width_median=self.width_median, #median width from mesh center without spines removed
+                        width_no_spine_median=self.width_no_spine_median, #median width from mesh center with spines removed
+                        width_90_perc=self.width_90_perc, # 90th percentile for width without spines removed
+                        width_no_spine_90_perc=self.width_no_spine_90_perc,  # 90th percentile for width with spines removed
+
+                        n_spines=self.n_spines,
+
+                        spine_density=self.spine_density, # n_spines/ skeletal_length
+                        spines_per_branch=self.spines_per_branch,
+
+                        skeletal_length_eligible=self.skeletal_length_eligible, # the skeletal length for all branches searched for spines
+                        n_spine_eligible_branches=self.n_spine_eligible_branches,
+
+#                         total_spine_volume=total_spine_volume, # the sum of all spine volume
+#                         spine_volume_density=spine_volume_density, #total_spine_volume/skeletal_length
+#                         spine_volume_density_eligible=spine_volume_density_eligible, #total_spine_volume/skeletal_length_eligible
+#                         spine_volume_per_branch_eligible=spine_volume_per_branch_eligible, #total_spine_volume/n_spine_eligible_branche
+        
+        
+        
+        
+        
+        
+        )
+        
+        return stats_dict
+    
