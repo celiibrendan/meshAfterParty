@@ -586,14 +586,14 @@ def original_mesh_soma(
         
     return soma_meshes_new
     
-    
+import system_utils as su
 def extract_soma_center(segment_id,
                             current_mesh_verts,
                             current_mesh_faces,
 
                             outer_decimation_ratio= 0.25,
-                            large_mesh_threshold = 60000,
-                            large_mesh_threshold_inner = 40000,
+                            large_mesh_threshold = 20000,#60000,
+                            large_mesh_threshold_inner = 20000,
                             soma_width_threshold = 0.32,
                             soma_size_threshold = 15000,
                             inner_decimation_ratio = 0.25,
@@ -618,7 +618,9 @@ def extract_soma_center(segment_id,
                             check_holes_before_pymeshfix=False,
                             second_poisson=False,
                             segmentation_at_end=True,
-                            last_size_threshold = 1300,
+                            last_size_threshold = 2000,#1300,
+                        
+                            largest_hole_threshold = 17000
                             ):
 
     global_start_time = time.time()
@@ -653,9 +655,14 @@ def extract_soma_center(segment_id,
     Dec_inner = meshlab.Decimator(inner_decimation_ratio,temp_folder,overwrite=True)
     Poisson_obj = meshlab.Poisson(temp_folder,overwrite=True)
 
+
+    recov_orig_mesh = trimesh.Trimesh(vertices=current_mesh_verts,faces=current_mesh_faces)
+    recov_orig_mesh_no_interior = tu.remove_mesh_interior(recov_orig_mesh)
+
+
     #Step 1: Decimate the Mesh and then split into the seperate pieces
-    new_mesh,output_obj = Dec_outer(vertices=current_mesh_verts,
-             faces=current_mesh_faces,
+    new_mesh,output_obj = Dec_outer(vertices=recov_orig_mesh_no_interior.vertices,
+             faces=recov_orig_mesh_no_interior.faces,
              segment_id=segment_id,
              return_mesh=True,
              delete_temp_files=False)
@@ -951,7 +958,7 @@ def extract_soma_center(segment_id,
             try:
                 #print("About to find original mesh")
                 soma_mesh = original_mesh_soma(
-                                                mesh = new_mesh,
+                                                mesh = recov_orig_mesh_no_interior,
                                                 soma_meshes=[soma_mesh_poisson],
                                                 sig_th_initial_split=15)[0]
             except:
@@ -1003,6 +1010,9 @@ def extract_soma_center(segment_id,
                       f" poisson_max_distance = {poisson_max_distance}")
                     continue
 
+        if len(soma_mesh.faces) < 5:
+            print(f"--> soma had very few faces ({soma_mesh}) so continuing")
+            continue
 
         #do the boundary check:
         if not boundary_vertices_threshold is None:
@@ -1052,11 +1062,33 @@ def extract_soma_center(segment_id,
     #return total_soma_list, run_time
     #return total_soma_list_revised,run_time,total_soma_list_revised_sdf
 
+    """
+    Things we should ask about the segmentation:
+
+    Advantages: 
+    1) could help filter away negatives
+
+    Disadvantages:
+    1) Can actually cut up the soma and then filter away the soma (not what we want)
+    2) Could introduce a big hole (don't think can guard against this)
+    """
+
+
+    #filtered_soma_list_saved = copy.deepcopy(filtered_soma_list)
+
     if len(filtered_soma_list) > 0:
         filtered_soma_list_revised = []
         filtered_soma_list_sdf_revised = []
         for f_soma,f_soma_sdf in zip(filtered_soma_list,filtered_soma_list_sdf):
+
+            print("Skipping the segmentatio filter at end")
+            if not (len(f_soma.faces) >= last_size_threshold and f_soma_sdf >= soma_width_threshold):
+                print(f"Soma (size = {len(f_soma.faces)}, width={soma_width_threshold}) did not pass thresholds (size threshold={last_size_threshold}, width threshold = {soma_width_threshold}) ")
+                continue
+
+
             if segmentation_at_end:
+
 
                 if remove_inside_pieces:
                     print("removing mesh interior before segmentation")
@@ -1068,8 +1100,8 @@ def extract_soma_center(segment_id,
                     mesh = f_soma,
                     smoothness=0.5
                 )
-#                 print(f"meshes_split = {meshes_split}")
-#                 print(f"meshes_split_sdf = {meshes_split_sdf}")
+    #                 print(f"meshes_split = {meshes_split}")
+    #                 print(f"meshes_split_sdf = {meshes_split_sdf}")
 
                 #applying the soma width and the soma size threshold
                 above_width_threshold_mask = meshes_split_sdf>=soma_width_threshold
@@ -1079,26 +1111,46 @@ def extract_soma_center(segment_id,
                 above_width_threshold_idx = np.where(above_width_threshold_mask & above_size_threshold_mask)[0]
                 if len(above_width_threshold_idx) == 0:
                     print(f"No split meshes were above the width threshold ({soma_width_threshold}) and size threshold ({last_size_threshold}) so continuing")
-                    continue
+                    print(f"So just going with old somas")
 
-                meshes_split = np.array(meshes_split)
-                meshes_split_sdf = np.array(meshes_split_sdf)
+                    f_soma_final = f_soma
+                    f_soma_sdf_final = f_soma_sdf
 
-                meshes_split_filtered = meshes_split[above_width_threshold_idx]
-                meshes_split_sdf_filtered = meshes_split_sdf[above_width_threshold_idx]
 
-                soma_width_threshold
-                #way to choose the index of the top candidate
-                top_candidate = 0
-                filtered_soma_list_revised.append(meshes_split_filtered[top_candidate])
-                filtered_soma_list_sdf_revised.append(meshes_split_sdf_filtered[top_candidate])
+                else:
+                    meshes_split = np.array(meshes_split)
+                    meshes_split_sdf = np.array(meshes_split_sdf)
 
+                    meshes_split_filtered = meshes_split[above_width_threshold_idx]
+                    meshes_split_sdf_filtered = meshes_split_sdf[above_width_threshold_idx]
+
+                    soma_width_threshold
+                    #way to choose the index of the top candidate
+                    top_candidate = 0
+
+
+                    largest_hole_before_seg = tu.largest_hole_length(f_soma)
+                    largest_hole_after_seg = tu.largest_hole_length(meshes_split_filtered[top_candidate])
+
+                    print(f"Largest hole before segmentation = {largest_hole_before_seg}, after = {largest_hole_after_seg},"
+                          f"\nratio = {largest_hole_after_seg/largest_hole_before_seg}, difference = {largest_hole_after_seg - largest_hole_before_seg}")
+
+                    if largest_hole_after_seg < largest_hole_threshold:
+                        f_soma_final = meshes_split_filtered[top_candidate]
+                        f_soma_sdf_final = meshes_split_sdf_filtered[top_candidate]
+                    else:
+                        f_soma_final = f_soma
+                        f_soma_sdf_final = f_soma_sdf
 
             else:
-                print("Skipping the segmentatio filter at end")
-                if len(f_soma.faces) >= last_size_threshold and f_soma_sdf >= soma_width_threshold:
-                    filtered_soma_list_revised.append(f_soma)
-                    filtered_soma_list_sdf_revised.append(f_soma_sdf)
+                f_soma_final = f_soma
+                f_soma_sdf_final = f_soma_sdf
+
+
+            filtered_soma_list_revised.append(f_soma_final)
+            filtered_soma_list_sdf_revised.append(f_soma_sdf_final)
+
+
 
         filtered_soma_list = np.array(filtered_soma_list_revised)
         filtered_soma_list_sdf = np.array(filtered_soma_list_sdf_revised)

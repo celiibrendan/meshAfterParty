@@ -74,6 +74,10 @@ RUN qmake -qt=5 filter_ao.pro $QMAKE_FLAGS && make $MAKE_FLAGS
 #creating starting folder as the root
 WORKDIR /
 
+# ----- 11/19, python modules for allen institute querying -----------
+RUN pip3 install annotationframeworkclient 
+RUN pip3 install nglui 
+
 
 ADD ./jupyter/run_jupyter_unix.sh /scripts/
 ADD ./jupyter/jupyter_notebook_config.py /root/.jupyter/

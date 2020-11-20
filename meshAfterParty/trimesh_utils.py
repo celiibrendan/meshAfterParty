@@ -1287,7 +1287,9 @@ def find_border_faces(mesh):
     return border_faces
 
 
-def find_border_vertex_groups(mesh,return_coordinates=False):
+def find_border_vertex_groups(mesh,return_coordinates=False,
+                              return_cycles=False,
+                             return_sizes=False):
     """
     Will return all borders as faces and grouped together
     """
@@ -1315,7 +1317,13 @@ def find_border_vertex_groups(mesh,return_coordinates=False):
     g = nx.from_edgelist(
         np.column_stack((boundary_edges,
                          index_as_dict)))
-    border_edge_groups = list(nx.connected_components(g))
+    if return_cycles:
+        border_edge_groups = xu.find_all_cycles(g,time_limit=20)
+        if len(border_edge_groups)  == 0:
+            print("Finding the cycles did not work when doing the border vertex edge so using connected components")
+        border_edge_groups = list(nx.connected_components(g))
+    else:
+        border_edge_groups = list(nx.connected_components(g))
 
     """
     Psuedocode on converting list of edges to 
@@ -1323,12 +1331,19 @@ def find_border_vertex_groups(mesh,return_coordinates=False):
 
     """
     if return_coordinates:
-        return [mesh.vertices[list(k)] for k in border_edge_groups]
+        return_value = [mesh.vertices[list(k)] for k in border_edge_groups]
     else:
-        return [list(k) for k in border_edge_groups]
+        return_value = [list(k) for k in border_edge_groups]
+    
+    if return_sizes:
+        border_groups_len = np.array([len(k) for k in return_value])
+        return return_value,border_groups_len
+    else:
+        return return_value
+    
     
 
-def find_border_face_groups(mesh):
+def find_border_face_groups(mesh,return_sizes=False):
     """
     Will return all borders as faces and grouped together
     """
@@ -1364,7 +1379,38 @@ def find_border_face_groups(mesh):
 
     """
     border_face_groups = [vertices_to_faces(mesh,list(j),concatenate_unique_list=True) for j in border_edge_groups]
-    return border_face_groups
+    if return_sizes:
+        border_groups_len = np.array([len(k) for k in border_face_groups])
+        return border_face_groups,border_groups_len
+    else:
+        return border_face_groups
+    
+def border_euclidean_length(border):
+    """
+    The border does have to be specified as ordered coordinates
+    
+    """
+    ex_border_shift = np.roll(border,1,axis=0)
+    return np.sum(np.linalg.norm(border - ex_border_shift,axis=1))
+
+def largest_hole_length(mesh,euclidean_length=True):
+    """
+    Will find either the vertex count or the euclidean distance
+    of the largest hole in a mesh
+    
+    """
+    border_vert_groups,border_vert_sizes = find_border_vertex_groups(mesh,
+                                return_coordinates=True,
+                                 return_cycles=True,
+                                return_sizes=True,
+                                                                       )
+    if euclidean_length:
+        border_lengths = [border_euclidean_length(k) for k in border_vert_groups]
+        largest_border_idx = np.argmax(border_lengths)
+        largest_border_size = border_lengths[largest_border_idx]
+        return largest_border_size
+    else:
+        return np.max(border_vert_sizes)
 
 def expand_border_faces(mesh,n_iterations=10,return_submesh=True):
     curr_border_faces_groups = find_border_face_groups(mesh)
@@ -2016,7 +2062,7 @@ def mesh_interior(mesh,
     return mesh_remove_interior
 
 def remove_mesh_interior(mesh,
-                         size_threshold_to_remove=5000,
+                         size_threshold_to_remove=700,
                          verbose=True,
                          return_removed_pieces=False,
                          **kwargs):
@@ -2025,12 +2071,16 @@ def remove_mesh_interior(mesh,
     
     """
     curr_interior_mesh = mesh_interior(mesh,return_interior=True,**kwargs)
+    
+    
     sig_inside = tu.split_significant_pieces(curr_interior_mesh,significance_threshold=size_threshold_to_remove)
     if len(sig_inside) == 0:
         sig_meshes_no_threshold = split_significant_pieces(curr_interior_mesh,significance_threshold=1)
         meshes_sizes = np.array([len(k.faces) for k in sig_meshes_no_threshold])
         if verbose:
-            print(f"No significant ({size_threshold_to_remove}) interior meshes present, largest is {(np.max(meshes_sizes))}")
+            print(f"No significant ({size_threshold_to_remove}) interior meshes present")
+            if len(meshes_sizes)>0:
+                print(f"largest is {(np.max(meshes_sizes))}")
         return_mesh= mesh
     else:
         if verbose:

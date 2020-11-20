@@ -178,6 +178,7 @@ def get_seg_extracted_somas(seg_id):
     return [trimesh.Trimesh(vertices=v,faces=f) for v,f in zip(soma_vertices, soma_faces)]
 
 def get_soma_mesh_list(seg_id):
+    minnie,schema = configure_minnie_vm()
     key = dict(segment_id=seg_id)  
     soma_vertices, soma_faces,soma_run_time,soma_sdf = (minnie.BaylorSegmentCentroid() & key).fetch("soma_vertices","soma_faces","run_time","sdf")
     s_meshes = [trimesh.Trimesh(vertices=v,faces=f) for v,f in zip(soma_vertices, soma_faces)]

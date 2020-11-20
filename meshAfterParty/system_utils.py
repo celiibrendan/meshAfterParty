@@ -273,3 +273,32 @@ def copy_file_and_create_shell_script(original_file,num_copies,new_dir=False):
         f.write("\n")
     f.close()
     
+    
+import signal
+from contextlib import contextmanager
+
+class TimeoutException(Exception): pass
+
+@contextmanager
+def time_limit(seconds):
+    """
+    How to do call it
+    try:
+        with su.time_limit(10):
+            long_function_call()
+    except su.TimeoutException as e:
+        print("Timed out!")
+    
+    
+    """
+    def signal_handler(signum, frame):
+        raise TimeoutException("Timed out!")
+    signal.signal(signal.SIGALRM, signal_handler)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+
+
+
