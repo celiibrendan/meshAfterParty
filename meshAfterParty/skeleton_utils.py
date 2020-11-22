@@ -4147,8 +4147,22 @@ def create_soma_extending_branches(
             2) Of filtered vertices, finds one closest to soma border average
             
             """
-            close_nodes = xu.find_nodes_within_certain_distance_of_target_node(vertex_graph,target_node=soma_border_closest_nodes[0],cutoff_distance=10000)
-            filter_1_skeleton_points = np.array([sk_pt for sk_pt,sk_pt_node in zip(all_skeleton_points,sk_points_closest_nodes) if sk_pt_node in close_nodes])
+            curr_cut_distane = 10000
+            
+            for kk in range(0,5):
+                close_nodes = xu.find_nodes_within_certain_distance_of_target_node(vertex_graph,target_node=soma_border_closest_nodes[0],cutoff_distance=curr_cut_distane)
+                filter_1_skeleton_points = np.array([sk_pt for sk_pt,sk_pt_node in zip(all_skeleton_points,sk_points_closest_nodes) if sk_pt_node in close_nodes])
+                if len(filter_1_skeleton_points) >0:
+                    break
+                print(f"On iteration {kk} the filter points were empty with close_nodes len = {len(close_nodes)}, len(all_skeleton_points) = {len(all_skeleton_points)}, len(sk_points_closest_nodes) = {len(sk_points_closest_nodes)}")
+                
+                curr_cut_distane = curr_cut_distane*3
+            
+            if len(filter_1_skeleton_points) == 0:
+                raise Exception (f"Still No filter nodes with curr_cut_distane = {curr_cut_distane}")
+                    
+                
+            
 
             border_average_coordinate = np.mean(sbv,axis=0)
 

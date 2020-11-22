@@ -24,6 +24,7 @@ def load_mesh_no_processing(current_mesh_file):
         current_mesh_file += ".off"
     return trimesh.load_mesh(current_mesh_file,process=False)
 
+# --------- Dealing with h5 files
 import h5py
 def load_mesh_no_processing_h5(current_mesh_file):
     """
@@ -41,6 +42,54 @@ def load_mesh_no_processing_h5(current_mesh_file):
         
     return trimesh.Trimesh(vertices=vertices,faces=faces)
 
+def write_h5_file(mesh=None,vertices=None,faces=None,segment_id=12345,
+                  filepath="./",
+                 filename=None,
+                 return_file_path=True):
+    """
+    Purpose: Will write a h5 py file to store a mesh
+    
+    Pseudocode:
+    1) Extract the vertices and the faces
+    2) Create the complete file path with the write extension
+    3) Write the .h5 file
+    4) return the filepath 
+    """
+    
+    #1) Extract the vertices and the faces
+    if (vertices is None) or (faces is None):
+        if mesh is None:
+            raise Exception("mesh none and vertices or faces are none ")
+        vertices=mesh.vertices
+        faces=mesh.faces
+        
+    #2) Create the complete file path with the write extension
+    curr_path = Path(filepath)
+    
+    assert curr_path.exists()
+    
+    if filename is None:
+        filename = f"{segment_id}.h5"
+    
+    if str(filename)[-3:] != ".h5":
+        filename = str(filename) + ".h5"
+    
+    total_path = str((curr_path / Path(filename)).absolute())
+    
+    with h5py.File(total_path, 'w') as hf:
+        hf.create_dataset('segment_id', data=segment_id)
+        hf.create_dataset('vertices', data=vertices)
+        hf.create_dataset('faces', data=faces)
+        
+    if return_file_path:
+        return total_path
+    
+
+
+
+# --------- Done with h5 files ---------------- #
+
+
 def mesh_center_vertex_average(mesh_list):
     if not nu.is_array_like(mesh_list):
         mesh_list = [mesh_list]
@@ -51,6 +100,8 @@ def mesh_center_vertex_average(mesh_list):
     else:
         return mesh_list_centers
     
+    
+        
 def mesh_center_weighted_face_midpoints(mesh):
     """
     Purpose: calculate a mesh center point
@@ -2278,7 +2329,7 @@ def mesh_volume(mesh,watertight_method="trimesh",
                 zero_out_not_closed_meshes=True,
                 poisson_obj=None,
                 fill_holes_obj=None,
-               verbose=True):
+               verbose=False):
     """
     Purpose: To try and compute the volume of spines 
     with an optional argumet to try and close the mesh beforehand

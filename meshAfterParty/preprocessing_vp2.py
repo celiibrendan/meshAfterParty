@@ -70,8 +70,8 @@ def mesh_correspondence_first_pass(mesh,
             print(f"curr_branch_sk.shape = {curr_branch_sk.shape}")
             np.savez("saved_skeleton_branch.npz",curr_branch_sk=curr_branch_sk)
             tu.write_neuron_off(curr_limb_mesh,"curr_limb_mesh.off")
-            print(f"returned_data = {returned_data}")
-            raise Exception(f"The output from mesh_correspondence_adaptive_distance was nothing: curr_branch_face_correspondence,width={returned_data}")
+            #print(f"returned_data = {returned_data}")
+            raise Exception(f"The output from mesh_correspondence_adaptive_distance was nothing: curr_branch_face_correspondence")
 
 
         if len(curr_branch_face_correspondence) > 0:

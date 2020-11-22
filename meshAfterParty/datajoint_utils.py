@@ -126,19 +126,91 @@ adapter_decomp_obj = {
 }
 
 
+"""
+other adapters that are available for use:
+
+# instantiate for use as a datajoint type
+mesh = MeshAdapter('filepath@meshes')
+decimated_mesh = DecimatedMeshAdapter('filepath@decimated_meshes')
+
+# also store in one object for ease of use with virtual modules
+adapter_objects = {
+    'mesh': mesh,
+    'decimated_mesh': decimated_mesh
+}
+
+
+
+"""
+
+
 # --------- DONE Adapter that will be used for decomposition ----------- #
+
+# ---------- Soma Adapter ------------#
+import h5py
+import os
+
+from collections import namedtuple
+
+
+class SomasAdapter(dj.AttributeAdapter):
+    # Initialize the correct attribute type (allows for use with multiple stores)
+    def __init__(self, attribute_type):
+        self.attribute_type = attribute_type
+        super().__init__()
+
+    attribute_type = '' # this is how the attribute will be declared
+
+    TriangularMesh = namedtuple('TriangularMesh', ['segment_id', 'vertices', 'faces'])
+    
+    def put(self, filepath):
+        # save the filepath to the mesh
+        filepath = os.path.abspath(filepath)
+        assert os.path.exists(filepath)
+        return filepath
+
+    def get(self, filepath):
+        # access the h5 file and return a mesh
+        assert os.path.exists(filepath)
+
+        with h5py.File(filepath, 'r') as hf:
+            vertices = hf['vertices'][()].astype(np.float64)
+            faces = hf['faces'][()].reshape(-1, 3).astype(np.uint32)
+        
+        segment_id = os.path.splitext(os.path.basename(filepath))[0]
+
+        return self.TriangularMesh(
+            segment_id=int(segment_id),
+            vertices=vertices,
+            faces=faces
+        )
+    
+somas = SomasAdapter('filepath@somas')
+
+adapter_somas_obj = {
+    'somas':somas
+}
+
+
+
+# ----------- DONE Soma Adapter
 
 
 from minfig import adapter_objects
 def get_adapter_object():
     if "decomposition" not in adapter_objects.keys():
         adapter_objects.update(adapter_decomp_obj)
+    if "somas" not in adapter_objects.keys():
+        adapter_objects.update(adapter_somas_obj)
     return adapter_objects
 
 import datajoint as dj
 import minfig
 def get_decomposition_path():
     return minfig.minnie65_config.external_segmentation_path / Path("decomposition/")
+def get_somas_path():
+    return minfig.minnie65_config.external_segmentation_path / Path("somas/")
+
 def get_decimated_mesh_path_from_decomposition_path(filepath):
     filepath = Path(filepath)
     dec_filepath = filepath.parents[1] / Path(f"decimation_meshes/{filepath.stem}.h5")
@@ -163,15 +235,27 @@ def configure_minnie_vm():
     
     #confiugre the storage
     decomp_path = get_decomposition_path()
-    if not decomp_path.exists():
-        raise Exception("The decomposition path does not exist")
+    somas_path = get_somas_path()
+    
+    assert decomp_path.exists()
+    assert somas_path.exists()
+    
+#     if not decomp_path.exists():
+#         raise Exception("The decomposition path does not exist")
 
 
     stores_config = {'decomposition': {
                 'protocol': 'file',
                 'location': str(decomp_path),
                 'stage': str(decomp_path)
-            }}    
+            },
+            'somas': {
+                'protocol': 'file',
+                'location': str(somas_path),
+                'stage': str(somas_path)
+            }       
+                    
+                    }    
 
     if 'stores' not in dj.config:
         dj.config['stores'] = stores_config
@@ -182,19 +266,32 @@ def configure_minnie_vm():
     return minnie,schema
 
 import trimesh
-def get_decimated_mesh(seg_id,decimation_ratio=0.25):
+def get_decimated_mesh(seg_id,decimation_ratio=0.25,minnie=None):
+    if minnie is None:
+        minnie,_ = configure_minnie_vm()
     key = dict(segment_id=seg_id,decimation_ratio=decimation_ratio)
     new_mesh = (minnie.Decimation() & key).fetch1("mesh")
     current_mesh_verts,current_mesh_faces = new_mesh.vertices,new_mesh.faces
     return trimesh.Trimesh(vertices=current_mesh_verts,faces=current_mesh_faces)
 
-def get_seg_extracted_somas(seg_id):
+def get_seg_extracted_somas(seg_id,minnie=None):
+    if minnie is None:
+        minnie,_ = configure_minnie_vm()
     key = dict(segment_id=seg_id)  
     soma_vertices, soma_faces = (minnie.BaylorSegmentCentroid() & key).fetch("soma_vertices","soma_faces")
     return [trimesh.Trimesh(vertices=v,faces=f) for v,f in zip(soma_vertices, soma_faces)]
 
-def get_soma_mesh_list(seg_id):
-    minnie,schema = configure_minnie_vm()
+def get_seg_extracted_somas_external(seg_id,minnie=None):
+    if minnie is None:
+        minnie,_ = configure_minnie_vm()
+    key = dict(segment_id=seg_id)  
+    soma_meshes = (minnie.BaylorSegmentCentroidExternal() & key).fetch("mesh")
+    return [trimesh.Trimesh(vertices=v.vertices,faces=v.faces) for v in soma_meshes]
+
+
+def get_soma_mesh_list(seg_id,minnie=None):
+    if minnie is None:
+        minnie,_ = configure_minnie_vm()
     key = dict(segment_id=seg_id)  
     soma_vertices, soma_faces,soma_run_time,soma_sdf = (minnie.BaylorSegmentCentroid() & key).fetch("soma_vertices","soma_faces","run_time","sdf")
     s_meshes = [trimesh.Trimesh(vertices=v,faces=f) for v,f in zip(soma_vertices, soma_faces)]
@@ -202,6 +299,15 @@ def get_soma_mesh_list(seg_id):
     s_sdfs = np.array(soma_sdf)
     return [s_meshes,s_times,s_sdfs]
 
+def get_soma_mesh_list_external(seg_id,minnie=None):
+    if minnie is None:
+        minnie,_ = configure_minnie_vm()
+    key = dict(segment_id=seg_id)  
+    soma_meshes,soma_run_time,soma_sdf = (minnie.BaylorSegmentCentroidExternal() & key).fetch("mesh","run_time","sdf")
+    s_meshes = [trimesh.Trimesh(vertices=v.vertices,faces=v.faces) for v in soma_meshes]
+    s_times = np.array(soma_run_time)
+    s_sdfs = np.array(soma_sdf)
+    return [s_meshes,s_times,s_sdfs]
 
 def nucleus_id_to_seg_id(nucleus_id):
     """
@@ -216,8 +322,9 @@ def nucleus_id_to_seg_id(nucleus_id):
     return nucl_seg_id
     
 import trimesh
-def fetch_segment_id_mesh(seg_id,decimation_ratio=0.25):
-    minnie,schema = configure_minnie_vm()
+def fetch_segment_id_mesh(seg_id,decimation_ratio=0.25,minnie=None):
+    if minnie is None:
+        minnie,_ = configure_minnie_vm()
     key = dict(segment_id=seg_id,decimation_ratio=decimation_ratio)
     new_mesh = (minnie.Decimation() & key).fetch1("mesh")
     current_mesh_verts,current_mesh_faces = new_mesh.vertices,new_mesh.faces

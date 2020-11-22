@@ -9,6 +9,7 @@ import networkx as nx
 import system_utils as su
 import skeleton_utils as sk
 import time
+import trimesh
 
 
 def get_skeletal_distance_no_skipping(main_mesh,edges,
