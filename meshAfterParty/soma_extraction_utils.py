@@ -844,7 +844,7 @@ def extract_soma_center(segment_id,
 
                     for v,sdf in zip(valid_soma_segments_width,valid_soma_segments_sdf):
                         submesh_face_list = np.where(classifier.labels_list == v)[0]
-                        soma_mesh = largest_mesh_path_inner_decimated.submesh([submesh_face_list],append=True)
+                        soma_mesh = largest_mesh_path_inner_decimated_clean.submesh([submesh_face_list],append=True)
 
                         # ---------- No longer doing the extra checks in here --------- #
 

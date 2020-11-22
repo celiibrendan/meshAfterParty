@@ -274,18 +274,18 @@ def get_decimated_mesh(seg_id,decimation_ratio=0.25,minnie=None):
     current_mesh_verts,current_mesh_faces = new_mesh.vertices,new_mesh.faces
     return trimesh.Trimesh(vertices=current_mesh_verts,faces=current_mesh_faces)
 
+# def get_seg_extracted_somas(seg_id,minnie=None):
+#     if minnie is None:
+#         minnie,_ = configure_minnie_vm()
+#     key = dict(segment_id=seg_id)  
+#     soma_vertices, soma_faces = (minnie.BaylorSegmentCentroid() & key).fetch("soma_vertices","soma_faces")
+#     return [trimesh.Trimesh(vertices=v,faces=f) for v,f in zip(soma_vertices, soma_faces)]
+
 def get_seg_extracted_somas(seg_id,minnie=None):
     if minnie is None:
         minnie,_ = configure_minnie_vm()
     key = dict(segment_id=seg_id)  
-    soma_vertices, soma_faces = (minnie.BaylorSegmentCentroid() & key).fetch("soma_vertices","soma_faces")
-    return [trimesh.Trimesh(vertices=v,faces=f) for v,f in zip(soma_vertices, soma_faces)]
-
-def get_seg_extracted_somas_external(seg_id,minnie=None):
-    if minnie is None:
-        minnie,_ = configure_minnie_vm()
-    key = dict(segment_id=seg_id)  
-    soma_meshes = (minnie.BaylorSegmentCentroidExternal() & key).fetch("mesh")
+    soma_meshes = (minnie.BaylorSegmentCentroid() & key).fetch("mesh")
     return [trimesh.Trimesh(vertices=v.vertices,faces=v.faces) for v in soma_meshes]
 
 
@@ -299,11 +299,11 @@ def get_soma_mesh_list(seg_id,minnie=None):
     s_sdfs = np.array(soma_sdf)
     return [s_meshes,s_times,s_sdfs]
 
-def get_soma_mesh_list_external(seg_id,minnie=None):
+def get_soma_mesh_list(seg_id,minnie=None):
     if minnie is None:
         minnie,_ = configure_minnie_vm()
     key = dict(segment_id=seg_id)  
-    soma_meshes,soma_run_time,soma_sdf = (minnie.BaylorSegmentCentroidExternal() & key).fetch("mesh","run_time","sdf")
+    soma_meshes,soma_run_time,soma_sdf = (minnie.BaylorSegmentCentroid() & key).fetch("mesh","run_time","sdf")
     s_meshes = [trimesh.Trimesh(vertices=v.vertices,faces=v.faces) for v in soma_meshes]
     s_times = np.array(soma_run_time)
     s_sdfs = np.array(soma_sdf)
@@ -348,13 +348,16 @@ def fetch_nucleus_id_mesh(nucleus_id,verbose=False):
 
 
 import skeleton_utils as sk
-def plot_decimated_mesh_with_somas(seg_id):
+def plot_decimated_mesh_with_somas(seg_id,minnie=None):
     """
     To visualize a decimated mesh with the somas
     """
 #     multi_soma_seg_ids = np.unique(multi_soma_seg_ids)
 #     seg_id_idx = -2
 #     seg_id = multi_soma_seg_ids[seg_id_idx]
+
+    if minnie is None:
+        minnie,_ = configure_minnie_vm()
 
     dec_mesh = get_decimated_mesh(seg_id)
     curr_soma_meshes = get_seg_extracted_somas(seg_id)
