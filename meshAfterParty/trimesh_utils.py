@@ -15,12 +15,31 @@ from tqdm_utils import tqdm
 
 #loading a mesh safely without any processing to mess up the vertices/faces
 def load_mesh_no_processing(current_mesh_file):
+    """
+    will load a mesh from .off file format
+    """
     if type(current_mesh_file) == type(Path()):
         current_mesh_file = str(current_mesh_file.absolute())
     if current_mesh_file[-4:] != ".off":
         current_mesh_file += ".off"
     return trimesh.load_mesh(current_mesh_file,process=False)
 
+import h5py
+def load_mesh_no_processing_h5(current_mesh_file):
+    """
+    Will load a mesh from h5py file format
+    
+    """
+    if type(current_mesh_file) == type(Path()):
+        current_mesh_file = str(current_mesh_file.absolute())
+    if current_mesh_file[-3:] != ".h5":
+        current_mesh_file += ".h5"
+        
+    with h5py.File(current_mesh_file, 'r') as hf:
+        vertices = hf['vertices'][()].astype(np.float64)
+        faces = hf['faces'][()].reshape(-1, 3).astype(np.uint32)
+        
+    return trimesh.Trimesh(vertices=vertices,faces=faces)
 
 def mesh_center_vertex_average(mesh_list):
     if not nu.is_array_like(mesh_list):
@@ -153,6 +172,118 @@ def bbox_mesh_restriction(curr_mesh,bbox_upper_corners,
         return curr_mesh,np.arange(0,len(curr_mesh.faces))
     
 
+
+# -------------- 11/21 More bounding box functions ----- #
+def bounding_box_corners(mesh):
+    bbox_verts = mesh.bounding_box.vertices
+    return np.array([np.min(bbox_verts,axis=0),np.max(bbox_verts,axis=0)]).reshape(2,3)
+
+
+def check_meshes_outside_mesh_bbox(main_mesh,test_meshes,
+                                  return_indices=False):
+    return check_meshes_inside_mesh_bbox(main_mesh,test_meshes,
+                                  return_indices=return_indices,
+                                  return_inside=False)
+
+def check_meshes_inside_mesh_bbox(main_mesh,test_meshes,
+                                  return_indices=False,
+                                  return_inside=True):
+    """
+    Purpose: Will check to see if any of the vertices
+    of the test meshes are inside the bounding box of the main mesh
+    
+    Pseudocode: 
+    1) Get the bounding box corners of the main mesh
+    2) For each test mesh
+    - send the vertices to see if inside bounding box
+    - if any are then add indices to the running list
+    
+    3) Return either the meshes/indices of the inside/outside pieces
+    based on the parameters set
+    
+    """
+    #1) Get the bounding box corners of the main mesh
+    main_mesh_bbox_corners = bounding_box_corners(main_mesh)
+    
+    #2) Iterate through test meshes
+    inside_meshes_idx = []
+    for j,tm in enumerate(test_meshes):
+        inside_results = trimesh.bounds.contains(main_mesh_bbox_corners,tm.vertices.reshape(-1,3))
+        if np.any(inside_results):
+            inside_meshes_idx.append(j)
+    
+    #3) Set the return values
+    if not return_inside:
+        return_idx = np.setdiff1d(np.arange(len(test_meshes)),inside_meshes_idx)
+    else:
+        return_idx = np.array(inside_meshes_idx)
+    
+    if return_indices:
+        return return_idx
+    else:
+        return [k for i,k in enumerate(test_meshes) if i in return_idx]
+    
+import numpy_utils as nu
+import numpy as np
+def check_meshes_outside_multiple_mesh_bbox(main_meshes,test_meshes,
+                                  return_indices=False):
+    return check_meshes_inside_multiple_mesh_bbox(main_meshes,test_meshes,
+                                  return_indices=return_indices,
+                                  return_inside=False)
+
+def check_meshes_inside_multiple_mesh_bbox(main_meshes,test_meshes,
+                                  return_indices=False,
+                                  return_inside=True):
+    """
+    Purpose: will return all of the pieces inside or outside of 
+    multiple seperate main mesh bounding boxes
+    
+    Pseudocode: 
+    For each main mesh
+    1) Run the check_meshes_inside_mesh_bbox and collect the resulting indexes
+    2) Combine the results based on the following:
+    - If outside, then do intersetion of results (becuase need to be outside of all)
+    - if inside, then return union of results (because if inside at least one then should be considered inside)
+    3) Return either the meshes or indices
+    
+    Ex: 
+    import trimesh_utils as tu
+    tu = reload(tu)
+    tu.check_meshes_inside_multiple_mesh_bbox([soma_mesh,soma_mesh,soma_mesh],neuron_obj.non_soma_touching_meshes,
+                                 return_indices=False)
+    
+    """
+    if not nu.is_array_like(main_meshes):
+        raise Exception("Was expecting a list of main meshes")
+    
+    #1) Run the check_meshes_inside_mesh_bbox and collect the resulting indexes
+    
+    all_results = []
+    for main_mesh in main_meshes:
+        curr_results = check_meshes_inside_mesh_bbox(main_mesh,test_meshes,
+                                  return_indices=True,
+                                  return_inside=return_inside)
+        
+        all_results.append(curr_results)
+    
+    #2) Combine the results based on the following:
+    if return_inside:
+        joining_function = np.union1d
+    else:
+        joining_function = np.intersect1d
+    
+    final_indices = all_results[0]
+    
+    for i in range(1,len(all_results)):
+        final_indices = joining_function(final_indices,all_results[i])
+    
+    #3) Return either the meshes or indices
+    if return_indices:
+        return final_indices
+    else:
+        return [k for i,k in enumerate(test_meshes) if i in final_indices]
+
+    
     
 
 # main mesh cancellation
@@ -165,7 +296,10 @@ def split_significant_pieces(new_submesh,
     
     if type(new_submesh) != type(trimesh.Trimesh()):
         print("Inside split_significant_pieces and was passed empty mesh so retruning empty list")
-        return []
+        if return_insignificant_pieces:
+            return [],[]
+        else:
+            return []
     
     if print_flag:
         print("------Starting the mesh filter for significant outside pieces-------")
@@ -188,7 +322,10 @@ def split_significant_pieces(new_submesh,
         print(f"There were {len(significant_pieces)} pieces found after size threshold")
     if len(significant_pieces) <=0:
         print("THERE WERE NO MESH PIECES GREATER THAN THE significance_threshold")
-        return []
+        if return_insignificant_pieces:
+            return [],[]
+        else:
+            return []
     
     #arrange the significant pieces from largest to smallest
     x = [len(k.vertices) for k in significant_pieces]
@@ -501,6 +638,13 @@ def original_mesh_faces_map(original_mesh, submesh,
         else:
             submesh = combine_meshes(submesh)
     
+    #pre-check for emppty meshes
+    if len(submesh.vertices) == 0 or len(submesh.faces) == 0:
+        if matching:
+            return np.array([])
+        else:
+            return np.arange(0,len(original_mesh.faces))
+        
     
     
     #0) calculate the face midpoints of each of the faces for original and submesh
@@ -2122,8 +2266,18 @@ def filter_vertices_by_mesh(mesh,vertices):
 
 
 import time
-def mesh_volume(mesh,watertight_method="fill_holes",
+import copy
+def fill_holes_trimesh(mesh):
+    mesh_copy = copy.deepcopy(mesh)
+    trimesh.repair.fill_holes(mesh_copy)
+    return mesh_copy
+
+import system_utils as su
+def mesh_volume(mesh,watertight_method="trimesh",
                 return_closed_mesh=False,
+                zero_out_not_closed_meshes=True,
+                poisson_obj=None,
+                fill_holes_obj=None,
                verbose=True):
     """
     Purpose: To try and compute the volume of spines 
@@ -2134,25 +2288,79 @@ def mesh_volume(mesh,watertight_method="fill_holes",
         closed_mesh = mesh
     else:
         try: 
-            if watertight_method == "poisson":
-                closed_mesh = poisson_surface_reconstruction(mesh)
+            if watertight_method == "trimesh":
+                closed_mesh = fill_holes_trimesh(mesh)
+                if not closed_mesh.is_watertight:
+                    with su.suppress_stdout_stderr() if (not verbose) else su.dummy_context_mgr():
+                        print("Trimesh closing holes did not work so using meshlab fill holes")
+                        _, closed_mesh = mesh_volume(mesh=mesh,
+                                                     watertight_method="fill_holes",
+                                                     return_closed_mesh=True,
+                                                     poisson_obj=poisson_obj,
+                                                     fill_holes_obj=fill_holes_obj,
+                                                     verbose=verbose)
+            elif watertight_method == "poisson":
+                if poisson_obj is None:
+                    with su.suppress_stdout_stderr() if (not verbose) else su.dummy_context_mgr():
+                        closed_mesh = poisson_surface_reconstruction(mesh)
+                else:
+                    with su.suppress_stdout_stderr() if (not verbose) else su.dummy_context_mgr():
+                        print("Using premade object for poisson")
+                        closed_mesh,output_subprocess_obj = poisson_obj(   
+                                vertices=mesh.vertices,
+                                 faces=mesh.faces,
+                                 return_mesh=True,
+                                 delete_temp_files=True,
+                                )
+                    
             elif watertight_method == "fill_holes":
                 try:
-                    closed_mesh = fill_holes(mesh)
+                    if fill_holes_obj is None:
+                        with su.suppress_stdout_stderr() if (not verbose) else su.dummy_context_mgr():
+                            closed_mesh = fill_holes(mesh)
+                    else:
+                        with su.suppress_stdout_stderr() if (not verbose) else su.dummy_context_mgr():
+                            print("Using premade object for fill holes")
+                            closed_mesh,fillholes_file_obj = fill_holes_obj(   
+                                            vertices=mesh.vertices,
+                                             faces=mesh.faces,
+                                             return_mesh=True,
+                                             delete_temp_files=True,
+                                            )
                 except:
                     if verbose:
                         print("Filling holes did not work so using poisson reconstruction")
-                    closed_mesh = poisson_surface_reconstruction(mesh)
+                    if poisson_obj is None:
+                        with su.suppress_stdout_stderr() if (not verbose) else su.dummy_context_mgr():
+                            closed_mesh = poisson_surface_reconstruction(mesh)
+                    else:
+                        with su.suppress_stdout_stderr() if (not verbose) else su.dummy_context_mgr():
+                            print("Using premade object for poisson")
+                            closed_mesh,output_subprocess_obj = Poisson_obj(   
+                                    vertices=mesh.vertices,
+                                     faces=mesh.faces,
+                                     return_mesh=True,
+                                     delete_temp_files=True,
+                                    )
             else:
                 raise Exception(f"The watertight method ({watertight_method}) is not one of implemented ones")
         except:
-            print(f"The watertight method {watertight_method} could not run so not closing mesh")
+            raise Exception(f"The watertight method {watertight_method} could not run so not closing mesh")
             closed_mesh = mesh
             
     if verbose:
         print(f"Total time for mesh closing = {time.time() - start_time}")
+        
+    
+    if not closed_mesh.is_watertight or closed_mesh.volume < 0:
+        if zero_out_not_closed_meshes:
+            final_volume = 0
+        else:
+            raise Exception(f"mesh {mesh} was not watertight ({mesh.is_watertight}) or volume is 0, vol = {closed_mesh.volume}")
+    else:
+        final_volume = closed_mesh.volume
     
     if return_closed_mesh:
-        return closed_mesh.volume,closed_mesh
+        return final_volume,closed_mesh
     else:
-        return closed_mesh.volume
+        return final_volume

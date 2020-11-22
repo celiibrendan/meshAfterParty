@@ -134,7 +134,7 @@ def soma_volume_check(current_mesh,multiplier=8):
 import meshlab
 from copy import deepcopy
 import system_utils as su
-
+import numpy_utils as nu
 
 
 def filter_away_inside_soma_pieces(
@@ -146,10 +146,10 @@ def filter_away_inside_soma_pieces(
                             print_flag = False,
                             return_inside_pieces=False,
                             ):
-    if type(main_mesh_total) != list:
+    if not nu.is_array_like(main_mesh_total):
         main_mesh_total = [main_mesh_total]
     
-    if type(pieces_to_test) != list:
+    if not nu.is_array_like(pieces_to_test):
         pieces_to_test = [pieces_to_test]
         
     if len(pieces_to_test) == 0:

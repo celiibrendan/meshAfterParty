@@ -420,7 +420,7 @@ def visualize_concept_map(curr_concept_network,
         
         for n1,n2 in curr_concept_network.edges:
             #going to skip reciprocal connections because will do them later
-            if len(nu.matching_rows(reciprocal_edges,[n1,n2])) > 0:
+            if len(nu.matching_rows_old(reciprocal_edges,[n1,n2])) > 0:
                 continue
             difference = node_locations[n2] - node_locations[n1]
             directions.append(difference)
@@ -793,7 +793,7 @@ def visualize_neuron(
     scatter_size=0.3,
     main_scatter_color = "red",
     
-    soma_border_vertices = True,
+    soma_border_vertices = False,
     soma_border_vertices_color="random",
     
     ):
@@ -1351,6 +1351,7 @@ def visualize_neuron(
             #print(f"item_to_color_dict = {item_to_color_dict}")
                 
             curr_concept_network_subgraph = nx.subgraph(curr_concept_network,list(item_to_color_dict.keys()))
+            
             
             
             if print_time:

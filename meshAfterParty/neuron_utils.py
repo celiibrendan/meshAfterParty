@@ -1403,7 +1403,14 @@ def decompress_neuron(filepath,original_mesh,
 
         """
         if type(original_mesh) == type(Path()) or type(original_mesh) == str:
-            original_mesh = tu.load_mesh_no_processing(original_mesh)
+            if str(Path(original_mesh).absolute())[-3:] == '.h5':
+                original_mesh = tu.load_mesh_no_processing_h5(original_mesh)
+            else:
+                original_mesh = tu.load_mesh_no_processing(original_mesh)
+        elif type(original_mesh) == type(trimesh.Trimesh()):
+            print("Recieved trimesh as orignal mesh")
+        else:
+            raise Exception(f"Got an unknown type as the original mesh: {original_mesh}")
 
         if len(original_mesh.faces) != loaded_compression["original_mesh_n_faces"]:
             raise Exception(f"Number of faces in mesh used for compression ({loaded_compression['original_mesh_n_faces']})"
@@ -1566,8 +1573,9 @@ def decompress_neuron(filepath,original_mesh,
 
         for curr_limb_idx,new_limb_correspondence_indiv in new_limb_correspondence.items():
             limb_to_soma_concept_networks = pre.calculate_limb_concept_networks(new_limb_correspondence_indiv,
+                                                                                limb_network_stating_info[curr_limb_idx],
                                                                                 run_concept_network_checks=True,
-                                                                               **limb_network_stating_info[curr_limb_idx])   
+                                                                               )   
 
 
 
@@ -2141,8 +2149,35 @@ def compute_all_concept_network_data_from_limb(curr_limb,current_neuron_mesh,som
 def error_limb_indexes(neuron_obj):
     return np.where(np.array([len(limb.all_concept_network_data) for limb in neuron_obj])>1)[0]
 
+def same_soma_multi_touching_limbs(neuron_obj):
+    same_soma_multi_touch_limbs = []
+
+    for curr_limb_idx, curr_limb in enumerate(neuron_obj):
+        touching_somas = [k["starting_soma"] for k in curr_limb.all_concept_network_data]
+        soma_mapping = gu.invert_mapping(touching_somas)
+
+        for touch_idxs in soma_mapping.values():
+            if len(touch_idxs) > 1:
+                same_soma_multi_touch_limbs.append(curr_limb_idx)
+                break
+    return np.array(same_soma_multi_touch_limbs)
+                
+def multi_soma_touching_limbs(neuron_obj):
+    multi_soma_touch_limbs = []
+
+    for curr_limb_idx, curr_limb in enumerate(neuron_obj):
+        touching_somas = [k["starting_soma"] for k in curr_limb.all_concept_network_data]
+        soma_mapping = gu.invert_mapping(touching_somas)
+        if len(soma_mapping.keys()) > 1:
+            multi_soma_touch_limbs.append(curr_limb_idx)
+
+    return np.array(multi_soma_touch_limbs)
+
 
 # ---- 11/20 functions that will help compute statistics of the neuron object -----------
+
+
+
 def n_error_limbs(neuron_obj):
     return len(error_limb_indexes(neuron_obj))
 
@@ -2166,10 +2201,16 @@ def skeletal_length(neuron_obj):
 
 
 def max_limb_n_branches(neuron_obj):
-    return np.max(neuron_obj.n_branches_per_limb)
+    if len(neuron_obj.n_branches_per_limb)>0:
+        return np.max(neuron_obj.n_branches_per_limb)
+    else:
+        return None
 
 def max_limb_skeletal_length(neuron_obj):
-    return np.max(neuron_obj.skeleton_length_per_limb)
+    if len(neuron_obj.skeleton_length_per_limb) > 0:
+        return np.max(neuron_obj.skeleton_length_per_limb)
+    else:
+        return None
 
 def all_skeletal_lengths(neuron_obj):
     all_skeletal_lengths = []
@@ -2180,7 +2221,10 @@ def all_skeletal_lengths(neuron_obj):
     return np.array(all_skeletal_lengths)
 
 def median_branch_length(neuron_obj):
-    return np.round(np.median(all_skeletal_lengths(neuron_obj)),3)
+    if len(all_skeletal_lengths(neuron_obj))>0:
+        return np.round(np.median(all_skeletal_lengths(neuron_obj)),3)
+    else:
+        return None
     
 
 # -- width data --
@@ -2199,16 +2243,28 @@ def all_no_spine_median_mesh_center_widths(neuron_obj):
     return np.array(all_widths)
 
 def width_median(neuron_obj):
-    return np.round(np.median(all_medain_mesh_center_widths(neuron_obj)),3)
+    if len(all_medain_mesh_center_widths(neuron_obj)) > 0:
+        return np.round(np.median(all_medain_mesh_center_widths(neuron_obj)),3)
+    else:
+        return None
 
 def width_no_spine_median(neuron_obj):
-    return np.round(np.median(all_no_spine_median_mesh_center_widths(neuron_obj)),3)
+    if len(all_no_spine_median_mesh_center_widths(neuron_obj)) > 0:
+        return np.round(np.median(all_no_spine_median_mesh_center_widths(neuron_obj)),3)
+    else:
+        return None
 
 def width_perc(neuron_obj,perc=90):
-    return np.round(np.percentile(all_medain_mesh_center_widths(neuron_obj),perc),3)
+    if len(all_medain_mesh_center_widths(neuron_obj)) > 0:
+        return np.round(np.percentile(all_medain_mesh_center_widths(neuron_obj),perc),3)
+    else:
+        return None
 
 def width_no_spine_perc(neuron_obj,perc=90):
-    return np.round(np.percentile(all_no_spine_median_mesh_center_widths(neuron_obj),perc),3)
+    if len(all_no_spine_median_mesh_center_widths(neuron_obj)) > 0:
+        return np.round(np.percentile(all_no_spine_median_mesh_center_widths(neuron_obj),perc),3)
+    else:
+        return None
 
 
 
@@ -2269,5 +2325,70 @@ def spines_per_branch_eligible(neuron_obj):
     
     return spines_per_branch_eligible
 
+
+# ------- all the spine volume stuff -----------
+def total_spine_volume(neuron_obj):
+    if len(neuron_obj.spines) > 0:
+        spines_vol = np.array(neuron_obj.spines_volume)
+        return np.sum(spines_vol)
+        
+    else:
+        return 0
+
+def spine_volume_median(neuron_obj):
+    spines_vol = np.array(neuron_obj.spines_volume)
+    if len(neuron_obj.spines) > 0:
+        #spine_volume_median
+        valid_spine_vol = spines_vol[spines_vol>0]
+
+        if len(valid_spine_vol) > 0:
+            spine_volume_median = np.median(valid_spine_vol)
+        else:
+            spine_volume_median = 0
+        
+        return spine_volume_median
+        
+    else:
+        return 0
+    
+def spine_volume_density(neuron_obj):
+    if len(neuron_obj.spines) > 0:
+        if neuron_obj.skeletal_length_eligible > 0:
+            spine_volume_density_eligible = neuron_obj.total_spine_volume/neuron_obj.skeletal_length
+        else:
+            spine_volume_density_eligible = 0
+        
+        return spine_volume_density_eligible
+        
+    else:
+        return 0
+
+
+def spine_volume_density_eligible(neuron_obj):
+    if len(neuron_obj.spines) > 0:
+        if neuron_obj.skeletal_length > 0:
+            spine_volume_density = neuron_obj.total_spine_volume/neuron_obj.skeletal_length_eligible
+        else:
+            spine_volume_density = 0
+        
+        return spine_volume_density
+        
+    else:
+        return 0
+    
+def spine_volume_per_branch_eligible(neuron_obj):
+    if len(neuron_obj.spines) > 0:
+        if neuron_obj.n_spine_eligible_branches > 0:
+            spine_volume_per_branch_eligible = neuron_obj.total_spine_volume/neuron_obj.n_spine_eligible_branches
+        else:
+            spine_volume_per_branch_eligible = 0
+        
+        return spine_volume_per_branch_eligible
+        
+    else:
+        return 0
+    
+
+    
 
 import neuron #package where can use the Branches class to help do branch skeleton analysis

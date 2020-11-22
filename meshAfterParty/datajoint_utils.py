@@ -3,6 +3,13 @@ import datajoint as dj
 from tqdm.notebook import tqdm
 from pathlib import Path
 
+"""
+How to clear the external
+
+schema.external['decomposition'].delete(delete_external_files=False)
+
+"""
+
 attributes_need_resetting = ["external_segmentation_path",
                              "external_mesh_path",
                              "external_decimated_mesh_path",
@@ -87,18 +94,27 @@ class DecompositionAdapter(dj.AttributeAdapter):
         3) use the decompress method
         
         """
+        
         #1) Get the filepath of the decimated mesh
         
         filepath = Path(filepath)
-        dec_filepath = get_decimated_mesh_path_from_decomposition_path(filepath)
-        
-        #2) Get the filepath of the decimated mesh
         assert os.path.exists(filepath)
+        
+        """Old way where used the file path
+        dec_filepath = get_decimated_mesh_path_from_decomposition_path(filepath)
         assert os.path.exists(dec_filepath)
+        print(f"Attempting to get the following files:\ndecomp = {filepath}\ndec = {dec_filepath} ")
+        """
+        
+        
+        #2) get the decimated mesh 
+        segment_id = int(filepath.stem.split("_")[0])
+        dec_mesh = fetch_segment_id_mesh(segment_id)
+        
         
         #3) use the decompress method
         recovered_neuron = nru.decompress_neuron(filepath=filepath,
-                     original_mesh=dec_filepath)
+                     original_mesh=dec_mesh)
         
         return recovered_neuron
         
@@ -125,7 +141,7 @@ def get_decomposition_path():
     return minfig.minnie65_config.external_segmentation_path / Path("decomposition/")
 def get_decimated_mesh_path_from_decomposition_path(filepath):
     filepath = Path(filepath)
-    dec_filepath = filepath.parents[1] / Path(f"decimation_meshes/{filepath.stem}.off")
+    dec_filepath = filepath.parents[1] / Path(f"decimation_meshes/{filepath.stem}.h5")
     return dec_filepath
     
 def configure_minnie_vm():
@@ -182,8 +198,8 @@ def get_soma_mesh_list(seg_id):
     key = dict(segment_id=seg_id)  
     soma_vertices, soma_faces,soma_run_time,soma_sdf = (minnie.BaylorSegmentCentroid() & key).fetch("soma_vertices","soma_faces","run_time","sdf")
     s_meshes = [trimesh.Trimesh(vertices=v,faces=f) for v,f in zip(soma_vertices, soma_faces)]
-    s_times = list(soma_run_time)
-    s_sdfs = list(soma_sdf)
+    s_times = np.array(soma_run_time)
+    s_sdfs = np.array(soma_sdf)
     return [s_meshes,s_times,s_sdfs]
 
 

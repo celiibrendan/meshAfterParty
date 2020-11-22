@@ -466,7 +466,7 @@ class Poisson(Meshlab):
         
     """
     
-    def __init__(self, temp_folder, overwrite=False, **kwargs):
+    def __init__(self, temp_folder="./temp", overwrite=False, **kwargs):
         mls_script_path, folder_obj = self.preprocessing(
             temp_folder=temp_folder,
             overwrite=overwrite,

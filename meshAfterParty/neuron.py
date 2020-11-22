@@ -142,12 +142,14 @@ class Branch:
                 
                 
             self.spines = dc_check(skeleton,"spines")
+            self.spines_volume = dc_check(skeleton,"spines_volume")
             self.width_new = dc_check(skeleton,"width_new")
             if self.width_new is None:
                 self.width_new = dict()
             self.width_array = dc_check(skeleton,"width_array")
             if self.width_array is None:
                 self.width_array = dict()
+            
             return 
             
         self.skeleton=skeleton.reshape(-1,2,3)
@@ -166,6 +168,7 @@ class Branch:
             
         
         self.spines = None
+        self.spines_volume = None
         self.width_new = dict()
         self.width_array = dict()
         
@@ -183,7 +186,13 @@ class Branch:
     --> define function that makes edges equal if have same distance
     'width'
     """
-        
+    
+    def compute_spines_volume(self):
+        if self.spines is None:
+            self.spines_volume = None
+        else:
+            self.spines_volume = [tu.mesh_volume(sp,verbose=False) for sp in self.spines]
+    
     def __eq__(self,other):
         #print("inside equality function")
         """
@@ -290,6 +299,20 @@ class Limb:
             if not b.spines is None:
                 total_spines += b.spines
         return total_spines
+    
+    @property
+    def spines_volume(self):
+        self._index = -1
+        total_spines_volume = []
+        for b in self:
+            if not b.spines_volume is None:
+                total_spines_volume += b.spines_volume
+        return total_spines_volume
+    
+    def compute_spines_volume(self):
+        self._index = -1
+        for b in self:
+            b.compute_spines_volume()
     
     def get_branch_names(self,ordered=True,return_int=True):
         node_names = np.sort(self.concept_network.nodes())
@@ -1267,14 +1290,6 @@ class Neuron:
     
     """
     
-    @property
-    def spines(self):
-        self._index = -1
-        total_spines = []
-        for b in self:
-            if not b.spines is None:
-                total_spines += b.spines
-        return total_spines
     
     def get_total_n_branches(self):
         return np.sum([len(self.concept_network.nodes[li]["data"].concept_network.nodes()) for li in self.get_limb_node_names()])
@@ -1352,7 +1367,7 @@ class Neuron:
             print(f"Total time for spine/width compression = {time.time() - start_time}")
     
     def get_computed_attribute_data(self,
-                                    attributes = ["width_array","width_new","spines","labels"],
+                                    attributes = ["width_array","width_new","spines","spines_volume","labels"],
                                     one_dict=True,
                                     print_flag=False):
         start_time = time.time()
@@ -1655,10 +1670,17 @@ class Neuron:
                 Soma_obj = Soma(curr_soma,mesh_face_idx=curr_soma_face_idx,sdf=current_sdf,volume_ratio=curr_volume_ratio)
                 soma_name = f"S{j}"
                 #Add the soma object as data in 
-                xu.set_node_data(curr_network=self.concept_network,
-                                     node_name=soma_name,
-                                     curr_data=Soma_obj,
-                                     curr_data_label="data")
+                
+                # --- 11/21 adaption that accounts for if soma is not in the concept network
+                if soma_name in self.concept_network.nodes():
+                    xu.set_node_data(curr_network=self.concept_network,
+                                         node_name=soma_name,
+                                         curr_data=Soma_obj,
+                                         curr_data_label="data")
+                else:
+                    print(f"Did not have {soma_name} in concept network so adding it")
+                    self.concept_network.add_node(soma_name,data=Soma_obj)
+                    
             print(f"--- 3) Finshed generating soma objects and adding them to concept graph: {time.time() - neuron_start_time}")
             neuron_start_time =time.time()
 
@@ -1736,15 +1758,21 @@ class Neuron:
             else:
                 print(f"--- 6) SKIPPING Using the computed_attribute_dict to populate neuron attributes ---")
                 
-            if calculate_spines:
-                #check to see that spines don't already exist
-                print("7) Calculating the spines for the neuorn if do not already exist")
-                if not self.spines_already_computed():
-                    print("7a) calculating spines because didn't exist")
-                    self.calculate_spines()
-                    
-            for w in widths_to_calculate:
-                self.calculate_new_width(width_name=w)
+            # printing what concept network looks like 
+            print(f"self.n_limbs = {self.n_limbs}")
+            
+            if self.n_limbs > 0:    
+                if calculate_spines:
+                    #check to see that spines don't already exist
+                    print("7) Calculating the spines for the neuorn if do not already exist")
+                    if not self.spines_already_computed():
+                        print("7a) calculating spines because didn't exist")
+                        self.calculate_spines()
+
+                for w in widths_to_calculate:
+                    self.calculate_new_width(width_name=w)
+            else:
+                print("Skipping the width and spine calculation because no limbs")
                 
             
             
@@ -1951,6 +1979,19 @@ class Neuron:
     Want to give back the colors with the names of the things if did random
 
     """
+    def get_soma_meshes(self):
+        """
+        Gives the same output that running the soma identifier would
+        
+        Retunrs: a list containing the following elements
+        1) list of soma meshes (N)
+        2) scalar value of time it took to process (dummy 0)
+        3) list of soma sdf values (N)
+        
+        """
+        soma_meshes = [self.concept_network.nodes[k]["data"].mesh for k in sorted(self.get_soma_node_names())]
+        return soma_meshes
+    
     def get_somas(self):
         """
         Gives the same output that running the soma identifier would
@@ -2208,7 +2249,8 @@ class Neuron:
                         skeleton_endpoint_nullification=True,
                          soma_vertex_nullification = True,
                          border_percentage_threshold=0.3,
-                        check_spine_border_perc=0.4):
+                        check_spine_border_perc=0.4,
+                        calculate_spine_volume=True):
         
         print(f"query = {query}")
         print(f"smoothness_threshold = {smoothness_threshold}")
@@ -2325,11 +2367,40 @@ class Neuron:
                         if print_flag:
                             print(f"--> n_spines found = {len(spine_submesh_split_filtered)}")
                         curr_branch.spines = spine_submesh_split_filtered
+                        
                     else:
                         curr_branch.spines = None
                 else:
                     curr_branch.spines = None
-
+                
+                # will compute the spine volumes if asked for 
+                if calculate_spine_volume:
+                    curr_branch.compute_spines_volume()
+                    
+    @property
+    def spines(self):
+        self._index = -1
+        total_spines = []
+        for b in self:
+            if not b.spines is None:
+                total_spines += b.spines
+        return total_spines
+    
+    @property
+    def spines_volume(self):
+        self._index = -1
+        total_spines_volume = []
+        for b in self:
+            if not b.spines_volume is None:
+                total_spines_volume += b.spines_volume
+        return total_spines_volume
+    
+    def compute_spines_volume(self):
+        self._index = -1
+        for b in self:
+            b.compute_spines_volume()
+        
+    
     def plot_soma_limb_concept_network(self,
                                       soma_color="red",
                                       limb_color="aqua",
@@ -2388,6 +2459,13 @@ class Neuron:
     @property
     def n_error_limbs(self):
         return nru.n_error_limbs(self)
+    @property
+    def same_soma_multi_touching_limbs(self):
+        return nru.same_soma_multi_touching_limbs(self)
+    @property
+    def multi_soma_touching_limbs(self):
+        return nru.multi_soma_touching_limbs(self)
+    
     @property
     def n_somas(self):
         return nru.n_somas(self)
@@ -2478,10 +2556,32 @@ class Neuron:
     def spines_per_branch_eligible(self):
         return nru.spines_per_branch_eligible(self)
     
+    # ------ spine volume issues ----
+    @property
+    def total_spine_volume(self):
+        return nru.total_spine_volume(self)
+
+    @property
+    def spine_volume_median(self):
+        return nru.spine_volume_median(self)
+    
+    @property
+    def spine_volume_density(self):
+        return nru.spine_volume_density(self)
+    
+    @property
+    def spine_volume_density_eligible(self):
+        return nru.spine_volume_density_eligible(self)
+    
+    @property
+    def spine_volume_per_branch_eligible(self):
+        return nru.spine_volume_per_branch_eligible(self)
     
     def neuron_stats(self):
         stats_dict = dict(
                         n_error_limbs=self.n_error_limbs,
+                        n_same_soma_multi_touching_limbs=len(self.same_soma_multi_touching_limbs),
+                        n_multi_soma_touching_limbs = len(self.multi_soma_touching_limbs),
                         n_somas=self.n_somas,
                         n_limbs=self.n_limbs,
                         n_branches=self.n_branches,
@@ -2504,13 +2604,11 @@ class Neuron:
                         skeletal_length_eligible=self.skeletal_length_eligible, # the skeletal length for all branches searched for spines
                         n_spine_eligible_branches=self.n_spine_eligible_branches,
 
-#                         total_spine_volume=total_spine_volume, # the sum of all spine volume
-#                         spine_volume_density=spine_volume_density, #total_spine_volume/skeletal_length
-#                         spine_volume_density_eligible=spine_volume_density_eligible, #total_spine_volume/skeletal_length_eligible
-#                         spine_volume_per_branch_eligible=spine_volume_per_branch_eligible, #total_spine_volume/n_spine_eligible_branche
-        
-        
-        
+                        total_spine_volume=self.total_spine_volume, # the sum of all spine volume
+                        spine_volume_median = self.spine_volume_median,
+                        spine_volume_density=self.spine_volume_density, #total_spine_volume/skeletal_length
+                        spine_volume_density_eligible=self.spine_volume_density_eligible, #total_spine_volume/skeletal_length_eligible
+                        spine_volume_per_branch_eligible=self.spine_volume_per_branch_eligible, #total_spine_volume/n_spine_eligible_branche
         
         
         

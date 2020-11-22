@@ -2388,7 +2388,6 @@ def preprocess_neuron(
     non_soma_touching_meshes = [m for i,m in enumerate(split_meshes)
                      if i not in list(containing_mesh_indices.values())]
 
-
     #Adding the step that will filter away any pieces that are inside the soma
     if len(non_soma_touching_meshes) > 0 and len(soma_mesh_list) > 0:
         """
@@ -2673,14 +2672,21 @@ def preprocess_neuron(
     print("\n\n ----- Working on Stitching ----------")
 
     floating_stitching_time = time.time()
-
-    limb_correspondence_with_floating_pieces = attach_floating_pieces_to_limb_correspondence(
-            limb_correspondence,
-            floating_meshes=non_soma_touching_meshes,
-            floating_piece_face_threshold = 600,
-            max_stitch_distance=8000,
-            distance_to_move_point_threshold = 4000,
-            verbose = False)
+    
+    if len(limb_correspondence) > 0:
+        non_soma_touching_meshes_to_stitch = tu.check_meshes_outside_multiple_mesh_bbox(seperate_soma_meshes,non_soma_touching_meshes,
+                                 return_indices=False)
+        
+        limb_correspondence_with_floating_pieces = attach_floating_pieces_to_limb_correspondence(
+                limb_correspondence,
+                floating_meshes=non_soma_touching_meshes_to_stitch,
+                floating_piece_face_threshold = 600,
+                max_stitch_distance=8000,
+                distance_to_move_point_threshold = 4000,
+                verbose = False)
+    else:
+        limb_correspondence_with_floating_pieces = limb_correspondence
+        
 
 
 

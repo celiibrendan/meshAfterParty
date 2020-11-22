@@ -8,6 +8,8 @@ from tqdm_utils import tqdm
 import networkx as nx
 import system_utils as su
 import skeleton_utils as sk
+import time
+
 
 def get_skeletal_distance_no_skipping(main_mesh,edges,
                                  buffer=0.01,
@@ -50,7 +52,7 @@ def get_skeletal_distance_no_skipping(main_mesh,edges,
                 print(f"edge number {i}, {ex_edge}: has sum less than {sum_threshold} so skipping")
             continue
         
-        cob_edge = change_basis_matrix(edge_line)
+        cob_edge = sk.change_basis_matrix(edge_line)
         
         #get the limits of the example edge itself that should be cutoff
         edge_trans = (cob_edge@ex_edge.T)
@@ -290,7 +292,7 @@ def get_skeletal_distance_no_skipping(main_mesh,edges,
             branch_touching_number = []
             branch_correspondence_meshes = [main_mesh.submesh([k],only_watertight=False,append=True) for k in face_subtract_indices]
             for curr_central_piece in split_meshes:
-                touching_periphery_pieces =tu. mesh_pieces_connectivity(
+                touching_periphery_pieces =tu.mesh_pieces_connectivity(
                                             main_mesh = new_submesh,
                                             central_piece = curr_central_piece,
                                             periphery_pieces = branch_correspondence_meshes,
@@ -367,7 +369,7 @@ def get_skeletal_distance(main_mesh,edges,
                 print(f"edge number {i}, {ex_edge}: has sum less than {sum_threshold} so skipping")
             continue
         
-        cob_edge = change_basis_matrix(edge_line)
+        cob_edge = sk.change_basis_matrix(edge_line)
         
         #get the limits of the example edge itself that should be cutoff
         edge_trans = (cob_edge@ex_edge.T)
