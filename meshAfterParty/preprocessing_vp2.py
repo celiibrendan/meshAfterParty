@@ -51,27 +51,27 @@ def mesh_correspondence_first_pass(mesh,
     for j,curr_branch_sk in tqdm(enumerate(curr_limb_branches_sk_uneven)):
         local_correspondence[j] = dict()
 
-        try:
+        
+        returned_data = cu.mesh_correspondence_adaptive_distance(curr_branch_sk,
+                                      curr_limb_mesh,
+                                     skeleton_segment_width = 1000,
+                                     distance_by_mesh_center=distance_by_mesh_center)
+        if len(returned_data) == 0:
+            print("Got nothing from first pass so expanding the mesh correspondnece parameters ")
             returned_data = cu.mesh_correspondence_adaptive_distance(curr_branch_sk,
-                                          curr_limb_mesh,
-                                         skeleton_segment_width = 1000,
-                                         distance_by_mesh_center=distance_by_mesh_center)
-            if len(returned_data) == 0:
-                print("Got nothing from first pass so expanding the mesh correspondnece parameters ")
-                returned_data = cu.mesh_correspondence_adaptive_distance(curr_branch_sk,
-                                          curr_limb_mesh,
-                                         skeleton_segment_width = 1000,
-                                         distance_by_mesh_center=distance_by_mesh_center,
-                                        buffer=300,
-                                         distance_threshold=6000)
-            curr_branch_face_correspondence, width_from_skeleton = returned_data
-        except:
+                                      curr_limb_mesh,
+                                     skeleton_segment_width = 1000,
+                                     distance_by_mesh_center=distance_by_mesh_center,
+                                    buffer=300,
+                                     distance_threshold=6000)
+        curr_branch_face_correspondence, width_from_skeleton = returned_data
+        
             
-            print(f"curr_branch_sk.shape = {curr_branch_sk.shape}")
-            np.savez("saved_skeleton_branch.npz",curr_branch_sk=curr_branch_sk)
-            tu.write_neuron_off(curr_limb_mesh,"curr_limb_mesh.off")
-            #print(f"returned_data = {returned_data}")
-            raise Exception(f"The output from mesh_correspondence_adaptive_distance was nothing: curr_branch_face_correspondence")
+#             print(f"curr_branch_sk.shape = {curr_branch_sk.shape}")
+#             np.savez("saved_skeleton_branch.npz",curr_branch_sk=curr_branch_sk)
+#             tu.write_neuron_off(curr_limb_mesh,"curr_limb_mesh.off")
+#             #print(f"returned_data = {returned_data}")
+#             raise Exception(f"The output from mesh_correspondence_adaptive_distance was nothing: curr_branch_face_correspondence")
 
 
         if len(curr_branch_face_correspondence) > 0:

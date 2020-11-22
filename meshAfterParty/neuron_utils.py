@@ -1162,7 +1162,7 @@ def generate_limb_concept_networks_from_global_connectivity(
     
 
 # -----------------------  For the compression of a neuron object ---------------------- #
-def find_face_idx_and_check_recovery(original_mesh,submesh_list,print_flag=False):
+def find_face_idx_and_check_recovery(original_mesh,submesh_list,print_flag=False,check_recovery=True):
     debug = False
     if len(submesh_list) == 0:
         if print_flag:
@@ -1180,13 +1180,16 @@ def find_face_idx_and_check_recovery(original_mesh,submesh_list,print_flag=False
         if debug:
             print(f"For submesh {i}: sm.faces.shape = {sm.faces.shape}, sm_faces_idx.shape = {sm_faces_idx.shape}")
         
-    recovered_submesh_meshes = [original_mesh.submesh([sm_f],append=True,repair=False) for sm_f in submesh_list_face_idx]
-    #return recovered_submesh_meshes
-    for j,(orig_sm,rec_sm) in enumerate(zip(submesh_list,recovered_submesh_meshes)):
-        result = tu.compare_meshes_by_face_midpoints(orig_sm,rec_sm,print_flag=False)
-        if not result:
-            tu.compare_meshes_by_face_midpoints(orig_sm,rec_sm,print_flag=True)
-            raise Exception(f"Submesh {j} was not able to be accurately recovered")
+    if check_recovery:
+        recovered_submesh_meshes = [original_mesh.submesh([sm_f],append=True,repair=False) for sm_f in submesh_list_face_idx]
+        #return recovered_submesh_meshes
+
+    
+        for j,(orig_sm,rec_sm) in enumerate(zip(submesh_list,recovered_submesh_meshes)):
+            result = tu.compare_meshes_by_face_midpoints(orig_sm,rec_sm,print_flag=False)
+            if not result:
+                tu.compare_meshes_by_face_midpoints(orig_sm,rec_sm,print_flag=True)
+                raise Exception(f"Submesh {j} was not able to be accurately recovered")
     
     return submesh_list_face_idx
     
@@ -1585,6 +1588,7 @@ def decompress_neuron(filepath,original_mesh,
 
         recovered_preprocessed_data["limb_concept_networks"] = limb_concept_networks
         recovered_preprocessed_data["limb_labels"] = limb_labels
+        recovered_preprocessed_data["limb_network_stating_info"] = limb_network_stating_info
 
 
         """
