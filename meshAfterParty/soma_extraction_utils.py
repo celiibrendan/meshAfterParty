@@ -323,13 +323,15 @@ def subtract_soma(current_soma_list,main_mesh,
 
     #get the significant mesh pieces
     mesh_pieces = tu.split_significant_pieces(without_soma_mesh,significance_threshold=significance_threshold)
-    print(f"mesh pieces in subtact soma BEFORE the filtering inside pieces = {mesh_pieces}")
+    
+    # ----- 11/22 turns out weren't even using this part --------- #
+#     print(f"mesh pieces in subtact soma BEFORE the filtering inside pieces = {mesh_pieces}")
 
-    current_mesh_pieces = filter_away_inside_soma_pieces(current_soma,mesh_pieces,
-                                         significance_threshold=significance_threshold,
-                                                        n_sample_points=5,
-                                                        required_outside_percentage=0.9)
-    print(f"mesh pieces in subtact soma AFTER the filtering inside pieces = {mesh_pieces}")
+#     current_mesh_pieces = filter_away_inside_soma_pieces(current_soma,mesh_pieces,
+#                                          significance_threshold=significance_threshold,
+#                                                         n_sample_points=5,
+#                                                         required_outside_percentage=0.9)
+#     print(f"mesh pieces in subtact soma AFTER the filtering inside pieces = {mesh_pieces}")
     print(f"Total Time for soma mesh cancellation = {np.round(time.time() - start_time,3)}")
     
     

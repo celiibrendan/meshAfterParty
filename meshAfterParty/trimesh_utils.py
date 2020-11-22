@@ -2396,7 +2396,7 @@ def mesh_volume(mesh,watertight_method="trimesh",
             else:
                 raise Exception(f"The watertight method ({watertight_method}) is not one of implemented ones")
         except:
-            raise Exception(f"The watertight method {watertight_method} could not run so not closing mesh")
+            print(f"The watertight method {watertight_method} could not run so not closing mesh")
             closed_mesh = mesh
             
     if verbose:

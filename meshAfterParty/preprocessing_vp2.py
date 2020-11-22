@@ -2523,15 +2523,6 @@ def preprocess_neuron(
         print(f"Total time for Original_mesh_faces_map for somas= {time.time() - current_time}")
         current_time = time.time()
 
-        # 3) Find all significant mesh pieces
-        sig_non_soma_pieces,insignificant_limbs = tu.split_significant_pieces(non_soma_stacked_mesh,significance_threshold=limb_threshold,
-                                                         return_insignificant_pieces=True)
-
-        print(f"Total time for sig_non_soma_pieces= {time.time() - current_time}")
-        current_time = time.time()
-
-        soma_touching_mesh_data[z]["branch_meshes"] = sig_non_soma_pieces
-
         #4) Backtrack significant mesh pieces to orignal mesh and find connectivity of each to all the available somas
         # get all the seperate mesh faces
 
@@ -2542,6 +2533,56 @@ def preprocess_neuron(
         soma_face_components = soma_face_components[:len(soma_mesh_list)]
 
         soma_touching_mesh_data[z]["soma_meshes"] = seperate_soma_meshes
+        
+        
+        
+        
+        # 3) Find all significant mesh pieces
+        """
+        Pseudocode: 
+        a) Iterate through all of the somas and get the pieces that are connected
+        b) Concatenate all the results into one list and order
+        c) Filter away the mesh pieces that aren't touching and add to the floating pieces
+        
+        """
+        sig_non_soma_pieces,insignificant_limbs = tu.split_significant_pieces(non_soma_stacked_mesh,significance_threshold=limb_threshold,
+                                                         return_insignificant_pieces=True)
+        
+        # a) Filter these down to only those touching the somas
+        all_conneted_non_soma_pieces = []
+        for i,curr_soma in enumerate(seperate_soma_meshes):
+            (connected_mesh_pieces,
+             connected_mesh_pieces_vertices,
+             connected_mesh_pieces_vertices_idx) = tu.mesh_pieces_connectivity(
+                            main_mesh=current_mesh,
+                            central_piece=curr_soma,
+                            periphery_pieces = sig_non_soma_pieces,
+                            return_vertices = True,
+                            return_vertices_idx=True)
+            all_conneted_non_soma_pieces.append(connected_mesh_pieces)
+        
+        #b) Iterate through all of the somas and get the pieces that are connected
+        t_non_soma_pieces = np.concatenate(all_conneted_non_soma_pieces)
+        
+        #c) Filter away the mesh pieces that aren't touching and add to the floating pieces
+        sig_non_soma_pieces = [s_t for hh,s_t in enumerate(sig_non_soma_pieces) if hh in t_non_soma_pieces]
+        new_floating_pieces = [s_t for hh,s_t in enumerate(sig_non_soma_pieces) if hh not in t_non_soma_pieces]
+        
+        print(f"new_floating_pieces = {new_floating_pieces}")
+        
+        non_soma_touching_meshes += new_floating_pieces
+        
+        
+
+        print(f"Total time for sig_non_soma_pieces= {time.time() - current_time}")
+        current_time = time.time()
+
+        soma_touching_mesh_data[z]["branch_meshes"] = sig_non_soma_pieces
+        
+        
+        
+        
+        
 
         print(f"Total time for split= {time.time() - current_time}")
         current_time = time.time()
