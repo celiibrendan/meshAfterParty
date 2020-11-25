@@ -4,6 +4,24 @@ from tqdm.notebook import tqdm
 from pathlib import Path
 
 """
+Good link: https://medium.com/kubernetes-tutorials/learn-how-to-assign-pods-to-nodes-in-kubernetes-using-nodeselector-and-affinity-features-e62c437f3cf8
+
+Kubernetes help: 
+kubernetes.io/hostname=at-compute005
+
+To show labels: 
+kubectl get nodes --show-labels
+
+gil-desktop
+nikosk
+
+#how to delete the 
+for p in $(kubectl get pods | grep Terminating | awk '{print $1}'); do kubectl delete pod $p --grace-period=0 --force;done
+
+
+"""
+
+"""
 How to clear the external
 
 schema.external['decomposition'].delete(delete_external_files=False)
@@ -15,6 +33,17 @@ attributes_need_resetting = ["external_segmentation_path",
                              "external_decimated_mesh_path",
                              "external_skeleton_path",
                             ]
+
+def print_minnie65_config_paths(minfig):
+    """
+    Check the relevant paths of the minfig to make 
+    sure they are set to the right segmentation
+    
+    """
+    for at in attributes_need_resetting:
+        curr_at_path = getattr(minfig.minnie65_config,at)
+        print(f"Current path for {at} = {curr_at_path}")
+        
 
 def config_celii():
     dj.config['database.host'] = 'at-database.ad.bcm.edu'
@@ -53,17 +82,9 @@ def set_minnie65_config_segmentation(minfig,
         for at in attributes_need_resetting:
             curr_at_path = getattr(minfig.minnie65_config,at)
             print(f"Current path for {at} = {curr_at_path}")
-            
-def print_minnie65_config_paths(minfig):
-    """
-    Check the relevant paths of the minfig to make 
-    sure they are set to the right segmentation
-    
-    """
-    for at in attributes_need_resetting:
-        curr_at_path = getattr(minfig.minnie65_config,at)
-        print(f"Current path for {at} = {curr_at_path}")
-        
+
+
+
         
         
 # ------ Functions that will help decimate meshes ------------ #
@@ -352,6 +373,7 @@ def plot_decimated_mesh_with_somas(seg_id,minnie=None):
     """
     To visualize a decimated mesh with the somas
     """
+    print(f"Segment_id = {seg_id}")
 #     multi_soma_seg_ids = np.unique(multi_soma_seg_ids)
 #     seg_id_idx = -2
 #     seg_id = multi_soma_seg_ids[seg_id_idx]
@@ -360,6 +382,7 @@ def plot_decimated_mesh_with_somas(seg_id,minnie=None):
         minnie,_ = configure_minnie_vm()
 
     dec_mesh = get_decimated_mesh(seg_id)
+    print(f"vertices = {len(dec_mesh.vertices)}, faces= = {len(dec_mesh.faces)}")
     curr_soma_meshes = get_seg_extracted_somas(seg_id)
     curr_soma_mesh_list = get_soma_mesh_list(seg_id)
 
@@ -368,3 +391,5 @@ def plot_decimated_mesh_with_somas(seg_id,minnie=None):
                                main_mesh_faces=dec_mesh.faces,
                             other_meshes=curr_soma_meshes,
                               other_meshes_colors="red")
+    
+    

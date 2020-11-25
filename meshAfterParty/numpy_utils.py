@@ -305,3 +305,6 @@ def divide_into_label_indexes(mapping):
     unique_labels = np.sort(np.unique(mapping))
     final_list = [np.where(mapping==lab)[0] for lab in unique_labels]
     return final_list
+
+def turn_off_scientific_notation():
+    np.set_printoptions(suppress=True)
