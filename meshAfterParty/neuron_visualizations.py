@@ -170,19 +170,23 @@ def plot_limb_concept_network_2D(neuron_obj,
         new_edge_list = []
         for k in limb_obj.all_concept_network_data:
             curr_soma = k["starting_soma"]
-            if curr_soma == limb_obj.current_starting_soma:
-                new_edge_list.append((f'S{k["starting_soma"]}',k["starting_node"]))
+            curr_soma_group = k["soma_group_idx"]
+            sm_name = f'S{k["starting_soma"]}_{k["soma_group_idx"]}'
+            if curr_soma == limb_obj.current_starting_soma and curr_soma_group == limb_obj.current_soma_group_idx:
+                new_edge_list.append((sm_name,k["starting_node"]))
             else:
-                new_edge_list.append((k["starting_node"],f'S{k["starting_soma"]}'))
+                new_edge_list.append((k["starting_node"],sm_name))
         #new_edge_list = [(f'S{k["starting_soma"]}',k["starting_node"]) for k in limb_obj.all_concept_network_data]
         full_concept_network.add_edges_from(new_edge_list)
         #adding the new colors
         color_list += [soma_color]*len(new_edge_list)
     
+    #print(f"full_concept_network.nodes = {full_concept_network.nodes}")
     #5) Generate a hierarchical positioning for graph if position argument not specified
     if pos is None:
+        sm_name = f'S{limb_obj.current_starting_soma}_{limb_obj.current_soma_group_idx}'
         if plot_somas:
-            starting_hierarchical_node = f"S{limb_obj.current_starting_soma}"
+            starting_hierarchical_node = sm_name
         else:
             starting_hierarchical_node = {limb_obj.current_starting_node}
         #print(f"full_concept_network.nodes() = {full_concept_network.nodes()}")
@@ -676,7 +680,7 @@ def visualize_neuron(
     input_neuron,
     
     #the categories that will be visualized
-    visualize_type=["mesh"],
+    visualize_type=["mesh","skeleton"],
     limb_branch_dict=dict(L0=[]),
     #limb_branch_dict=dict(L0=[]),
     

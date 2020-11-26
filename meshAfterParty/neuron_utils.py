@@ -1819,11 +1819,18 @@ def branch_skeletal_distance_from_soma(curr_limb,
     if print_flag:
         print(f"touching_somas = {touching_somas}")
     
-    for sm_start in touching_somas:
+    for curr_st_data in curr_limb_copy.all_concept_network_data:
+        sm_start = curr_st_data["starting_soma"]
+        sm_group_start = curr_st_data["soma_group_idx"]
+        
+        if sm_start not in touching_somas:
+            continue
+            
+        
         if print_flag:
             print(f"--> Working on soma {sm_start}")
         try:
-            curr_limb_copy.set_concept_network_directional(sm_start)
+            curr_limb_copy.set_concept_network_directional(sm_start,sm_group_start)
         except:
             raise Exception(f"Limb ({limb_name}) was not connected to soma {sm_start} accordinag to all concept networks")
         

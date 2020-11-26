@@ -5072,5 +5072,140 @@ def number_connected_components_branches(skeleton_branches):
     return nx.number_connected_components(convert_skeleton_to_graph(stack_skeletons(skeleton_branches)))
 
     
+# ---------------- 11/26 Extra Utils for the Error Detection------------------
+def endpoint_connectivity(endpoints_1,endpoints_2,
+                         exceptions_flag=True,
+                          return_coordinate=False,
+                         print_flag=False):
+    """
+    Pupose: To determine where the endpoints of two branches are connected
+    
+    Example: 
+    end_1 = np.array([[759621., 936916., 872083.],
+       [790891., 913598., 806043.]])
+    end_2 = np.array([[790891., 913598., 806043.],
+       [794967., 913603., 797825.]])
+       
+    endpoint_connectivity(end_1,end_2)
+    >> {0: 1, 1: 0}
+    """
+    connections_dict = dict()
+    
+    stacked_endpoints = np.vstack([endpoints_1,endpoints_2])
+    endpoints_match = nu.get_matching_vertices(stacked_endpoints)
+    
+    if len(endpoints_match) == 0:
+        print_string = f"No endpoints matching: {endpoints_match}"
+        if exceptions_flag:
+            raise Exception(print_string)
+        else:
+            print(print_string)
+        return connections_dict
+    
+    if len(endpoints_match) > 1:
+        print_string = f"Multiple endpoints matching: {endpoints_match}"
+        if exceptions_flag:
+            raise Exception(print_string)
+        else:
+            print(print_string)
+    
+    
+    #look at the first connection
+    first_match = endpoints_match[0]
+    first_endpoint_match = first_match[0]
+    
+    if print_flag:
+        print(f"first_match = {first_match}")
+        print(f"first_endpoint_match = {endpoints_1[first_endpoint_match]}")
+    
+    if return_coordinate:
+        return endpoints_1[first_endpoint_match]
+    
+    if 0 != first_endpoint_match and 1 != first_endpoint_match:
+        raise Exception(f"Non 0,1 matching node in first endpoint: {first_endpoint_match}")
+    else:
+        connections_dict.update({0:first_endpoint_match})
+        
+    second_endpoint_match = first_match[-1]
+    
+    if 2 != second_endpoint_match and 3 != second_endpoint_match:
+        raise Exception(f"Non 2,3 matching node in second endpoint: {second_endpoint_match}")
+    else:
+        connections_dict.update({1:second_endpoint_match-2})
+    
+    return connections_dict
 
+def shared_endpoint(skeleton_1,skeleton_2):
+    """
+    Will return the endpoint that joins two branches
+    """
+    end_1 = find_branch_endpoints(skeleton_1)
+    end_2 = find_branch_endpoints(skeleton_2)
+    node_connectivity = endpoint_connectivity(end_1,end_2,print_flag=False,return_coordinate=True)
+    return node_connectivity
+    
+
+def flip_skeleton(current_skeleton):
+    """
+    Will flip the absolute order of a skeleton
+    """
+    new_sk = np.flip(current_skeleton,0)
+    return np.flip(new_sk,1)
+
+
+def skeleton_in_order(skeleton,start_endpoint_coordinate=None,verbose=False):
+    """
+    Purpose: to get the skeleton in ordered vertices
+    1) Convert to graph
+    2) Find the endpoint nodes
+    3) Find the shortest path between endpoints
+    4) Get the coordinates of all of the nodes
+    5) Create the skeleton by indexing into the coordinates by the order of the path
+
+    """
+    #1) Convert to graph
+    sk_graph = convert_skeleton_to_graph(skeleton)
+    #2) Find the endpoint nodes
+    sk_graph_endpt_nodes = np.array(xu.get_nodes_of_degree_k(sk_graph,1))
+    
+    #2b) If a starting endpoint coordinate was picked then use that
+    if not start_endpoint_coordinate is None:
+        if verbose:
+            print(f"Using start_endpoint_coordinate = {start_endpoint_coordinate}")
+        curr_st_node = xu.get_graph_node_by_coordinate(sk_graph,start_endpoint_coordinate)
+        start_node_idx = np.where(sk_graph_endpt_nodes==curr_st_node)[0]
+        if len(start_node_idx) == 0:
+            raise Exception(f"The start endpoint was not an end node: {start_endpoint_coordinate}")
+        start_node_idx = start_node_idx[0]
+    else:
+        start_node_idx = 0
+
+    #3) Find the shortest path between endpoints
+    shortest_path = np.array(nx.shortest_path(sk_graph,sk_graph_endpt_nodes[start_node_idx],sk_graph_endpt_nodes[1-start_node_idx])).astype("int")
+
+
+    #4) Get the coordinates of all of the nodes
+    node_coordinates = xu.get_node_attributes(sk_graph,node_list = shortest_path)
+
+    #5) Create the skeleton by indexing into the coordinates by the order of the path
+    
+    ordered_skeleton = np.stack((node_coordinates[:-1],node_coordinates[1:]),axis=1)
+    
+    return ordered_skeleton
+
+
+def align_skeletons_at_connectivity(sk_1,sk_2):
+    """
+    To align 2 skeletons where both starts with the endpoint
+    that they share
+    
+    Ex: 
+    
+    
+    """
+    common_coordinate = shared_endpoint(sk_1,sk_2)
+    sk_1 = skeleton_in_order(sk_1,start_endpoint_coordinate=common_coordinate)
+    sk_2 = skeleton_in_order(sk_2,start_endpoint_coordinate=common_coordinate)
+    return sk_1,sk_2
+    
 

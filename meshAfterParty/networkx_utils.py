@@ -92,11 +92,12 @@ def endpoint_connectivity(endpoints_1,endpoints_2,
     
     #look at the first connection
     first_match = endpoints_match[0]
+    first_endpoint_match = first_match[0]
     
     if print_flag:
         print(f"first_match = {first_match}")
+        print(f"first_endpoint_match = {endpoints_1[first_endpoint_match]}")
     
-    first_endpoint_match = first_match[0]
     
     if 0 != first_endpoint_match and 1 != first_endpoint_match:
         raise Exception(f"Non 0,1 matching node in first endpoint: {first_endpoint_match}")
