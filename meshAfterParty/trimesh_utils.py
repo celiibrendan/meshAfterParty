@@ -648,6 +648,19 @@ def subtract_mesh(original_mesh,subtract_mesh,
                                    return_mesh=return_mesh
                                   )
 
+def restrict_mesh(original_mesh,restrict_meshes,
+                    return_mesh=True
+                   ):
+    
+    if nu.is_array_like(restrict_meshes):
+        restrict_meshes = combine_meshes(restrict_meshes)
+        
+    return original_mesh_faces_map(original_mesh=original_mesh,
+                                   submesh=restrict_meshes,
+                                   matching=True,
+                                   return_mesh=return_mesh
+                                  )
+
 def original_mesh_faces_map(original_mesh, submesh,
                            matching=True,
                            print_flag=False,

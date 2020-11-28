@@ -350,6 +350,20 @@ class Limb:
         else:
             return return_dict
     
+    
+    
+    def get_concept_network_data_by_soma_and_idx(self,soma_idx,soma_group_idx):
+        return_dict = []
+        for curr_data in self.all_concept_network_data:
+            if curr_data["soma_group_idx"] == soma_group_idx and curr_data["starting_soma"] == soma_idx:
+                return_dict.append(curr_data)
+        
+        if len(return_dict) != 1:
+            raise Exception(f"Did not find exactly one starting dictionary for soma_idx {soma_idx}, soma_group_idx {soma_group_idx}: {len(return_dict)} ")
+        else:
+            return return_dict[0]
+         
+    
     @property
     def concept_network_data_by_soma(self):
         #compile a dictionary of all of the starting material
@@ -564,6 +578,9 @@ class Limb:
         """
         debug = False
         
+        if soma_group_idx == -1:
+            soma_group_idx = self.current_soma_group_idx
+        
         matching_concept_network_data = [k for k in self.all_concept_network_data if ((k["starting_soma"] == starting_soma) or (nru.soma_label(k["starting_soma"]) == starting_soma))]
 
         if len(matching_concept_network_data) < 1:
@@ -641,12 +658,13 @@ class Limb:
                              curr_limb_correspondence=None,
                              concept_network_dict=None,
                              mesh_face_idx=None,
-                            labels=[]
+                            labels=[],
+                             branch_objects = dict(),#this will have a dictionary mapping to the branch objects if provided
                             ):
         
         
         """
-        Allow for an initialization of a limb with another limb object
+        Allow for an initialization of a limb with another limb oconcept_network_dictbject
         
         Parts that need to be copied over:
         'all_concept_network_data',
@@ -761,18 +779,22 @@ class Limb:
         """
         
         for j,branch_data in curr_limb_correspondence.items():
-            curr_skeleton = branch_data["branch_skeleton"]
-            curr_width = branch_data["width_from_skeleton"]
-            curr_mesh = branch_data["branch_mesh"]
-            curr_face_idx = branch_data["branch_face_idx"]
-            
-            branch_obj = Branch(
-                                skeleton=curr_skeleton,
-                                width=curr_width,
-                                mesh=curr_mesh,
-                               mesh_face_idx=curr_face_idx,
-                                labels=[],
-            )
+            if j in branch_objects:
+                #print(f"using existing branch object for node {j}")
+                branch_obj = branch_objects[j]
+            else:
+                curr_skeleton = branch_data["branch_skeleton"]
+                curr_width = branch_data["width_from_skeleton"]
+                curr_mesh = branch_data["branch_mesh"]
+                curr_face_idx = branch_data["branch_face_idx"]
+
+                branch_obj = Branch(
+                                    skeleton=curr_skeleton,
+                                    width=curr_width,
+                                    mesh=curr_mesh,
+                                   mesh_face_idx=curr_face_idx,
+                                    labels=[],
+                )
             
             #Set all  of the branches as data in the nodes
             xu.set_node_data(self.concept_network,
@@ -1737,7 +1759,7 @@ class Neuron:
                                      curr_data=Limb_obj,
                                      curr_data_label="data")
 
-                xu.set_node_data(self.concept_network,node_name=soma_name,curr_data=Soma_obj,curr_data_label="data")
+                #xu.set_node_data(self.concept_network,node_name=soma_name,curr_data=Soma_obj,curr_data_label="data")
 
             print(f"--- 4) Finshed generating Limb objects and adding them to concept graph: {time.time() - neuron_start_time}")
             

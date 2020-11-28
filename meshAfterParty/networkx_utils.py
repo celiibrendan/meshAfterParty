@@ -606,11 +606,17 @@ class GraphOrderedEdges(nx.Graph):
         """
         nbunch: 
         """
-        returned_edges = np.array(list(super().edges(*attr))).astype("int")
+        try:
+            returned_edges = np.array(list(super().edges(*attr))).astype("int")
+        except:
+            returned_edges = np.array(list(super().edges(*attr)))
         #print(f"returned_edges = {returned_edges}")
         #get the order of all of these edges
         if len(returned_edges)>0:
-            orders = np.array(get_edge_attributes(self,attribute="order",edge_list=returned_edges)).astype("int")
+            try:
+                orders = np.array(get_edge_attributes(self,attribute="order",edge_list=returned_edges)).astype("int")
+            except:
+                orders = np.array(get_edge_attributes(self,attribute="order",edge_list=returned_edges))
             return returned_edges[np.argsort(orders)]
         else:
             return returned_edges
@@ -1012,6 +1018,16 @@ def upstream_edges(G,node):
 def upstream_edges_neighbors(G,node):
     return [k for k in list(nx.edge_dfs(G,node, orientation='reverse')) if node in k]
     
+def upstream_node(G,node,return_single=True):
+    curr_upstream_nodes = upstream_edges_neighbors(G,node)
+        
+    if len(curr_upstream_nodes) == 0:
+        return None
+    elif len(curr_upstream_nodes) > 1:
+        raise Exception(f"More than one upstream node for node {node}: {curr_upstream_nodes}")
+    else:
+        return curr_upstream_nodes[0][0]
+       
     
 # --------------------- 8/31 -------------------------- #
 import random
@@ -1153,6 +1169,9 @@ def shortest_path_between_two_sets_of_nodes(G,node_list_1,node_list_2,
     curr_shortest_path = shortest_path[1:-1]
     end_node_1 = shortest_path[1]
     end_node_2 = shortest_path[-2]
+    
+    #make sure it is the shortest path between end nodes
+    curr_shortest_path = nx.shortest_path(G,end_node_1,end_node_2)
     
     if return_node_pairs:
         return curr_shortest_path,end_node_1,end_node_2

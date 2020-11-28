@@ -75,7 +75,7 @@ def classify_endpoint_error_branches_from_limb_concept_network(curr_concept_netw
 import copy
 import networkx as nx
 
-def whole_neuron_branch_concept_network(input_neuron,
+def whole_neuron_branch_concept_network_old(input_neuron,
                                   directional=True,
                                  limb_soma_touch_dictionary = None,
                                  print_flag = False):
@@ -146,13 +146,18 @@ def whole_neuron_branch_concept_network(input_neuron,
                 2) if not then get the edges and add to existing network
                 """
                 for starting_soma in touching_soma:
+                    # now need to iterate through all touching groups
                     if print_flag:
                         print(f"---Working on soma: {starting_soma}")
-                    curr_limb_obj.set_concept_network_directional(starting_soma)
+                    curr_limb_obj.set_concept_network_directional(starting_soma,soma_group_idx=-1)
                     soma_specific_network = curr_limb_obj.concept_network_directional
+                    
+                    #Just making sure that curr_network already exists to add things to
                     if curr_network is None:
                         curr_network = copy.deepcopy(soma_specific_network)
                     else:
+                        # ---------- Will go through and set the edges and the network data ---------- #
+                        
                         #get the edges
                         curr_network.add_edges_from(soma_specific_network.edges())
 
@@ -203,6 +208,133 @@ def whole_neuron_branch_concept_network(input_neuron,
         return nx.DiGraph(total_network)
     
     return total_network
+
+
+def whole_neuron_branch_concept_network(input_neuron,
+                                    directional=True,
+                                    limb_soma_touch_dictionary = "all",
+                                    print_flag = True):
+
+    """
+    Purpose: To return the entire concept network with all of the limbs and 
+    somas connected of an entire neuron
+
+    Arguments:
+    input_neuron: neuron object
+    directional: If want a directional or undirectional concept_network returned
+    limb_soma_touch_dictionary: a dictionary mapping the limb to the starting soma and soma_idx
+    you want visualize if directional is chosen
+
+    This will visualize multiple somas and multiple soma touching groups
+    Ex:  {1:[{0:[0,1],1:[0]}]})
+
+
+    Pseudocode:  
+    1) Get the soma subnetwork from the concept network of the neuron
+    2) For each limb network:
+    - if directional: 
+    a) if no specific starting soma picked --> use the soma with the smallest index as starting one
+    - if undirectional
+    a2) if undirectional then just choose the concept network
+    b) Rename all of the nodes to L#_#
+    c) Add the network to the soma/total network and add an edge from the soma to the starting node
+    (do so for all)
+
+    3) Then take a subgraph of the concept network based on the nodes you want
+    4) Send the subgraph to a function that graphs the networkx graph
+
+
+        """
+
+
+
+    current_neuron = copy.deepcopy(input_neuron)
+
+    if limb_soma_touch_dictionary is None:
+        limb_soma_touch_dictionary=dict()
+    elif type(limb_soma_touch_dictionary) == dict:
+        #make sure that the limb labels are numbers
+        pass
+    elif limb_soma_touch_dictionary == "all":
+        """
+        Pseudocode: 
+        Iterate through all of the limbs
+            Iterate through all of the soma starting info
+                Build the dictionary for all possible touches
+
+        """
+        limb_soma_touch_dictionary = limb_to_soma_mapping(current_neuron)
+    else:
+        raise Exception(f"Recieved invalid input for  limb_soma_touch_dictionary: {limb_soma_touch_dictionary}")
+
+    total_network= nx.DiGraph(current_neuron.concept_network.subgraph(current_neuron.get_soma_node_names()))
+
+    for limb_idx,soma_info_dict in limb_soma_touch_dictionary.items():
+        curr_limb = current_neuron[limb_idx]
+
+        curr_network = None
+        if not directional:
+            curr_network = curr_limb.concept_network
+        else:
+            for starting_soma,soma_group_info in soma_info_dict.items():
+                """
+                For all somas specified: get the network
+                1) if this is first one then just copy the network
+                2) if not then get the edges and add to existing network
+                """
+                for soma_group_idx in soma_group_info:
+                    if print_flag:
+                        print(f"---Working on soma: {starting_soma}, group = {soma_group_idx}")
+                    curr_limb.set_concept_network_directional(starting_soma,soma_group_idx=soma_group_idx)
+                    soma_specific_network = curr_limb.concept_network_directional
+
+                    #Just making sure that curr_network already exists to add things to
+                    if curr_network is None:
+                        curr_network = copy.deepcopy(soma_specific_network)
+                    else:
+                        # ---------- Will go through and set the edges and the network data ---------- #
+
+                        #get the edges
+                        curr_network.add_edges_from(soma_specific_network.edges())
+
+                        matching_concept_network_dict = curr_limb.get_concept_network_data_by_soma_and_idx(starting_soma,
+                                                                                                           soma_group_idx)
+
+
+                        curr_starting_node = matching_concept_network_dict["starting_node"]
+                        curr_starting_coordinate= matching_concept_network_dict["starting_coordinate"]
+
+                        #set the starting coordinate in the concept network
+                        attrs = {curr_starting_node:{"starting_coordinate":curr_starting_coordinate}}
+                        if print_flag:
+                            print(f"attrs = {attrs}")
+                        xu.set_node_attributes_dict(curr_network,attrs)
+                        
+                        
+
+
+        #At this point should have the desired concept network
+
+        mapping = dict([(k,f"{limb_label(limb_idx)}_{k}") for k in curr_network.nodes()])
+        curr_network = nx.relabel_nodes(curr_network,mapping)
+
+        #need to get all connections from soma to limb:
+        soma_to_limb_edges = []
+        for soma_connecting_dict in curr_limb.all_concept_network_data:
+            soma_to_limb_edges.append((soma_label(soma_connecting_dict["starting_soma"]),
+                                      f"{limb_label(limb_idx)}_{soma_connecting_dict['starting_node']}"))
+
+        total_network = nx.compose(total_network,curr_network)
+        total_network.add_edges_from(soma_to_limb_edges)
+
+        if print_flag:
+            print(f'current network edges = {total_network["L0_17"],total_network["L0_20"]}')
+
+    if directional:
+        return nx.DiGraph(total_network)
+        
+    return total_network
+
 
 
 
@@ -2160,18 +2292,27 @@ def compute_all_concept_network_data_from_limb(curr_limb,current_neuron_mesh,som
 def error_limb_indexes(neuron_obj):
     return np.where(np.array([len(limb.all_concept_network_data) for limb in neuron_obj])>1)[0]
 
-def same_soma_multi_touching_limbs(neuron_obj):
+def same_soma_multi_touching_limbs(neuron_obj,return_n_touches=False):
     same_soma_multi_touch_limbs = []
 
+    touch_dict = dict()
     for curr_limb_idx, curr_limb in enumerate(neuron_obj):
         touching_somas = [k["starting_soma"] for k in curr_limb.all_concept_network_data]
         soma_mapping = gu.invert_mapping(touching_somas)
 
-        for touch_idxs in soma_mapping.values():
+        for soma_idx,touch_idxs in soma_mapping.items():
             if len(touch_idxs) > 1:
+                if curr_limb_idx not in touch_dict.keys():
+                    touch_dict[curr_limb_idx] = dict()
+            
                 same_soma_multi_touch_limbs.append(curr_limb_idx)
+                touch_dict[curr_limb_idx][soma_idx] = len(touch_idxs)
                 break
-    return np.array(same_soma_multi_touch_limbs)
+                
+    if return_n_touches:
+        return touch_dict
+    else:
+        return np.array(same_soma_multi_touch_limbs)
                 
 def multi_soma_touching_limbs(neuron_obj):
     multi_soma_touch_limbs = []
@@ -2399,7 +2540,415 @@ def spine_volume_per_branch_eligible(neuron_obj):
     else:
         return 0
     
+    
+# -------------- 11 / 26 To help with erroring------------------------------#
 
+import copy
+import numpy as np
+def branch_boundary_transition(curr_limb,
+                              edge,
+                              width_name= "no_spine_median_mesh_center",
+                              offset=500,
+                              comparison_distance=2000,
+                              skeleton_segment_size=1000,
+                              tolerane=10,
+                              return_skeletons=True,
+                              verbose=False):
+    """
+    Purpose: Will find the boundary skeletons and width average at the boundary
+    with some specified boundary skeletal length (with an optional offset)
+
+
+    """
+
+    base_node = edge[-1]
+    upstream_node= edge[0]
+    upstream_node_original = upstream_node
+
+    base_branch = curr_limb[base_node]
+    upstream_branch = curr_limb[upstream_node]
+
+
+    # 0) make sure the two nodes are connected in the concept network
+    if base_node not in xu.get_neighbors(curr_limb.concept_network,upstream_node):
+        raise Exception(f"base_node ({base_node}) and upstream_node ({upstream_node}) are not connected in the concept network")
+
+    # ----- Part 1: Do the processing on the base node -------------- #
+    common_endpoint = sk.shared_endpoint(base_branch.skeleton,upstream_branch.skeleton)
+    if verbose:
+        print(f"common_endpoint = {common_endpoint}")
+    
+    #Now just need to do the resizing (and so the widths calculated will match this)
+    base_skeleton_ordered = sk.resize_skeleton_branch(base_branch.skeleton,skeleton_segment_size)
+
+    #figure out if need to flip or not:
+    if np.array_equal(common_endpoint,base_skeleton_ordered[-1][-1]):
+        
+        base_width_ordered = np.flip(base_branch.width_array[width_name])
+        base_skeleton_ordered = sk.flip_skeleton(base_skeleton_ordered)
+        flip_flag = True
+        if verbose:
+            print("Base needs flipping")
+            print(f"Skeleton after flip = {base_skeleton_ordered}")
+    elif np.array_equal(common_endpoint,base_skeleton_ordered[0][0]):
+        base_width_ordered = base_branch.width_array[width_name]
+        flip_flag = False
+    else:
+        raise Exception("No matching endpoint")
+
+    # apply the cutoff distance
+    if verbose:
+        print(f"Base offset = {offset}")
+        
+    
+    (skeleton_minus_buffer,
+     offset_indexes,
+     offset_success) = sk.restrict_skeleton_from_start(base_skeleton_ordered,
+                                                                    offset,
+                                                                     subtract_cutoff=True)
+   
+    
+    base_final_skeleton = None
+    base_final_indexes = None
+
+    if offset_success:
+        
+        (skeleton_comparison,
+         comparison_indexes,
+         comparison_success) = sk.restrict_skeleton_from_start(skeleton_minus_buffer,
+                                                                        comparison_distance,
+                                                                         subtract_cutoff=False)
+        
+        if comparison_success:
+            if verbose:
+                print("Base: Long enough for offset and comparison length")
+            base_final_skeleton = skeleton_comparison
+            base_final_indexes = offset_indexes[comparison_indexes]
+
+        else:
+            if verbose:
+                print("Base: Passed the offset phase but was not long enough for comparison")
+    else:
+        if verbose:
+            print("Base: Was not long enough for offset")
+
+
+    if base_final_skeleton is None:
+        if verbose:
+            print("Base: Not using offset ")
+        (base_final_skeleton,
+         base_final_indexes,
+         _) = sk.restrict_skeleton_from_start(base_skeleton_ordered,
+                                                                        comparison_distance,
+                                                                         subtract_cutoff=False)
+
+    base_final_skeleton
+    base_final_widths = base_width_ordered[base_final_indexes]
+    base_final_seg_lengths = sk.calculate_skeleton_segment_distances(base_final_skeleton,cumsum=False)
+
+    # ----- Part 2: Do the processing on the upstream nodes -------------- #
+    upstream_offset = offset
+    upstream_comparison = comparison_distance
+    upstream_node = edge[0]
+    previous_node = edge[1]
+    upstream_skeleton = []
+    upstream_seg_lengths = []
+    upstream_seg_widths = []
+
+    count = 0
+    while upstream_comparison > 0:
+        """
+        Pseudocode:
+        1) Get shared endpoint of upstream and previous node
+        2) resize the upstream skeleton to get it ordered and right scale of width
+        3) Flip the skeleton and width array if needs to be flipped
+        4) if current offset is greater than 0, then restrict skeelton to offset:
+        5a) if it was not long enough:
+            - subtact total length from buffer
+        5b) If successful:
+            - restrit skeleton by comparison distance
+            - Add skeleton, width and skeelton lengths to list
+            - subtract new distance from comparison distance
+            - if comparison distance is 0 or less then break
+        6)  change out upstream node and previous node (because at this point haven't broken outside loop)
+
+        """
+        if verbose:
+            print(f"--- Upstream iteration: {count} -----")
+        prev_branch = curr_limb[previous_node]
+        upstream_branch = curr_limb[upstream_node]
+
+        #1) Get shared endpoint of upstream and previous node
+        common_endpoint = sk.shared_endpoint(prev_branch.skeleton,upstream_branch.skeleton)
+
+        #2) resize the upstream skeleton to get it ordered and right scale of width
+        upstream_skeleton_ordered = sk.resize_skeleton_branch(upstream_branch.skeleton,skeleton_segment_size)
+
+        #3) Flip the skeleton and width array if needs to be flipped
+        if np.array_equal(common_endpoint,upstream_skeleton_ordered[-1][-1]):
+            upstream_width_ordered = np.flip(upstream_branch.width_array[width_name])
+            upstream_skeleton_ordered = sk.flip_skeleton(upstream_skeleton_ordered)
+            flip_flag = True
+        elif np.array_equal(common_endpoint,upstream_skeleton_ordered[0][0]):
+            upstream_width_ordered = upstream_branch.width_array[width_name]
+            flip_flag = False
+        else:
+            raise Exception("No matching endpoint")
+
+
+        #4) if current offset is greater than 0, then restrict skeelton to offset:
+        if upstream_offset > 0:
+            (skeleton_minus_buffer,
+             offset_indexes,
+             offset_success) = sk.restrict_skeleton_from_start(upstream_skeleton_ordered,
+                                                                            upstream_offset,
+                                                                             subtract_cutoff=True)
+        else:
+            if verbose:
+                print("Skipping the upstream offset because 0")
+            skeleton_minus_buffer = upstream_skeleton_ordered
+            offset_indexes = np.arange(len(upstream_skeleton_ordered))
+            offset_success = True
+
+        """
+        5a) if it was not long enough:
+        - subtact total length from buffer
+        """
+        if not offset_success:
+            upstream_offset -= sk.calculate_skeleton_distance(upstream_skeleton_ordered)
+            if verbose:
+                print(f"Subtracting the offset was not successful so changing to {upstream_offset} and reiterating")
+        else:
+            """
+            5b) If successful:
+            - restrit skeleton by comparison distance
+            - Add skeleton, width and skeelton lengths to list
+            - subtract new distance from comparison distance
+            - if comparison distance is 0 or less then break
+
+            """
+            #making sure the upstream offset is 0 if we were successful
+            upstream_offset = 0
+
+            #- restrit skeleton by comparison distance
+            (skeleton_comparison,
+             comparison_indexes,
+             comparison_success) = sk.restrict_skeleton_from_start(skeleton_minus_buffer,
+                                                                            upstream_comparison,
+                                                                             subtract_cutoff=False)
+            #- Add skeleton, width and skeelton lengths to list
+            upstream_skeleton.append(skeleton_comparison)
+            upstream_seg_lengths.append(sk.calculate_skeleton_segment_distances(skeleton_comparison,cumsum=False))
+
+            
+            upstream_indices = offset_indexes[comparison_indexes]
+            upstream_seg_widths.append(upstream_width_ordered[upstream_indices])
+
+            # - subtract new distance from comparison distance
+            upstream_comparison -= sk.calculate_skeleton_distance(skeleton_comparison)
+
+            if comparison_success:
+                if verbose:
+                    print(f"Subtracting the comparison was successful and exiting")
+                break
+            else:
+                if verbose:
+                    print(f"Subtracting the comparison was not successful so changing to {upstream_comparison} and reiterating")
+
+        #6)  change out upstream node and previous node (because at this point haven't broken outside loop)
+        previous_node = upstream_node
+        upstream_node = xu.upstream_node(curr_limb.concept_network_directional,upstream_node)
+
+        if verbose:
+            print(f"New upstream_node = {upstream_node}")
+
+        if upstream_node is None:
+            if verbose:
+                print("Breaking because hit None upstream node")
+            break
+
+        count += 1
+
+
+    # Do a check at the very end and if no skeleton then just take that branches
+    if len(upstream_skeleton) <= 0:
+        print("No upstream skeletons so doing backup")
+        resize_sk = sk.resize_skeleton_branch(curr_limb[upstream_node_original].skeleton,
+                                                       skeleton_segment_size)
+        upstream_skeleton = [resize_sk]
+        upstream_seg_lengths = [sk.calculate_skeleton_segment_distances(resize_sk,cumsum=False)]
+        upstream_seg_widths = [curr_limb[upstream_node_original].width_array[width_name]]
+
+
+
+
+    #Final results
+    base_final_skeleton
+    base_final_widths
+    base_final_seg_lengths
+
+    upstream_skeleton 
+    upstream_seg_lengths 
+    upstream_seg_widths
+
+    base_final_skeleton
+    
+    
+    
+    upstream_final_skeleton = sk.stack_skeletons(upstream_skeleton)
+    upstream_final_seg_lengths = np.concatenate(upstream_seg_lengths)
+    upstream_final_widths = np.concatenate(upstream_seg_widths)
+    
+    base_width_average = nu.average_by_weights(weights = base_final_seg_lengths,
+                                values = base_final_widths)
+    upstream_width_average = nu.average_by_weights(weights = upstream_final_seg_lengths,
+                            values = upstream_final_widths)
+
+    if return_skeletons:
+        return upstream_width_average,base_width_average,upstream_final_skeleton,base_final_skeleton
+    else:
+        return upstream_width_average,base_width_average
     
 
+def all_concept_network_data_to_dict(all_concept_network_data):
+    return_dict = dict()
+    for st_info in all_concept_network_data:
+        curr_soma_idx = st_info["starting_soma"]
+        curr_soma_group_idx = st_info["soma_group_idx"]
+        curr_endpoint = st_info["starting_coordinate"]
+        curr_touching_soma_vertices = st_info["touching_soma_vertices"]
+        
+        if curr_soma_idx not in return_dict.keys():
+            return_dict[curr_soma_idx] = dict()
+        
+        return_dict[curr_soma_idx][curr_soma_group_idx] = dict(touching_verts=curr_touching_soma_vertices,
+                                                         endpoint=curr_endpoint
+                                                        )
+        
+
+            
+    return return_dict
+            
+    
+def limb_to_soma_mapping(current_neuron):
+    """
+    Purpose: Will create a mapping of 
+    limb --> soma_idx --> list of soma touching groups
+    
+    """
+    limb_soma_touch_dictionary = dict()
+    for curr_limb_idx,curr_limb in enumerate(current_neuron):
+        limb_soma_touch_dictionary[curr_limb_idx] = dict()
+        for st_info in curr_limb.all_concept_network_data:
+            curr_soma_idx = st_info["starting_soma"]
+            curr_soma_group_idx = st_info["soma_group_idx"]
+            if curr_soma_idx not in limb_soma_touch_dictionary[curr_limb_idx].keys():
+                limb_soma_touch_dictionary[curr_limb_idx][curr_soma_idx] = []
+            limb_soma_touch_dictionary[curr_limb_idx][curr_soma_idx].append(curr_soma_group_idx)
+            
+    return limb_soma_touch_dictionary
+
+    
+    
+def all_starting_dicts_by_soma(curr_limb,soma_idx):
+    return [k for k in curr_limb.all_concept_network_data if k["starting_soma"] == soma_idx]
+def all_starting_attr_by_limb_and_soma(curr_limb,soma_idx,attr="starting_node"):
+    starting_dicts = all_starting_dicts_by_soma(curr_limb,soma_idx)
+    return [k[attr] for k in starting_dicts]
+
+def convert_int_names_to_string_names(limb_names,start_letter="L"):
+    return [f"{start_letter}{k}" for k in limb_names]
+
+def convert_string_names_to_int_names(limb_names):
+    return [int(k[1:]) for k in limb_names]
+
+import neuron_visualizations as nviz
+def filter_limbs_below_soma_percentile(neuron_obj,
+                                        above_percentile = 70,
+                                         return_string_names=True,
+                                       visualize_remianing_neuron=False,
+                                        verbose = True):
+    """
+    Purpose: Will only keep those limbs that have 
+    a mean touching vertices lower than the soma faces percentile specified
+    
+    Pseudocode: 
+    1) Get the soma mesh
+    2) Get all of the face midpoints
+    3) Get only the y coordinates of the face midpoints  and turn negative
+    4) Get the x percentile of those y coordinates
+    5) Get all those faces above that percentage
+    6) Get those faces as a submesh and show
+
+    -- How to cancel out the the limbs
+
+    """
+    keep_limb_idx = []
+    for curr_limb_idx,curr_limb in enumerate(neuron_obj):
+
+        touching_somas = curr_limb.touching_somas()
+
+        keep_limb = False
+        for sm_idx in touching_somas:
+            if not keep_limb :
+                sm_mesh = neuron_obj[f"S{sm_idx}"].mesh
+
+                tri_centers_y = -sm_mesh.triangles_center[:,1]
+                perc_y_position = np.percentile(tri_centers_y,above_percentile)
+
+
+                """ Don't need this: just for verification that was working with soma
+                kept_faces = np.where(tri_centers_y <= perc_y_position)[0]
+
+                soma_top = sm_mesh.submesh([kept_faces],append=True)
+                """
+
+                """
+                Pseudocode for adding limb as possible:
+                1) Get all starting dictionaries for that soma
+                For each starting dict:
+                a) Get the mean of the touching_soma_vertices (and turn negative)
+                b) If mean is less than the perc_y_position then set keep_limb to True and break
+
+
+                """
+                all_soma_starting_dicts = all_starting_dicts_by_soma(curr_limb,sm_idx)
+                for j,curr_start_dict in enumerate(all_soma_starting_dicts):
+                    if verbose:
+                        print(f"Working on touching group {j}")
+
+                    t_verts_mean = -1*np.mean(curr_start_dict["touching_soma_vertices"][:,1])
+
+                    if t_verts_mean <= perc_y_position:
+                        if verbose:
+                            print("Keeping limb because less than y position")
+                        keep_limb = True
+                        break
+
+                if keep_limb:
+                    break
+                    
+        #decide whether or not to keep limb
+        if keep_limb:
+            if verbose:
+                print(f"Keeping Limb {curr_limb_idx}")
+            
+            keep_limb_idx.append(curr_limb_idx)
+            
+    if visualize_remianing_neuron:
+        remaining_limbs = convert_int_names_to_string_names(keep_limb_idx)
+        ret_col = nviz.visualize_neuron(neuron_obj,
+                     visualize_type=["mesh","skeleton"],
+                     limb_branch_dict=dict([(k,"all") for k in remaining_limbs]),
+                     return_color_dict=True)
+            
+    if verbose:
+        print(f"\n\nTotal removed Limbs = {np.setdiff1d(np.arange(len(neuron_obj.get_limb_node_names())),keep_limb_idx)}")
+    if return_string_names:
+        return convert_int_names_to_string_names(keep_limb_idx)
+    else:
+        return keep_limb_idx
+        
+
 import neuron #package where can use the Branches class to help do branch skeleton analysis
+

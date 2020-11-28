@@ -308,3 +308,32 @@ def divide_into_label_indexes(mapping):
 
 def turn_off_scientific_notation():
     np.set_printoptions(suppress=True)
+    
+def average_by_weights(values,weights):
+    weights_normalized = weights/np.sum(weights)
+    return np.sum(values*weights_normalized)
+
+def angle_between_vectors(v1, v2, acute=True,degrees=True,verbose=False):
+    """
+    vec1 = np.array([0,0,1])
+    vec2 = np.array([1,1,-0.1])
+    angle(vec1,vec2,verbose=True)
+    """
+
+    dot_product = np.dot(v1, v2)
+    if verbose:
+        print(f"dot_product = {dot_product}")
+    angle = np.arccos(dot_product / (np.linalg.norm(v1) * np.linalg.norm(v2)))
+    
+    if acute == True:
+        rad_angle =  angle
+    else:
+        rad_angle =  2 * np.pi - angle
+        
+    if degrees:
+        return  180* rad_angle/np.pi
+    else:
+        return rad_angle
+            
+    
+    return return_angle

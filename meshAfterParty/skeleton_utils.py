@@ -168,6 +168,8 @@ def calculate_skeleton_segment_distances(my_skeleton,cumsum=True):
         return segment_distances
 
 def calculate_skeleton_distance(my_skeleton):
+    if len(my_skeleton) == 0:
+        return 0
     total_distance = np.sum(np.sqrt(np.sum((my_skeleton[:,0] - my_skeleton[:,1])**2,axis=1)))
     return float(total_distance)
 
@@ -5153,7 +5155,7 @@ def flip_skeleton(current_skeleton):
     return np.flip(new_sk,1)
 
 
-def skeleton_in_order(skeleton,start_endpoint_coordinate=None,verbose=False):
+def order_skeleton(skeleton,start_endpoint_coordinate=None,verbose=False,return_indexes=False):
     """
     Purpose: to get the skeleton in ordered vertices
     1) Convert to graph
@@ -5167,6 +5169,8 @@ def skeleton_in_order(skeleton,start_endpoint_coordinate=None,verbose=False):
     sk_graph = convert_skeleton_to_graph(skeleton)
     #2) Find the endpoint nodes
     sk_graph_endpt_nodes = np.array(xu.get_nodes_of_degree_k(sk_graph,1))
+    if verbose:
+        print(f"sk_graph_endpt_nodes = {sk_graph_endpt_nodes}")
     
     #2b) If a starting endpoint coordinate was picked then use that
     if not start_endpoint_coordinate is None:
@@ -5175,13 +5179,31 @@ def skeleton_in_order(skeleton,start_endpoint_coordinate=None,verbose=False):
         curr_st_node = xu.get_graph_node_by_coordinate(sk_graph,start_endpoint_coordinate)
         start_node_idx = np.where(sk_graph_endpt_nodes==curr_st_node)[0]
         if len(start_node_idx) == 0:
-            raise Exception(f"The start endpoint was not an end node: {start_endpoint_coordinate}")
-        start_node_idx = start_node_idx[0]
+            #raise Exception(f"The start endpoint was not an end node: {start_endpoint_coordinate}")
+            print(f"Warning: start endpoint was not an end node: {start_endpoint_coordinate} but not erroring")
+            first_start_node = curr_st_node
+        else:
+            if verbose:
+                print(f"start_node_idx = {start_node_idx}")
+            start_node_idx = start_node_idx[0]
+            first_start_node = sk_graph_endpt_nodes[start_node_idx]
     else:
         start_node_idx = 0
+        first_start_node = sk_graph_endpt_nodes[start_node_idx]
+        
+    
+    leftover_start_nodes = sk_graph_endpt_nodes[sk_graph_endpt_nodes!=first_start_node]
+    if len(leftover_start_nodes) == 1:
+        other_end_node = leftover_start_nodes[0]
+    else:
+        #find the 
+        shortest_path,orig_st,other_end_node = xu.shortest_path_between_two_sets_of_nodes(sk_graph,[first_start_node],list(leftover_start_nodes))
 
     #3) Find the shortest path between endpoints
-    shortest_path = np.array(nx.shortest_path(sk_graph,sk_graph_endpt_nodes[start_node_idx],sk_graph_endpt_nodes[1-start_node_idx])).astype("int")
+    shortest_path = np.array(nx.shortest_path(sk_graph,first_start_node,other_end_node)).astype("int")
+    
+    if verbose:
+        print(f"shortest_path = {shortest_path}")
 
 
     #4) Get the coordinates of all of the nodes
@@ -5190,6 +5212,13 @@ def skeleton_in_order(skeleton,start_endpoint_coordinate=None,verbose=False):
     #5) Create the skeleton by indexing into the coordinates by the order of the path
     
     ordered_skeleton = np.stack((node_coordinates[:-1],node_coordinates[1:]),axis=1)
+    
+    if return_indexes:
+        new_edges = np.sort(np.stack((shortest_path[:-1],shortest_path[1:]),axis=1),axis=1)
+        original_edges = np.sort(sk_graph.edges_ordered(),axis=1)
+        
+        orig_indexes = [nu.matching_rows_old(original_edges,ne)[0] for ne in new_edges]
+        return ordered_skeleton,orig_indexes
     
     return ordered_skeleton
 
@@ -5204,8 +5233,69 @@ def align_skeletons_at_connectivity(sk_1,sk_2):
     
     """
     common_coordinate = shared_endpoint(sk_1,sk_2)
-    sk_1 = skeleton_in_order(sk_1,start_endpoint_coordinate=common_coordinate)
-    sk_2 = skeleton_in_order(sk_2,start_endpoint_coordinate=common_coordinate)
+    sk_1 = order_skeleton(sk_1,start_endpoint_coordinate=common_coordinate)
+    sk_2 = order_skeleton(sk_2,start_endpoint_coordinate=common_coordinate)
     return sk_1,sk_2
+
+
+def restrict_skeleton_from_start(skeleton,
+                     cutoff_distance,
+                    subtract_cutoff = False,
+                    return_indexes = True,
+                    return_success = True,
+                    tolerance = 10):
+    """
+    To restrict a skeleton to a certain cutoff distance from the start
+    which keeps that distance or subtracts it (and does not resize or reorder the skeleton but keeps the existing segment lengths)
+    
+    Ex: 
+    restrict_skeleton_from_start(skeleton = base_skeleton_ordered,
+    cutoff_distance = offset)
+
+    """
+    #handling if the cutof is 0
+    if cutoff_distance <= 0:
+            return_values = [skeleton]
+            if return_indexes:
+                return_values.append(np.arange(0,len(skeleton)))
+            if return_success:
+                return_values.append(True)
+            return return_values
+
+    distance_of_segs = calculate_skeleton_segment_distances(skeleton,cumsum=False)
+    offset_idxs = np.where(np.cumsum(distance_of_segs)>=(cutoff_distance-tolerance))[0]
+    if len(offset_idxs)>0:
+        offset_idxs = offset_idxs[1:]
+
+    subtract_idxs = np.setdiff1d(np.arange(len(distance_of_segs)),offset_idxs)
+        
+    subtract_sk = skeleton[subtract_idxs]
+    subtract_sk_len = calculate_skeleton_distance(subtract_sk)
+#     print(f"subtract_sk_len = {subtract_sk_len}")
+#     print(f"(cutoff_distance-tolerance) = {(cutoff_distance-tolerance)}")
+    success_subtraction = subtract_sk_len >= (cutoff_distance-tolerance)
+#     print(f"success_subtraction = {success_subtraction}")
+
+    #flip the indexes if want to keep the segment
+    if not subtract_cutoff: 
+        keep_indexes = np.setdiff1d(np.arange(len(distance_of_segs)),offset_idxs)
+    else:
+        keep_indexes = offset_idxs
+
+    #restrict the skeleton
+    return_sk = skeleton[keep_indexes]
+
+    return_values = [return_sk]
+
+    if return_indexes:
+        return_values.append(keep_indexes)
+    if return_success:
+        return_values.append(success_subtraction)
+
+    return return_values
+
+
+
+
     
 

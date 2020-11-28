@@ -339,7 +339,8 @@ def axon_width_like_segments(current_neuron,
                       current_query=None,
                       current_functions_list=None,
                              include_ais=False,
-                            verbose=False):
+                             verbose=True,
+                             width_to_use=None):
     """
     Will get all of
     
@@ -348,10 +349,14 @@ def axon_width_like_segments(current_neuron,
     if current_functions_list is None:
         current_functions_list = axon_width_like_functions_list
     if current_query is None:
-        if include_ais:
-            current_query = axon_width_like_query(ais_axon_width_like_requirement)
+        if not width_to_use is None:
+            width_expression  = f"(median_mesh_center < {width_to_use})"
         else:
-            current_query = axon_width_like_query(axon_width_like_requirement)
+            if include_ais:
+                width_expression = ais_axon_width_like_requirement
+            else:
+                width_expression = axon_width_like_requirement
+        current_query = axon_width_like_query(width_expression)
     if verbose:
         print(f"current_query = {current_query}")
         
@@ -572,7 +577,7 @@ def axon_segment_clean_false_positives(curr_limb,
             if len(curr_upstream_nodes) == 0:
                 continue
             if len(curr_upstream_nodes) > 1:
-                raise Exception(f"More than one upstream node for node {n}: {curr_upstream_node}")
+                raise Exception(f"More than one upstream node for node {n}: {curr_upstream_nodes}")
             
             upstream_node = curr_upstream_nodes[0][0]
             if print_flag:

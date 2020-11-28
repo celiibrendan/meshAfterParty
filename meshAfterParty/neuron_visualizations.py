@@ -751,10 +751,9 @@ def visualize_neuron(
     arrow_alpha = 0.8,
     arrow_size = 0.3,
     
-    arrow_color_reciprocal = "brown",
-    arrow_alpha_reciprocal = 0.8,
-    arrow_size_reciprocal = 0.3,
-    
+    arrow_color_reciprocal = "pink",#"brown",
+    arrow_alpha_reciprocal = 1,#0.8,
+    arrow_size_reciprocal = 0.7,#0.3,
     
     # arguments for plotting other meshes associated with neuron #
     
@@ -1320,10 +1319,15 @@ def visualize_neuron(
             #1) get the current concept network (limb or branch) based on the resolution
             #- if branch level then use the function that assembles
             if configuration_dict["resolution"] == "branch":
+
                 curr_concept_network = nru.whole_neuron_branch_concept_network(current_neuron,
                                                           directional= configuration_dict["network_directional"],
                                                          limb_soma_touch_dictionary = configuration_dict["limb_to_starting_soma"],
                                                          print_flag = False)
+
+                    
+                
+                
                 #2) get a list of all the nodes in the plot_items_order and assemble into a dictionary for colors (have to fix the name)
                 item_to_color_dict = dict([(f"{name[0]}_{name[1]}",col) for name,col in zip(plot_items_order,color_list_correct_size)])
             else:
