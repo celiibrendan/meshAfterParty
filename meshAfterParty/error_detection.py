@@ -340,6 +340,9 @@ def error_faces_by_axons(neuron_obj,verbose=False,visualize_errors_at_end=False,
                                 ais_angle_threshold = 110,
                                 non_ais_angle_threshold = 50):
     
+    if neuron_obj.n_limbs == 0:
+        return np.array([])
+    
     axon_seg_dict = au.axon_like_segments(neuron_obj,include_ais=False,
                                           filter_away_end_false_positives=True,
                                           visualize_at_end=False,

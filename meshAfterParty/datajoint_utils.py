@@ -343,8 +343,8 @@ def nucleus_id_to_seg_id(nucleus_id):
     
 import trimesh
 def fetch_segment_id_mesh(seg_id,decimation_ratio=0.25,minnie=None):
-    if minnie is None:
-        minnie,_ = configure_minnie_vm()
+#     if minnie is None:
+#         minnie,_ = configure_minnie_vm()
     key = dict(segment_id=seg_id,decimation_ratio=decimation_ratio)
     new_mesh = (minnie.Decimation() & key).fetch1("mesh")
     current_mesh_verts,current_mesh_faces = new_mesh.vertices,new_mesh.faces
@@ -368,7 +368,7 @@ def fetch_nucleus_id_mesh(nucleus_id,verbose=False):
 
 
 import skeleton_utils as sk
-def plot_decimated_mesh_with_somas(seg_id,minnie=None):
+def plot_decimated_mesh_with_somas(seg_id):
     """
     To visualize a decimated mesh with the somas
     """
@@ -377,8 +377,6 @@ def plot_decimated_mesh_with_somas(seg_id,minnie=None):
 #     seg_id_idx = -2
 #     seg_id = multi_soma_seg_ids[seg_id_idx]
 
-    if minnie is None:
-        minnie,_ = configure_minnie_vm()
 
     dec_mesh = get_decimated_mesh(seg_id)
     print(f"vertices = {len(dec_mesh.vertices)}, faces= = {len(dec_mesh.faces)}")
