@@ -50,8 +50,7 @@ def config_celii():
     dj.config['database.user'] = 'celiib'
     dj.config['database.password'] = 'newceliipass'
     
-#runs the configuration
-config_celii()
+
 
 def set_minnie65_config_segmentation(minfig,
                                  curr_seg="02",
@@ -130,7 +129,7 @@ class DecompositionAdapter(dj.AttributeAdapter):
         
         #2) get the decimated mesh 
         segment_id = int(filepath.stem.split("_")[0])
-        dec_mesh = fetch_segment_id_mesh(segment_id)
+        dec_mesh = fetch_segment_id_mesh(segment_id,minnie=minnie)
         
         
         #3) use the decompress method
@@ -393,3 +392,6 @@ def plot_decimated_mesh_with_somas(seg_id,minnie=None):
                               other_meshes_colors="red")
     
     
+#runs the configuration
+config_celii()
+minnie,_ = configure_minnie_vm()

@@ -510,10 +510,12 @@ def error_faces_by_axons(neuron_obj,verbose=False,visualize_errors_at_end=False,
 
 from pykdtree.kdtree import KDTree
 import datajoint_utils as du
-def get_error_synapse_inserts(neuron_obj,
+def get_error_synapse_inserts(current_mesh,
+                              segment_id,
                               returned_error_faces,
                               mapping_threshold = 500,
                               minnie=None,
+                              return_synapse_stats=True,
                               verbose=False):
     """
     Purpose: To Create the synapse exclude inserts for a neuron object based on the 
@@ -534,19 +536,24 @@ def get_error_synapse_inserts(neuron_obj,
     if len(returned_error_faces) == 0:
         if verbose:
             print("Returning empty list because there were no error faces")
-        return []
+        if return_synapse_stats:
+            return [],0,0
+        else:
+            return []
     
     if minnie is None:
         minnie,_ = du.configure_minnie_vm()
     
-    segment_synapses = minnie.SynapseFiltered() & f"presyn={neuron_obj.segment_id} OR postsyn={neuron_obj.segment_id}"
+    segment_synapses = minnie.SynapseFiltered() & f"presyn={segment_id} OR postsyn={segment_id}"
     
     if len(segment_synapses)<=0:
         if verbose:
             print("Returning empty list because there were no SYNAPSES")
-        return []
+        if return_synapse_stats:
+            return [],0,0
+        else:
+            return []
     
-    current_mesh = neuron_obj.mesh
     
     #0) Create face labels for the entire mesh by makeing 0 for all of them but then changing the face labels of errors to 1
     neuron_mesh_labels = np.zeros(len(current_mesh.faces))
@@ -582,6 +589,11 @@ def get_error_synapse_inserts(neuron_obj,
         
     errored_synapses = synapse_ids[errored_synapses_idx]
     errored_synapse_timestamps = timestamps[errored_synapses_idx]
-    data_to_write = [dict(synapse_id=syn,timestamp=t,criteria_id=0) for syn,t in zip(errored_synapses,errored_synapse_timestamps)]
+    data_to_write = [dict(synapse_id=syn,timestamp=t,criteria_id=0,segment_id=segment_id) for syn,t in zip(errored_synapses,errored_synapse_timestamps)]
     
-    return data_to_write
+    if return_synapse_stats:
+        n_synapses = len(synapse_ids)
+        n_errored_synapses = len(errored_synapses)
+        return data_to_write,n_synapses,n_errored_synapses
+    else:
+        return data_to_write
