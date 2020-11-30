@@ -255,7 +255,7 @@ def plot_ipv_scatter(scatter_points,scatter_color=[1.,0.,0.,0.5],
                     scatter_size=0.4,
                     flip_y=True):
     
-    scatter_points = np.array(scatter_points).reshape(-1,3)
+    scatter_points = (np.array(scatter_points).reshape(-1,3)).astype("float")
     if flip_y:
         scatter_points = scatter_points.copy()
         scatter_points[...,1] = -scatter_points[...,1]

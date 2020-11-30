@@ -519,6 +519,7 @@ def get_error_synapse_inserts(current_mesh,
                               mapping_threshold = 500,
                               minnie=None,
                               return_synapse_stats=True,
+                              return_synapse_centroids=False,
                               verbose=False):
     """
     Purpose: To Create the synapse exclude inserts for a neuron object based on the 
@@ -586,6 +587,7 @@ def get_error_synapse_inserts(current_mesh,
     #4) Calculate the errored synapses
     closest_face_labels = neuron_mesh_labels[closest_face]
     errored_synapses_idx = np.where((closest_face_labels==1) & (dist<mapping_threshold))[0]
+    non_errored_synapses_idx = np.setdiff1d(np.arange(len(closest_face_labels)),errored_synapses_idx)
 
     if verbose:
         print(f"Number of errored synapses = {errored_synapses_idx.shape}")
@@ -593,6 +595,11 @@ def get_error_synapse_inserts(current_mesh,
     errored_synapses = synapse_ids[errored_synapses_idx]
     errored_synapse_timestamps = timestamps[errored_synapses_idx]
     data_to_write = [dict(synapse_id=syn,timestamp=t,criteria_id=0,segment_id=segment_id) for syn,t in zip(errored_synapses,errored_synapse_timestamps)]
+    
+    
+    if return_synapse_centroids:
+        print("Returning the 1) coordinates for errored synapses 2) Coordinates for non-errored synapses")
+        return synapse_centers_scaled[errored_synapses_idx],synapse_centers_scaled[non_errored_synapses_idx]
     
     if return_synapse_stats:
         n_synapses = len(synapse_ids)

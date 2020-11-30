@@ -129,7 +129,7 @@ class DecompositionAdapter(dj.AttributeAdapter):
         
         #2) get the decimated mesh 
         segment_id = int(filepath.stem.split("_")[0])
-        dec_mesh = fetch_segment_id_mesh(segment_id,minnie=minnie)
+        dec_mesh = fetch_segment_id_mesh(segment_id)
         
         
         #3) use the decompress method
@@ -286,32 +286,24 @@ def configure_minnie_vm():
     return minnie,schema
 
 import trimesh
-def get_decimated_mesh(seg_id,decimation_ratio=0.25,minnie=None):
-    if minnie is None:
-        minnie,_ = configure_minnie_vm()
+def get_decimated_mesh(seg_id,decimation_ratio=0.25):
     key = dict(segment_id=seg_id,decimation_ratio=decimation_ratio)
     new_mesh = (minnie.Decimation() & key).fetch1("mesh")
     current_mesh_verts,current_mesh_faces = new_mesh.vertices,new_mesh.faces
     return trimesh.Trimesh(vertices=current_mesh_verts,faces=current_mesh_faces)
 
 # def get_seg_extracted_somas(seg_id,minnie=None):
-#     if minnie is None:
-#         minnie,_ = configure_minnie_vm()
 #     key = dict(segment_id=seg_id)  
 #     soma_vertices, soma_faces = (minnie.BaylorSegmentCentroid() & key).fetch("soma_vertices","soma_faces")
 #     return [trimesh.Trimesh(vertices=v,faces=f) for v,f in zip(soma_vertices, soma_faces)]
 
-def get_seg_extracted_somas(seg_id,minnie=None):
-    if minnie is None:
-        minnie,_ = configure_minnie_vm()
+def get_seg_extracted_somas(seg_id):
     key = dict(segment_id=seg_id)  
     soma_meshes = (minnie.BaylorSegmentCentroid() & key).fetch("mesh")
     return [trimesh.Trimesh(vertices=v.vertices,faces=v.faces) for v in soma_meshes]
 
 
-def get_soma_mesh_list(seg_id,minnie=None):
-    if minnie is None:
-        minnie,_ = configure_minnie_vm()
+def get_soma_mesh_list(seg_id):
     key = dict(segment_id=seg_id)  
     soma_vertices, soma_faces,soma_run_time,soma_sdf = (minnie.BaylorSegmentCentroid() & key).fetch("soma_vertices","soma_faces","run_time","sdf")
     s_meshes = [trimesh.Trimesh(vertices=v,faces=f) for v,f in zip(soma_vertices, soma_faces)]
@@ -319,9 +311,7 @@ def get_soma_mesh_list(seg_id,minnie=None):
     s_sdfs = np.array(soma_sdf)
     return [s_meshes,s_times,s_sdfs]
 
-def get_soma_mesh_list(seg_id,minnie=None):
-    if minnie is None:
-        minnie,_ = configure_minnie_vm()
+def get_soma_mesh_list(seg_id):
     key = dict(segment_id=seg_id)  
     soma_meshes,soma_run_time,soma_sdf = (minnie.BaylorSegmentCentroid() & key).fetch("mesh","run_time","sdf")
     s_meshes = [trimesh.Trimesh(vertices=v.vertices,faces=v.faces) for v in soma_meshes]
@@ -342,16 +332,13 @@ def nucleus_id_to_seg_id(nucleus_id):
     return nucl_seg_id
     
 import trimesh
-def fetch_segment_id_mesh(seg_id,decimation_ratio=0.25,minnie=None):
-#     if minnie is None:
-#         minnie,_ = configure_minnie_vm()
+def fetch_segment_id_mesh(seg_id,decimation_ratio=0.25):
     key = dict(segment_id=seg_id,decimation_ratio=decimation_ratio)
     new_mesh = (minnie.Decimation() & key).fetch1("mesh")
     current_mesh_verts,current_mesh_faces = new_mesh.vertices,new_mesh.faces
     return trimesh.Trimesh(vertices=current_mesh_verts,faces=current_mesh_faces)
 
 def fetch_undecimated_segment_id_mesh(seg_id,decimation_ratio=0.25):
-    minnie,schema = configure_minnie_vm()
     key = dict(segment_id=seg_id,decimation_ratio=decimation_ratio)
     new_mesh = (minnie.Mesh() & key).fetch1("mesh")
     current_mesh_verts,current_mesh_faces = new_mesh.vertices,new_mesh.faces
@@ -388,6 +375,63 @@ def plot_decimated_mesh_with_somas(seg_id):
                                main_mesh_faces=dec_mesh.faces,
                             other_meshes=curr_soma_meshes,
                               other_meshes_colors="red")
+    
+import trimesh_utils as tu
+import neuron_visualizations as nviz
+import error_detection as ed
+def plot_errored_faces(segment_id,
+                       plot_synapses=False,
+                       current_mesh=None,
+                       neuron_obj=None,
+                       return_obj=False,
+                       valid_synapse_color = "yellow",
+                       error_color = "red",**kwargs):
+    """
+    Function that will plot the neuron, the errored mesh part
+    and the synapses if requested (distinguishing between errored and non-errored synapses)
+    
+    du.plot_errored_faces(segment_id=864691134884745210,
+                       plot_synapses=True,
+                       current_mesh=None,
+                       neuron_obj=None,
+                       valid_synapse_color = "yellow",
+                       error_color = "red")
+    
+    """
+    
+    #1) Pull down the mesh
+    if current_mesh is None:
+        current_mesh = fetch_segment_id_mesh(segment_id)
+
+    #2) PUll down the synapse data and the error faces
+    n_synapses,n_errored_synapses,errored_faces = (minnie.AutoProofreadLabels() &
+                                                   dict(segment_id=segment_id)).fetch1("n_synapses","n_errored_synapses","face_idx_for_error")
+    
+    error_submesh = current_mesh.submesh([errored_faces],append=True)
+    valid_mesh = tu.subtract_mesh(current_mesh,error_submesh)
+    
+    if plot_synapses:
+        if neuron_obj is None:
+            neuron_obj = (minnie.Decomposition() & dict(segment_id=segment_id)).fetch1("decomposition")
+        
+        err_synapses,non_err_synapses = ed.get_error_synapse_inserts(current_mesh,segment_id,
+                                                             errored_faces,return_synapse_centroids=True)
+        
+        nviz.plot_objects(main_mesh=valid_mesh,
+                  meshes=[error_submesh],
+                          mesh_alpha=1,
+                  meshes_colors=[error_color],
+                scatters=[err_synapses,non_err_synapses],
+                 scatters_colors=[error_color,valid_synapse_color])
+        if return_obj:
+            return neuron_obj
+    
+    else:
+        nviz.plot_objects(main_mesh=valid_mesh,
+                 meshes=error_submesh,
+                  meshes_colors=error_color,
+                 mesh_alpha=1,
+                     **kwargs)
     
     
 #runs the configuration

@@ -3,6 +3,14 @@ import numpy as np
 import numpy_utils as nu
 import time
 
+
+def unpickle_graph(path):
+    G_loaded = nx.read_gpickle(path)
+    return G_loaded
+
+def pickle_graph(path):
+    nx.write_gpickle(path)
+
 def find_reciprocal_connections(G,redundant=False):
     """
     Will give a list of the edges that are reciprocal connections
@@ -450,9 +458,9 @@ def find_skeletal_distance_along_graph_node_path(G,node_path):
     total_distance = np.sum(np.linalg.norm(coordinates[:-1] - coordinates[1:],axis=1))
     return total_distance
 
-import system_utils as su
+
 def find_all_cycles(G, source=None, cycle_length_limit=None,time_limit = 1000):
-    
+    import system_utils as su
     try:
         with su.time_limit(time_limit):
             """forked from networkx dfs_edges function. Assumes nodes are integers, or at least

@@ -14,6 +14,11 @@ x = np.array([1,4,5,10])
 np.insert(x,slice(0,5),2)
 >> output: array([ 2,  1,  2,  4,  2,  5,  2, 10])
 
+
+If want to find the indexes of what is common between 2 1D arrray use
+same_ids,x_ind,y_ind = np.intersect1d(soma_segment_id,connectivity_ids,return_indices=True)
+
+
 """
 def compare_threshold(item1,item2,threshold=0.0001,print_flag=False):
     """

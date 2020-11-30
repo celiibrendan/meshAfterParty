@@ -218,3 +218,6 @@ def restrict_pandas(df,index_restriction=[],column_restriction=[],value_restrict
         new_df = new_df[column_restriction]
     
     return new_df
+
+def turn_off_scientific_notation(n_decimal_places=3):
+    pd.set_option('display.float_format', lambda x: '%.0f' % x)
