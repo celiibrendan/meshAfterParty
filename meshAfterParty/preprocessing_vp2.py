@@ -26,7 +26,6 @@ from neuron_utils import *
 import neuron
 
 
-
 def mesh_correspondence_first_pass(mesh,
                                    skeleton=None,
                                    skeleton_branches=None,
@@ -63,7 +62,12 @@ def mesh_correspondence_first_pass(mesh,
                                      skeleton_segment_width = 1000,
                                      distance_by_mesh_center=distance_by_mesh_center,
                                     buffer=300,
-                                     distance_threshold=6000)
+                                     distance_threshold=6000,
+                                    return_closest_face_on_empty=True)
+            
+        # Need to just pick the closest face is still didn't get anything
+        
+        # ------ 12/3 Addition: Account for correspondence that does not work so just picking the closest face
         curr_branch_face_correspondence, width_from_skeleton = returned_data
         
             
@@ -163,7 +167,8 @@ def correspondence_1_to_1(
                     local_correspondence,
                     curr_limb_endpoints_must_keep=None,
                     curr_soma_to_piece_touching_vertices=None,
-                    must_keep_labels=dict()
+                    must_keep_labels=dict(),
+                    fill_to_soma_border=True
                     ):
     """
     Will Fix the 1-to-1 Correspondence of the mesh
@@ -232,22 +237,23 @@ def correspondence_1_to_1(
     #curr_limb_endpoints_must_keep --> stores the endpoints that should be connected to the soma
     #curr_soma_to_piece_touching_vertices --> maps soma to  a list of grouped touching vertices
 
-    if (not curr_limb_endpoints_must_keep is None) and (not curr_soma_to_piece_touching_vertices is None):
-        for sm,soma_border_list in curr_soma_to_piece_touching_vertices.items():
-            for curr_soma_border,st_coord in zip(soma_border_list,curr_limb_endpoints_must_keep[sm]):
+    if fill_to_soma_border:
+        if (not curr_limb_endpoints_must_keep is None) and (not curr_soma_to_piece_touching_vertices is None):
+            for sm,soma_border_list in curr_soma_to_piece_touching_vertices.items():
+                for curr_soma_border,st_coord in zip(soma_border_list,curr_limb_endpoints_must_keep[sm]):
 
-                #1) Find the label_to_expand based on the starting coordinate
-                divided_branches = [v["branch_skeleton"] for v in local_correspondence.values()]
-                #print(f"st_coord = {st_coord}")
-                label_to_expand = sk.find_branch_skeleton_with_specific_coordinate(divded_skeleton=divided_branches,
-                                                                                   current_coordinate=st_coord)[0]
+                    #1) Find the label_to_expand based on the starting coordinate
+                    divided_branches = [v["branch_skeleton"] for v in local_correspondence.values()]
+                    #print(f"st_coord = {st_coord}")
+                    label_to_expand = sk.find_branch_skeleton_with_specific_coordinate(divded_skeleton=divided_branches,
+                                                                                       current_coordinate=st_coord)[0]
 
 
-                face_coloring_copy = cu.waterfill_starting_label_to_soma_border(curr_limb_mesh,
-                                                   border_vertices=curr_soma_border,
-                                                    label_to_expand=label_to_expand,
-                                                   total_face_labels=face_coloring_copy,
-                                                   print_flag=True)
+                    face_coloring_copy = cu.waterfill_starting_label_to_soma_border(curr_limb_mesh,
+                                                       border_vertices=curr_soma_border,
+                                                        label_to_expand=label_to_expand,
+                                                       total_face_labels=face_coloring_copy,
+                                                       print_flag=True)
 
 
     # -- splitting the mesh pieces into individual pieces
@@ -798,6 +804,8 @@ def preprocess_limb(mesh,
         root_curr = soma_touching_vertices_dict[list(soma_touching_vertices_dict.keys())[0]][0][0]
     else:
         root_curr = None
+        
+    print(f"root_curr = {root_curr}")
 
     if print_fusion_steps:
         print(f"Time for preparing soma vertices and root: {time.time() - fusion_time }")
@@ -807,6 +815,8 @@ def preprocess_limb(mesh,
     sk_meshparty_obj = m_sk.skeletonize_mesh_largest_component(limb_mesh_mparty,
                                                             root=root_curr,
                                                               filter_mesh=False)
+    
+    print(f"meshparty_segment_size = {meshparty_segment_size}")
 
     if print_fusion_steps:
         print(f"Time for 1st pass MP skeletonization: {time.time() - fusion_time }")
@@ -817,6 +827,7 @@ def preprocess_limb(mesh,
     segment_widths_median) = m_sk.skeleton_obj_to_branches(sk_meshparty_obj,
                                                           mesh = limb_mesh_mparty,
                                                           meshparty_segment_size=meshparty_segment_size)
+
 
 
 
@@ -855,6 +866,7 @@ def preprocess_limb(mesh,
 
         #finds the connectivity edges of all the MAP candidates
         mesh_large_connectivity = tu.mesh_list_connectivity(meshes = mesh_large_idx,
+                                                            connectivity="vertices",
                                 main_mesh = limb_mesh_mparty,
                                 print_flag = False)
         if print_fusion_steps:
@@ -1400,57 +1412,72 @@ def preprocess_limb(mesh,
         sublimb_skeletons_MP_saved = copy.deepcopy(sublimb_skeletons_MP)
         sublimb_skeletons_MAP_saved = copy.deepcopy(sublimb_skeletons_MAP)
 
-        mesh_conn,mesh_conn_vertex_groups = tu.mesh_list_connectivity(meshes = sublimb_meshes_MP + sublimb_meshes_MAP,
-                                            main_mesh = limb_mesh_mparty,
-                                            min_common_vertices=1,
-                                            return_vertex_connection_groups=True,
-                                            return_largest_vertex_connection_group=True,
-                                            print_flag = False)
-        mesh_conn_old = copy.deepcopy(mesh_conn)
+        connectivity_type = "edges"
+        for i in range(0,2):
+            mesh_conn,mesh_conn_vertex_groups = tu.mesh_list_connectivity(meshes = sublimb_meshes_MP + sublimb_meshes_MAP,
+                                                main_mesh = limb_mesh_mparty,
+                                                connectivity=connectivity_type,
+                                                min_common_vertices=1,
+                                                return_vertex_connection_groups=True,
+                                                return_largest_vertex_connection_group=True,
+                                                print_flag = False)
+            mesh_conn_old = copy.deepcopy(mesh_conn)
 
 
 
-        #check that every MAP piece mapped to a MP piece
-        mesh_conn_filt = []
-        mesh_conn_vertex_groups_filt = []
-        for j,(m1,m2) in enumerate(mesh_conn):
-            if m1 < len(sublimb_meshes_MP) and m2 >=len(sublimb_meshes_MP):
-                mesh_conn_filt.append([m1,m2])
-                mesh_conn_vertex_groups_filt.append(mesh_conn_vertex_groups[j])
-        mesh_conn_filt = np.array(mesh_conn_filt)
+            #check that every MAP piece mapped to a MP piece
+            mesh_conn_filt = []
+            mesh_conn_vertex_groups_filt = []
+            for j,(m1,m2) in enumerate(mesh_conn):
+                if m1 < len(sublimb_meshes_MP) and m2 >=len(sublimb_meshes_MP):
+                    mesh_conn_filt.append([m1,m2])
+                    mesh_conn_vertex_groups_filt.append(mesh_conn_vertex_groups[j])
+                else:
+                    print(f"Edge {(m1,m2)} was not kept")
+            mesh_conn_filt = np.array(mesh_conn_filt)
 
-        mesh_conn = mesh_conn_filt
-        mesh_conn_vertex_groups = mesh_conn_vertex_groups_filt
+            mesh_conn = mesh_conn_filt
+            mesh_conn_vertex_groups = mesh_conn_vertex_groups_filt
 
-        #check that the mapping should create only one connected component
-        G = nx.from_edgelist(mesh_conn)
-
-
-
-        try:
-            if len(G) != len(sublimb_meshes_MP) + len(sublimb_meshes_MAP):
-                raise Exception("Number of nodes in mesh connectivity graph is not equal to number of  MAP and MP sublimbs")
-
-            connect_comp = list(nx.connected_components(G))
-            if len(connect_comp)>1:
-                raise Exception(f"Mesh connectivity was not one component, instead it was ({len(connect_comp)}): {connect_comp} ")
-        except:
-            print(f"mesh_conn_filt = {mesh_conn_filt}")
-            print(f"mesh_conn_old = {mesh_conn_old}")
-            mesh_conn_adjusted = np.vstack([mesh_conn[:,0],mesh_conn[:,1]-len(sublimb_meshes_MP)]).T
-            print(f"mesh_conn_adjusted = {mesh_conn_adjusted}")
-            print(f"len(sublimb_meshes_MP) = {len(sublimb_meshes_MP)}")
-            print(f"len(sublimb_meshes_MAP) = {len(sublimb_meshes_MAP)}")
-            meshes = sublimb_meshes_MP + sublimb_meshes_MAP
-            #su.compressed_pickle(meshes,"meshes")
-            su.compressed_pickle(sublimb_meshes_MP,"sublimb_meshes_MP")
-            su.compressed_pickle(sublimb_meshes_MAP,"sublimb_meshes_MAP")
-            su.compressed_pickle(limb_mesh_mparty,"limb_mesh_mparty")
-            su.compressed_pickle(sublimb_skeletons_MP,"sublimb_skeletons_MP")
-            su.compressed_pickle(sublimb_skeletons_MAP,"sublimb_skeletons_MAP")
+            #check that the mapping should create only one connected component
+            G = nx.from_edgelist(mesh_conn)
 
 
-            raise Exception("Something went wrong in the connectivity")
+
+            try:
+                if len(G) != len(sublimb_meshes_MP) + len(sublimb_meshes_MAP):
+                    raise Exception("Number of nodes in mesh connectivity graph is not equal to number of  MAP and MP sublimbs")
+
+                connect_comp = list(nx.connected_components(G))
+                if len(connect_comp)>1:
+                    raise Exception(f"Mesh connectivity was not one component, instead it was ({len(connect_comp)}): {connect_comp} ")
+            except:
+                
+                if connectivity_type == "vertices":
+                    print(f"mesh_conn_filt = {mesh_conn_filt}")
+                    print(f"mesh_conn_old = {mesh_conn_old}")
+                    mesh_conn_adjusted = np.vstack([mesh_conn[:,0],mesh_conn[:,1]-len(sublimb_meshes_MP)]).T
+                    print(f"mesh_conn_adjusted = {mesh_conn_adjusted}")
+                    print(f"len(sublimb_meshes_MP) = {len(sublimb_meshes_MP)}")
+                    print(f"len(sublimb_meshes_MAP) = {len(sublimb_meshes_MAP)}")
+                    meshes = sublimb_meshes_MP + sublimb_meshes_MAP
+                    #su.compressed_pickle(meshes,"meshes")
+                    su.compressed_pickle(sublimb_meshes_MP,"sublimb_meshes_MP")
+                    su.compressed_pickle(sublimb_meshes_MAP,"sublimb_meshes_MAP")
+                    su.compressed_pickle(limb_mesh_mparty,"limb_mesh_mparty")
+                    su.compressed_pickle(sublimb_skeletons_MP,"sublimb_skeletons_MP")
+                    su.compressed_pickle(sublimb_skeletons_MAP,"sublimb_skeletons_MAP")
+
+
+
+
+                    raise Exception("Something went wrong in the connectivity")
+                else:
+                    print(f"Failed on connection type {connectivity_type} ")
+                    connectivity_type = "vertices"
+                    print(f"so changing type to {connectivity_type}")
+            else:
+                print(f"Successful mesh connectivity with type {connectivity_type}")
 
 
         #adjust the connection indices for MP and MAP indices
@@ -2300,7 +2327,7 @@ def preprocess_neuron(
                 combine_close_skeleton_nodes_threshold=700,
 
                 use_meshafterparty=True):
-    
+    pre_branch_connectivity = "edges"
     print(f"use_meshafterparty = {use_meshafterparty}")
     
     whole_processing_tiempo = time.time()
@@ -2367,18 +2394,23 @@ def preprocess_neuron(
     # ------------------ (and eliminating any mesh pieces inside the soma) ------------------------
 
     # -------- 11/13 Addition: Will remove the inside nucleus --------- #
-    main_mesh_total,inside_nucleus_pieces = tu.remove_mesh_interior(current_neuron,return_removed_pieces=True)
+    interior_time = time.time()
+    main_mesh_total,inside_nucleus_pieces = tu.remove_mesh_interior(current_neuron,return_removed_pieces=True,
+                                                                   try_hole_close=False)
+    print(f"Total time for removing interior = {time.time() - interior_time}")
 
 
     #finding the mesh pieces that contain the soma
     #splitting the current neuron into distinct pieces
+    split_time = time.time()
     split_meshes = tu.split_significant_pieces(
                                 main_mesh_total,
                                 significance_threshold=sig_th_initial_split,
-                                print_flag=False)
+                                print_flag=False,
+                                connectivity=pre_branch_connectivity)
+    print(f"Total time for splitting mesh = {time.time() - split_time}")
 
     print(f"# total split meshes = {len(split_meshes)}")
-
 
     #returns the index of the split_meshes index that contains each soma    
     containing_mesh_indices = sm.find_soma_centroid_containing_meshes(soma_mesh_list,
@@ -2504,7 +2536,8 @@ def preprocess_neuron(
 
         current_time = time.time()
         mesh_pieces_without_soma = sm.subtract_soma(current_soma_mesh_list,current_mesh,
-                                                    significance_threshold=250)
+                                                    significance_threshold=250,
+                                                   connectivity=pre_branch_connectivity)
         print(f"Total time for Subtract Soam = {time.time() - current_time}")
         current_time = time.time()
 
@@ -2527,7 +2560,8 @@ def preprocess_neuron(
         # get all the seperate mesh faces
 
         #How to seperate the mesh faces
-        seperate_soma_meshes,soma_face_components = tu.split(soma_meshes,only_watertight=False)
+        seperate_soma_meshes,soma_face_components = tu.split(soma_meshes,only_watertight=False,
+                                                            connectivity=pre_branch_connectivity)
         #take the top largest ones depending how many were originally in the soma list
         seperate_soma_meshes = seperate_soma_meshes[:len(soma_mesh_list)]
         soma_face_components = soma_face_components[:len(soma_mesh_list)]
@@ -2546,7 +2580,8 @@ def preprocess_neuron(
         
         """
         sig_non_soma_pieces,insignificant_limbs = tu.split_significant_pieces(non_soma_stacked_mesh,significance_threshold=limb_threshold,
-                                                         return_insignificant_pieces=True)
+                                                         return_insignificant_pieces=True,
+                                                                             connectivity=pre_branch_connectivity)
         
         # a) Filter these down to only those touching the somas
         all_conneted_non_soma_pieces = []

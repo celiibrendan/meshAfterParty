@@ -7,7 +7,8 @@ from tqdm_utils import tqdm
 def width_jump_edges(limb,
                     width_type = "no_spine_median_mesh_center",
                      width_jump_threshold = 100,
-                     verbose=False
+                     verbose=False,
+                     path_to_check = None,
                     ):
     """
     Will only look to see if the width jumps up by a width_jump_threshold threshold ammount
@@ -40,6 +41,11 @@ def width_jump_edges(limb,
 
         curr_error_edges = []
         for current_nodes in tqdm(curr_net.edges()):
+            if not path_to_check is None:
+                if len(np.intersect1d(current_nodes,path_to_check)) < 2:
+#                     if verbose:
+#                         print(f"Skipping edge {current_nodes} because not on path to check: {path_to_check}")
+                    continue
             if verbose:
                 print(f"  Edge: {current_nodes}")
 
@@ -51,6 +57,8 @@ def width_jump_edges(limb,
             downstream_jump = d_width-up_width
 
             if downstream_jump > width_jump_threshold:
+                if verbose:
+                    print(f"Adding error edge {current_nodes} because width jump was {downstream_jump}")
                 curr_error_edges.append(list(current_nodes))
         
         if curr_soma not in error_edges.keys():
@@ -70,7 +78,8 @@ def double_back_edges(
     double_back_threshold = 130,
     verbose = True,
     comparison_distance=3000,
-    offset=0,):
+    offset=0,
+    path_to_check=None):
 
     """
     Purpose: To get all of the edges where the skeleton doubles back on itself
@@ -105,6 +114,12 @@ def double_back_edges(
         for current_nodes in tqdm(curr_net.edges()):
             if verbose:
                 print(f"  Edge: {current_nodes}")
+                
+            if not path_to_check is None:
+                if len(np.intersect1d(current_nodes,path_to_check)) < 2:
+#                     if verbose:
+#                         print(f"Skipping edge {current_nodes} because not on path to check: {path_to_check}")
+                    continue
 
             up_width,d_width,up_sk,d_sk = nru.branch_boundary_transition(curr_limb,
                                   edge=current_nodes,
@@ -334,13 +349,17 @@ import axon_utils as au
 import neuron_utils as nru
 import neuron_visualizations as nviz
 
-def error_faces_by_axons(neuron_obj,verbose=False,visualize_errors_at_end=False,
+def error_branches_by_axons(neuron_obj,verbose=False,visualize_errors_at_end=False,
                         min_skeletal_path_threshold = 15000,
                                 sub_skeleton_length = 20000,
                                 ais_angle_threshold = 110,
-                                non_ais_angle_threshold = 50):
+                                non_ais_angle_threshold = 65):
     
     if neuron_obj.n_limbs == 0:
+        if return_axon_non_axon_faces:
+            axon_faces = np.array([])
+            non_axon_faces = np.arange(len(neuron_obj.mesh.faces))
+            return np.array([]),axon_faces,non_axon_faces
         return np.array([])
     
     axon_seg_dict = au.axon_like_segments(neuron_obj,include_ais=False,
@@ -355,6 +374,229 @@ def error_faces_by_axons(neuron_obj,verbose=False,visualize_errors_at_end=False,
 
     axons_to_consider = dict([(k,v) for k,v in axon_seg_dict.items() if k in to_keep_limb_names])
     axons_to_not_keep = dict([(k,v) for k,v in axon_seg_dict.items() if k not in to_keep_limb_names])
+    
+
+    if verbose:
+        print(f"Axons not keeping because of soma: {axons_to_not_keep}")
+
+    # Step 3: Erroring out the axons based on projections
+
+    valid_axon_branches_by_limb = dict()
+    not_valid_axon_branches_by_limb = dict()
+
+
+    
+    axon_vector = np.array([0,1,0])
+
+    for curr_limb_name,curr_axon_nodes in axons_to_consider.items():
+        if verbose:
+            print(f"\n----- Working on {curr_limb_name} ------")
+        # curr_limb_name = "L0"
+        # curr_axon_nodes = axons_to_consider[curr_limb_name]
+        curr_limb_idx = int(curr_limb_name[1:])
+        curr_limb = neuron_obj[curr_limb_idx]
+
+
+        #1) Get the nodes that are axons
+
+
+        #2) Group into connected components
+        curr_limb_network = nx.from_edgelist(curr_limb.concept_network.edges())
+        axon_subgraph = curr_limb_network.subgraph(curr_axon_nodes)
+        axon_connected_components = list(nx.connected_components(axon_subgraph))
+
+        valid_axon_branches = []
+
+        #3) Iterate through the connected components
+        for ax_idx,ax_group in enumerate(axon_connected_components):
+            valid_flag = False
+            if verbose:
+                print(f"-- Axon Group {ax_idx} of size {len(ax_group)}--")
+            for soma_idx in curr_limb.touching_somas():
+                all_start_node = nru.all_starting_attr_by_limb_and_soma(curr_limb,soma_idx,"starting_node")
+                all_start_coord = nru.all_starting_attr_by_limb_and_soma(curr_limb,soma_idx,"starting_coordinate")
+                for start_node,start_coord in zip(all_start_node,all_start_coord):
+                    if verbose:
+                        print(f"   Working on soma {soma_idx}, starting_node {start_node}")
+
+                    #find the shortest path between the axon group and the starting node
+                    current_shortest_path,st_node,end_node = xu.shortest_path_between_two_sets_of_nodes(curr_limb_network,[start_node],list(ax_group))
+                    
+
+                    #get the skeleton of the path
+                    path_skeletons = sk.stack_skeletons([curr_limb[k].skeleton for k in current_shortest_path])
+
+                    #order the skeleton by a certain coordinate
+                    ordered_path_skeleton = sk.order_skeleton(path_skeletons,start_endpoint_coordinate=start_coord)
+
+                    #check and see if skeletal distance is lower than distance check and if it is then use a different angle check
+                    if sk.calculate_skeleton_distance(ordered_path_skeleton)< min_skeletal_path_threshold:
+                        if verbose:
+                            print(f"Using AIS angle threshold {ais_angle_threshold}")
+                        curr_angle_threshold = ais_angle_threshold
+                    else:
+                        if verbose:
+                            print("Not using AIS angle threshold")
+                        curr_angle_threshold = non_ais_angle_threshold
+
+
+                    #get the first skeletal distance of threshold
+                    keep_skeleton_indices = np.where(sk.calculate_skeleton_segment_distances(ordered_path_skeleton)<=sub_skeleton_length)[0]
+
+                    
+                    restricted_skeleton = ordered_path_skeleton[keep_skeleton_indices]
+                    restricted_skeleton_endpoints_sk = np.array([restricted_skeleton[0][0],restricted_skeleton[-1][-1]]).reshape(-1,2,3)
+                    restricted_skeleton_vector = np.array(restricted_skeleton[-1][-1]-restricted_skeleton[0][0])
+                    restricted_skeleton_vector = restricted_skeleton_vector/np.linalg.norm(restricted_skeleton_vector)
+
+                    #angle between going down and skeleton vector
+                    sk_angle = nu.angle_between_vectors(axon_vector,restricted_skeleton_vector)
+                    if verbose:
+                        print(f"sk_angle= {sk_angle}")
+
+                    if sk_angle > curr_angle_threshold:
+                        if verbose:
+                            print("*****Path to axon group not valid******")
+                    else:
+                        if verbose:
+                            pass
+                            #print("Path to axon group valid so adding them as valid axon segments")
+                        valid_axon_branches.append(list(ax_group))
+                        valid_flag = True
+                        break
+
+    #                 if curr_limb_name == "L1":
+    #                     raise Exception()
+
+                if valid_flag:
+                    break
+
+
+        
+            
+
+        
+        if len(valid_axon_branches) > 0:
+            valid_axon_branches_by_limb[curr_limb_name] = np.concatenate(valid_axon_branches)
+            not_valid_axon_branches_by_limb[curr_limb_name] = list(np.setdiff1d(curr_axon_nodes,np.concatenate(valid_axon_branches)))
+        else:
+            valid_axon_branches_by_limb[curr_limb_name] = []
+            not_valid_axon_branches_by_limb[curr_limb_name] = list(curr_axon_nodes)
+        
+        if verbose:
+            print(f"\n\nFor limb {curr_limb_idx} the valid axon branches are {valid_axon_branches_by_limb[curr_limb_name] }")
+            print(f"The following are not valid: {not_valid_axon_branches_by_limb[curr_limb_name]}")
+
+    # Step 4: Compiling all the errored faces
+
+
+    final_error_axons = copy.copy(axons_to_not_keep)
+    final_error_axons.update(not_valid_axon_branches_by_limb)
+    
+    if verbose:
+        print(f"final_error_axons = {final_error_axons}")
+    
+    if visualize_errors_at_end:
+        nviz.visualize_neuron(neuron_obj,
+                              visualize_type=["mesh"],
+                              limb_branch_dict=final_error_axons,
+                             mesh_color="red",
+                             mesh_whole_neuron=True)
+        
+    return final_error_axons
+
+
+def error_faces_by_axons(neuron_obj,error_branches = None,
+                         verbose=False,visualize_errors_at_end=False,
+                        min_skeletal_path_threshold = 15000,
+                                sub_skeleton_length = 20000,
+                                ais_angle_threshold = 110,
+                                non_ais_angle_threshold = 65,
+                         return_axon_non_axon_faces=False):
+    """
+    Purpose: Will return the faces that are errors after computing 
+    the branches that are errors
+    
+    
+    
+    """
+    
+    if error_branches is None:
+        final_error_axons = error_branches_by_axons(neuron_obj,verbose=verbose,
+                                                    visualize_errors_at_end=False,
+                        min_skeletal_path_threshold = min_skeletal_path_threshold,
+                                sub_skeleton_length = sub_skeleton_length,
+                                ais_angle_threshold = ais_angle_threshold,
+                                non_ais_angle_threshold = non_ais_angle_threshold)
+    else:
+        final_error_axons = error_branches
+        
+    
+    # Step 5: Getting all of the errored faces
+    error_faces = []
+    for curr_limb_name,error_branch_idx in final_error_axons.items():
+        curr_limb = neuron_obj[curr_limb_name]
+        curr_error_faces = tu.original_mesh_faces_map(neuron_obj.mesh,
+                                                            [curr_limb[k].mesh for k in error_branch_idx],
+                                       matching=True,
+                                       print_flag=False)
+
+
+        #curr_error_faces = np.concatenate([new_limb_mesh_face_idx[curr_limb[k].mesh_face_idx] for k in error_branch_idx])
+        error_faces.append(curr_error_faces)
+
+    if len(error_faces) > 0:
+        error_faces_concat = np.concatenate(error_faces)
+    else:
+        error_faces_concat = error_faces
+        
+    error_faces_concat = np.array(error_faces_concat).astype("int")
+        
+    if verbose:
+        print(f"\n\n -------- Total number of error faces = {len(error_faces_concat)} --------------")
+
+    if visualize_errors_at_end:
+        nviz.plot_objects(main_mesh = neuron_obj.mesh,
+            meshes=[neuron_obj.mesh.submesh([error_faces_concat],append=True)],
+                         meshes_colors=["red"])
+        
+    if return_axon_non_axon_faces:
+        if verbose:
+            print("Computing the axon and non-axonal faces")
+        axon_faces = nru.limb_branch_dict_to_faces(neuron_obj,valid_axon_branches_by_limb)
+        non_axon_faces = np.setdiff1d(np.arange(len(neuron_obj.mesh.faces)),axon_faces)
+        return error_faces_concat,axon_faces,non_axon_faces
+        
+    return error_faces_concat
+
+''' Old Way that did not have the function split up
+def error_faces_by_axons(neuron_obj,verbose=False,visualize_errors_at_end=False,
+                        min_skeletal_path_threshold = 15000,
+                                sub_skeleton_length = 20000,
+                                ais_angle_threshold = 110,
+                                non_ais_angle_threshold = 50,
+                         return_axon_non_axon_faces=False):
+    
+    if neuron_obj.n_limbs == 0:
+        if return_axon_non_axon_faces:
+            axon_faces = np.array([])
+            non_axon_faces = np.arange(len(neuron_obj.mesh.faces))
+            return np.array([]),axon_faces,non_axon_faces
+        return np.array([])
+    
+    axon_seg_dict = au.axon_like_segments(neuron_obj,include_ais=False,
+                                          filter_away_end_false_positives=True,
+                                          visualize_at_end=False,
+                                         )
+
+    # Step 2: Get the branches that should not be considered for axons
+
+
+    to_keep_limb_names = nru.filter_limbs_below_soma_percentile(neuron_obj,verbose=False)
+
+    axons_to_consider = dict([(k,v) for k,v in axon_seg_dict.items() if k in to_keep_limb_names])
+    axons_to_not_keep = dict([(k,v) for k,v in axon_seg_dict.items() if k not in to_keep_limb_names])
+    
 
     if verbose:
         print(f"Axons not keeping because of soma: {axons_to_not_keep}")
@@ -506,9 +748,16 @@ def error_faces_by_axons(neuron_obj,verbose=False,visualize_errors_at_end=False,
             meshes=[neuron_obj.mesh.submesh([error_faces_concat],append=True)],
                          meshes_colors=["red"])
         
+    if return_axon_non_axon_faces:
+        if verbose:
+            print("Computing the axon and non-axonal faces")
+        axon_faces = nru.limb_branch_dict_to_faces(neuron_obj,valid_axon_branches_by_limb)
+        non_axon_faces = np.setdiff1d(np.arange(len(neuron_obj.mesh.faces)),axon_faces)
+        return error_faces_concat,axon_faces,non_axon_faces
+        
     return error_faces_concat
 
-
+'''
 
 
 from pykdtree.kdtree import KDTree
@@ -520,6 +769,11 @@ def get_error_synapse_inserts(current_mesh,
                               minnie=None,
                               return_synapse_stats=True,
                               return_synapse_centroids=False,
+                              return_synapse_ids=False,
+                              use_full_Synapses=False,
+                              synapse_centers=None,
+                              synapse_ids=None,
+                              timestamps=None,
                               verbose=False):
     """
     Purpose: To Create the synapse exclude inserts for a neuron object based on the 
@@ -537,28 +791,52 @@ def get_error_synapse_inserts(current_mesh,
     """
     
     
-    if len(returned_error_faces) == 0:
-        if verbose:
-            print("Returning empty list because there were no error faces")
-        if return_synapse_stats:
-            return [],0,0
-        else:
-            return []
-    
+        
     if minnie is None:
         minnie,_ = du.configure_minnie_vm()
     
-    segment_synapses = minnie.SynapseFiltered() & f"presyn={segment_id} OR postsyn={segment_id}"
+    if synapse_ids is None or synapse_centers is None:
+        #check if there are any synapses
+        if use_full_Synapses:
+            segment_synapses = minnie.Synapse() & f"presyn={segment_id} OR postsyn={segment_id}"
+        else:
+            segment_synapses = minnie.SynapseFiltered() & f"presyn={segment_id} OR postsyn={segment_id}"
+        if len(segment_synapses)<=0:
+            if verbose:
+                print("Returning empty list because there were no SYNAPSES")
+            if return_synapse_centroids or return_synapse_ids:
+                return np.array([]),np.array([])
+            if return_synapse_stats:
+                return [],0,0
+            else:
+                return []
+
+        #2) Download the IDs and the centroid data
+        synapse_ids,timestamps, centroid_xs, centroid_ys, centroid_zs = segment_synapses.fetch("synapse_id","timestamp","centroid_x","centroid_y","centroid_z")
+
+
+        synapse_centers = np.vstack([centroid_xs,centroid_ys,centroid_zs]).T
+    if timestamps is None:
+        timestamps = np.zeros(len(synapse_centers))
+        
     
-    if len(segment_synapses)<=0:
+    synapse_centers_scaled = synapse_centers* [4, 4, 40]
+    
+    if len(returned_error_faces) == 0:
         if verbose:
-            print("Returning empty list because there were no SYNAPSES")
+            print("Returning empty list because there were no error faces")
+        if return_synapse_centroids:
+            #2) Download the IDs and the centroid data
+            return np.array([]),synapse_centers_scaled
+        if return_synapse_ids:
+            return np.array([]),synapse_ids
         if return_synapse_stats:
             return [],0,0
         else:
             return []
+
     
-    
+
     #0) Create face labels for the entire mesh by makeing 0 for all of them but then changing the face labels of errors to 1
     neuron_mesh_labels = np.zeros(len(current_mesh.faces))
     neuron_mesh_labels[returned_error_faces] = 1
@@ -570,11 +848,7 @@ def get_error_synapse_inserts(current_mesh,
     
     neuron_kd = KDTree(current_mesh.triangles_center)
     
-    #2) Download the IDs and the centroid data
-    synapse_ids,timestamps, centroid_xs, centroid_ys, centroid_zs = segment_synapses.fetch("synapse_id","timestamp","centroid_x","centroid_y","centroid_z")
     
-    synapse_centers = np.vstack([centroid_xs,centroid_ys,centroid_zs]).T
-    synapse_centers_scaled = synapse_centers* [4, 4, 40]
     if verbose:
         print(f"Processing {len(synapse_centers_scaled)} synapses")
 
@@ -593,6 +867,8 @@ def get_error_synapse_inserts(current_mesh,
         print(f"Number of errored synapses = {errored_synapses_idx.shape}")
         
     errored_synapses = synapse_ids[errored_synapses_idx]
+    non_errored_synapses = synapse_ids[non_errored_synapses_idx]
+    
     errored_synapse_timestamps = timestamps[errored_synapses_idx]
     data_to_write = [dict(synapse_id=syn,timestamp=t,criteria_id=0,segment_id=segment_id) for syn,t in zip(errored_synapses,errored_synapse_timestamps)]
     
@@ -600,6 +876,11 @@ def get_error_synapse_inserts(current_mesh,
     if return_synapse_centroids:
         print("Returning the 1) coordinates for errored synapses 2) Coordinates for non-errored synapses")
         return synapse_centers_scaled[errored_synapses_idx],synapse_centers_scaled[non_errored_synapses_idx]
+    
+    if return_synapse_ids:
+        print("Returning the synpase ids 1) errored synpases 2) non-errored synapses")
+        return errored_synapses,non_errored_synapses
+        
     
     if return_synapse_stats:
         n_synapses = len(synapse_ids)

@@ -187,6 +187,34 @@ class Branch:
     'width'
     """
     
+    @property
+    def skeletal_length(self):
+        return sk.calculate_skeleton_distance(self.skeleton)
+    
+    @property
+    def n_spines(self):
+        return nru.n_spines(self)
+    
+    @property
+    def spine_density(self):
+        return nru.spine_density(self)
+    
+    @property
+    def total_spine_volume(self):
+        return nru.total_spine_volume(self)
+    
+    @property
+    def spine_volume_median(self):
+        return nru.spine_volume_median(self)
+    
+    @property
+    def spine_volume_density(self):
+        return nru.spine_volume_density(self)
+    
+    @property
+    def skeletal_length_eligible(self):
+        return sk.calculate_skeleton_distance(self.skeleton) 
+    
     def compute_spines_volume(self):
         if self.spines is None:
             self.spines_volume = None

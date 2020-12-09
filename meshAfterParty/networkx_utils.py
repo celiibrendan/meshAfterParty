@@ -1026,6 +1026,19 @@ def upstream_edges(G,node):
 def upstream_edges_neighbors(G,node):
     return [k for k in list(nx.edge_dfs(G,node, orientation='reverse')) if node in k]
     
+def downstream_nodes(G,node):
+    return np.array(downstream_edges_neighbors(G,node))[:,1]
+    
+def parent_node(G,node):
+    return upstream_node(G,node)
+
+def sibling_nodes(G,node):
+    parent_node = upstream_node(G,node)
+
+    #find the sibling nodes
+    all_sibling_nodes = downstream_nodes(G,parent_node)
+    return all_sibling_nodes[all_sibling_nodes != node]
+    
 def upstream_node(G,node,return_single=True):
     curr_upstream_nodes = upstream_edges_neighbors(G,node)
         

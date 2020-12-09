@@ -340,10 +340,12 @@ def check_meshes_inside_multiple_mesh_bbox(main_meshes,test_meshes,
 # main mesh cancellation
 import numpy as  np
 import system_utils as su
+# --------------- 12/3 Addition: Made the connectivity matrix from the vertices by default ------------- #
 def split_significant_pieces(new_submesh,
                             significance_threshold=100,
                             print_flag=False,
-                            return_insignificant_pieces=False):
+                            return_insignificant_pieces=False,
+                            connectivity="vertices"):
     
     if type(new_submesh) != type(trimesh.Trimesh()):
         print("Inside split_significant_pieces and was passed empty mesh so retruning empty list")
@@ -356,7 +358,11 @@ def split_significant_pieces(new_submesh,
         print("------Starting the mesh filter for significant outside pieces-------")
 #     import system_utils as su
 #     su.compressed_pickle(new_submesh,f"new_submesh_{np.random.randint(10,1000)}")
-    mesh_pieces = new_submesh.split(only_watertight=False,repair=False)
+    if connectivity=="edges":
+        mesh_pieces = new_submesh.split(only_watertight=False,repair=False)
+    else:
+        mesh_pieces = split_by_vertices(new_submesh,return_components=False)
+        
     if print_flag:
         print(f"Finished splitting mesh_pieces into = {mesh_pieces}")
     if type(mesh_pieces) not in [type(np.ndarray([])),type(np.array([])),list]:
@@ -417,7 +423,7 @@ def sort_meshes_largest_to_smallest(meshes,
     
     
 from trimesh.graph import *
-def split(mesh, only_watertight=False, adjacency=None, engine=None, return_components=True, **kwargs):
+def split(mesh, only_watertight=False, adjacency=None, engine=None, return_components=True, connectivity="vertices", **kwargs):
     """
     Split a mesh into multiple meshes from face
     connectivity.
@@ -452,6 +458,9 @@ def split(mesh, only_watertight=False, adjacency=None, engine=None, return_compo
         5569])], dtype=object)
     
     """
+    if connectivity == "vertices":
+        return split_by_vertices(mesh,return_components=return_components)
+    
     if adjacency is None:
         adjacency = mesh.face_adjacency
 
@@ -1445,7 +1454,8 @@ from trimesh.grouping import *
 def waterfilling_face_idx(mesh,
                       starting_face_idx,
                       n_iterations=10,
-                         return_submesh=False):
+                         return_submesh=False,
+                         connectivity="vertices"):
     """
     Will extend certain faces by infecting neighbors 
     for a certain number of iterations:
@@ -1459,15 +1469,19 @@ def waterfilling_face_idx(mesh,
     sk.graph_skeleton_and_mesh(other_meshes=[curr_branch.mesh,expanded_border_mesh],
                               other_meshes_colors=["black","red"])
     """
-    #0) Turn the mesh into a graph
-    total_mesh_graph = nx.from_edgelist(mesh.face_adjacency)
-    
     #1) set the starting faces
     final_faces = starting_face_idx
     
-    #2) expand the faces
-    for i in range(n_iterations):
-        final_faces = np.unique(np.concatenate([xu.get_neighbors(total_mesh_graph,k) for k in final_faces]))
+    #0) Turn the mesh into a graph
+    if connectivity=="edges":
+        total_mesh_graph = nx.from_edgelist(mesh.face_adjacency)
+        #2) expand the faces
+        for i in range(n_iterations):
+            final_faces = np.unique(np.concatenate([xu.get_neighbors(total_mesh_graph,k) for k in final_faces]))
+    else:
+        for i in range(n_iterations):
+            final_faces = face_neighbors_by_vertices(mesh,final_faces)
+
     
     if return_submesh:
         return mesh.submesh([final_faces],append=True,repair=False)
@@ -2278,15 +2292,19 @@ def remove_mesh_interior(mesh,
                          size_threshold_to_remove=700,
                          verbose=True,
                          return_removed_pieces=False,
+                         connectivity="vertices",
+                         try_hole_close=True,
                          **kwargs):
     """
     Will remove interior faces of a mesh with a certain significant size
     
     """
-    curr_interior_mesh = mesh_interior(mesh,return_interior=True,**kwargs)
+    curr_interior_mesh = mesh_interior(mesh,return_interior=True,
+                                       try_hole_close=try_hole_close,
+                                       **kwargs)
     
-    
-    sig_inside = tu.split_significant_pieces(curr_interior_mesh,significance_threshold=size_threshold_to_remove)
+    sig_inside = tu.split_significant_pieces(curr_interior_mesh,significance_threshold=size_threshold_to_remove,
+                                            connectivity=connectivity)
     if len(sig_inside) == 0:
         sig_meshes_no_threshold = split_significant_pieces(curr_interior_mesh,significance_threshold=1)
         meshes_sizes = np.array([len(k.faces) for k in sig_meshes_no_threshold])
@@ -2428,3 +2446,147 @@ def mesh_volume(mesh,watertight_method="trimesh",
         return final_volume,closed_mesh
     else:
         return final_volume
+    
+
+import networkx as nx
+def vertex_components(mesh):
+    return [list(k) for k in nx.connected_components(mesh.vertex_adjacency_graph)]
+
+def components_to_submeshes(mesh,components,return_components=True,only_watertight=False,**kwargs):
+    meshes = mesh.submesh(
+        components, only_watertight=only_watertight, repair=False, **kwargs)
+    
+
+        
+    if type(meshes) != type(np.array([])) and type(meshes) != list:
+        #print(f"meshes = {sub_components}, with type = {type(sub_components)}")
+        if type(meshes) == type(trimesh.Trimesh()) :
+            
+            print("list was only one so surrounding them with list")
+            #print(f"meshes_before = {meshes}")
+            #print(f"components_before = {components}")
+            meshes = [meshes]
+            
+        else:
+            raise Exception("The sub_components were not an array, list or trimesh")
+            
+    # order according to number of faces in meshes (SO DOESN'T ERROR ANYMORE)
+    current_array = [len(c.faces) for c in meshes]
+    ordered_indices = np.flip(np.argsort(current_array))
+    
+    
+    ordered_meshes = np.array([meshes[i] for i in ordered_indices])
+    ordered_components = np.array([components[i] for i in ordered_indices],dtype="object")
+    
+    if len(ordered_meshes)>=2:
+        if (len(ordered_meshes[0].faces) < len(ordered_meshes[1].faces)) and (len(ordered_meshes[0].vertices) < len(ordered_meshes[1].vertices)) :
+            #print(f"ordered_meshes = {ordered_meshes}")
+            raise Exception(f"Split is not passing back ordered faces:"
+                            f" ordered_meshes = {ordered_meshes},  "
+                           f"components= {components},  "
+                           f"meshes = {meshes},  "
+                            f"current_array={current_array},  "
+                            f"ordered_indices={ordered_indices},  "
+                           )
+    
+    #control if the meshes is iterable or not
+    try:
+        ordered_comp_indices = np.array([k.astype("int") for k in ordered_components])
+    except:
+        import system_utils as su
+        su.compressed_pickle(ordered_components,"ordered_components")
+        print(f"ordered_components = {ordered_components}")
+        raise Exception("ordered_components")
+    
+    if return_components:
+        return ordered_meshes,ordered_comp_indices
+    else:
+        return ordered_meshes
+
+
+def split_by_vertices(mesh,return_components=False,verbose=False):
+    
+    local_time = time.time()
+    conn_verts = vertex_components(mesh)
+    if verbose:
+        print(f"for vertex components = {time.time() - local_time}")
+        local_time = time.time()
+    faces_per_component = [np.unique(np.concatenate(mesh.vertex_faces[k])) for k in conn_verts]
+    if verbose:
+        print(f"for faces_per_component = {time.time() - local_time}")
+        local_time = time.time()
+    
+    faces_per_component = [k[k!=-1] for k in faces_per_component]
+    if verbose:
+        print(f"filtering faces_per_component = {time.time() - local_time}")
+        local_time = time.time()
+        
+    ordered_meshes,ordered_comp_indices = components_to_submeshes(mesh,faces_per_component,return_components=True)
+    if verbose:
+        print(f"for components_to_submeshes = {time.time() - local_time}")
+        local_time = time.time()
+    
+    if return_components:
+        return ordered_meshes,ordered_comp_indices
+    else:
+        return ordered_meshes
+    
+    
+import itertools
+def mesh_face_graph_by_vertex(mesh):
+    """
+    Create a connectivity graph based on the faces that touch the same vertex have a connection edge
+    
+    """
+    faces_adj_by_vertex = np.concatenate([np.array(list(itertools.combinations(k[k!=-1],2))) for k in mesh.vertex_faces if len(k[k!=-1])>1])
+    if len(faces_adj_by_vertex) == 0:
+        return nx.Graph()
+    else:
+        unique_edges = np.unique(faces_adj_by_vertex,axis=0)
+        return nx.from_edgelist(unique_edges)
+    
+    
+def find_closest_face_to_coordinates(mesh,coordinates,return_closest_distance=False,verbose=False):
+    """
+    Given a list of coordinates will find the closest
+    face on a mesh
+    
+    """
+    #2) get the closest point from the nodes to face centers of mesh
+    mesh_kd = KDTree(mesh.triangles_center)
+    dist,closest_faces = mesh_kd.query(coordinates)
+    
+    #3) Get the lowest distance
+    closest_index = np.argmin(dist)
+    min_distance = dist[closest_index]
+    
+    if verbose:
+        print(f"Closest_distance = {min_distance}")
+        
+    if return_closest_distance:
+        return closest_index,min_distance
+    else:
+        return closest_index
+    
+    
+def face_neighbors_by_vertices(mesh,faces_list,
+                              concatenate_unique_list=True):
+    """
+    Find the neighbors of face where neighbors are
+    faces that touch the same vertices
+    
+    Pseudocode: 
+    1) Change the faces to vertices
+    2) Find all the faces associated with the vertices
+    """
+    if concatenate_unique_list:
+        return vertices_to_faces(mesh,mesh.faces[faces_list].ravel(),concatenate_unique_list=concatenate_unique_list)
+    else:
+        return [vertices_to_faces(mesh,mesh.faces[k].ravel(),concatenate_unique_list=True) for k in faces_list]
+    
+    
+def face_neighbors_by_vertices_seperate(mesh,faces_list):
+    f_verts = mesh.faces[faces_list]
+    return [np.unique(k[k!=-1]) for k in mesh.vertex_faces[f_verts]]
+    
+    

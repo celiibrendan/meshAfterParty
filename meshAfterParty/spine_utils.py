@@ -246,7 +246,8 @@ def get_spine_meshes_unfiltered_from_mesh(current_mesh,
             touching_meshes = tu.mesh_pieces_connectivity(
                             main_mesh=current_mesh,
                             central_piece=curr_mesh_idx,
-                            periphery_pieces=total_meshes_idx)
+                            periphery_pieces=total_meshes_idx,
+                            connectivity = "vertices")
             try:
                 touching_meshes.remove(j)
             except:

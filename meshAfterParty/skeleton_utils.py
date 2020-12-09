@@ -218,7 +218,6 @@ def plot_ipv_mesh(mesh,color=[1.,0.,0.,0.2],
                                    elephant_mesh_sub.vertices[:,1],
                                    elephant_mesh_sub.vertices[:,2],
                                    triangles=elephant_mesh_sub.faces)
-
         mesh4.color = color
         mesh4.material.transparent = True
         
@@ -368,7 +367,6 @@ def graph_skeleton_and_mesh(main_mesh_verts=[],
         other_meshes = [other_meshes]
     if type(other_meshes_colors) != list and type(other_meshes_colors) != np.ndarray:
         other_meshes_colors = [other_meshes_colors]
-    
     if type(other_skeletons) != list and type(other_skeletons) != np.ndarray:
         other_skeletons = [other_skeletons]
     if type(other_skeletons_colors) != list and type(other_skeletons_colors) != np.ndarray:
@@ -398,13 +396,13 @@ def graph_skeleton_and_mesh(main_mesh_verts=[],
                 other_meshes_colors = mu.generate_color_list(
                             user_colors=[], #if user sends a prescribed list
                             n_colors=len(other_meshes),
-                            colors_to_omit=["green","blue"], #because that is the one used for the main mesh
+                            #colors_to_omit=["green","blue"], #because that is the one used for the main mesh
                             alpha_level=mesh_alpha)
             else:
                 other_meshes_colors = mu.generate_color_list(
                             user_colors=other_meshes_colors, #if user sends a prescribed list
                             n_colors=len(other_meshes),
-                            colors_to_omit=["green","blue"], #because that is the one used for the main mesh
+                            #colors_to_omit=["green","blue"], #because that is the one used for the main mesh
                             alpha_level=mesh_alpha)
             
     
@@ -425,14 +423,14 @@ def graph_skeleton_and_mesh(main_mesh_verts=[],
             other_skeletons_colors = mu.generate_color_list(
                         user_colors=[], #if user sends a prescribed list
                         n_colors=len(other_skeletons),
-                        colors_to_omit=["green","blue"], #because that is the one used for the main mesh
+                        #colors_to_omit=["green","blue"], #because that is the one used for the main mesh
                         alpha_level=1)
         else:
             
             other_skeletons_colors = mu.generate_color_list(
                         user_colors=other_skeletons_colors, #if user sends a prescribed list
                         n_colors=len(other_skeletons),
-                        colors_to_omit=["green","blue"], #because that is the one used for the main mesh
+                        #colors_to_omit=["green","blue"], #because that is the one used for the main mesh
                         alpha_level=1)
             #print(f"user colors picked for other_skeletons_colors = {other_skeletons_colors}")
     
@@ -1376,6 +1374,43 @@ def calcification(
     )
     
     return return_value,location_with_filename+"_skeleton.cgal"
+
+def skeleton_cgal(mesh=None,
+                  mesh_path=None,
+                  filepath = "./temp.off",
+                  remove_temp_files=True,
+                  verbose=False,
+                  **kwargs):
+    """
+    Pseudocode: 
+    1) Write the mesh to a file
+    2) Pass the file to the calcification
+    3) Delete the temporary file
+    """
+    #1) Write the mesh to a file
+    if not mesh is None:
+        written_path = write_neuron_off(mesh,filepath)
+    else:
+        written_path = mesh_path
+    
+    #2) Pass the file to the calcification
+    sk_time = time.time()
+    skeleton_results,sk_file = calcification(written_path,**kwargs)
+    
+    significant_poisson_skeleton = read_skeleton_edges_coordinates([sk_file])
+    
+    #3) Delete the temporary file
+    if remove_temp_files:
+        if mesh_path is None:
+            Path(written_path).unlink()
+        Path(sk_file).unlink()
+    
+    if verbose:
+        print(f"Total time for skeletonizing {time.time() - sk_time}")
+        print(f"Returning skeleton of size {significant_poisson_skeleton.shape}")
+    
+    return significant_poisson_skeleton
+    
 
 
 # ---------- Does the cleaning of the skeleton -------------- #
@@ -2695,7 +2730,8 @@ def skeletonize_connected_branch(current_mesh,
                                                 )
         
         print(f"-----Time for Screened Poisson= {time.time()-skeleton_start}")
-            
+        
+        
         #2) Filter away for largest_poisson_piece:
         mesh_pieces = split_significant_pieces(new_mesh,
                                             significance_threshold=surface_reconstruction_size)
@@ -2726,8 +2762,9 @@ def skeletonize_connected_branch(current_mesh,
             #will stitch them together later
         else: #if there are parts that can do the cgal skeletonization
             skeleton_start = time.time()
-            print("     Starting Calcification")
-            for zz,piece in enumerate(mesh_pieces):
+            print(f"mesh_pieces = {mesh_pieces}")
+            print("     Starting Calcification (12/2 Change only going to do the largest piece)")
+            for zz,piece in enumerate([mesh_pieces[0]]):
                 current_mesh_path = output_folder / f"{name}_{zz}"
                 if skeleton_print:
                     print(f"current_mesh_path = {current_mesh_path}")
@@ -4607,7 +4644,7 @@ def remove_cycles_from_skeleton(skeleton,
             return skeleton
         else:
             su.compressed_pickle(skeleton,"remove_cycles_skeleton")
-            raise Exception("Something went wrong in remove_cycles_from_skeleton")
+            raise Exception("Something went wrong in remove_cycles_from_skeleton (12/2 found because had disconnected skeleton)")
 
 
 

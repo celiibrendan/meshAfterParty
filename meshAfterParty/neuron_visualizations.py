@@ -698,6 +698,7 @@ def visualize_neuron(
     mesh_whole_neuron=False,
     mesh_whole_neuron_color="green",
     mesh_whole_neuron_alpha=0.2,
+    subtract_from_main_mesh=True,
     
     mesh_spines = False,
     mesh_spines_color = "red",
@@ -1185,10 +1186,18 @@ def visualize_neuron(
                 whole_neuron_colors_list = mu.process_non_dict_color_input(configuration_dict["whole_neuron_color"])
                 whole_neuron_colors_list_alpha = mu.apply_alpha_to_color_list(whole_neuron_colors_list,alpha=configuration_dict["whole_neuron_alpha"])
                 
-                #graph
-                plot_ipv_mesh(current_neuron.mesh,color=whole_neuron_colors_list_alpha[0],flip_y=flip_y)
-                main_vertices.append([np.min(current_neuron.mesh.vertices,axis=0),
-                                      np.max(current_neuron.mesh.vertices,axis=0)])
+                # Will do the erroring of the mesh
+                if (subtract_from_main_mesh and (len(plot_items)>0)):
+                    main_mesh_to_plot = tu.subtract_mesh(original_mesh=current_neuron.mesh,
+                                              subtract_mesh=plot_items)
+                else:
+                    main_mesh_to_plot = current_neuron.mesh
+        
+                
+                # will do the plotting
+                plot_ipv_mesh(main_mesh_to_plot,color=whole_neuron_colors_list_alpha[0],flip_y=flip_y)
+                main_vertices.append([np.min(main_mesh_to_plot.vertices,axis=0),
+                                      np.max(main_mesh_to_plot.vertices,axis=0)])
                 
                 if print_time:
                     print(f"Plotting mesh whole neuron = {time.time() - local_time}")
@@ -1723,16 +1732,13 @@ def plot_objects(main_mesh=None,
                 html_path="",
                 show_at_end=True,
                 append_figure=False,
-                flip_y=True):
+                flip_y=True,
+                
+                subtract_from_main_mesh=True):
     import neuron_visualizations as nviz
     nviz = reload(nviz)
     
-    if main_mesh is None:
-        main_mesh_verts = []
-        main_mesh_faces= []
-    else:
-        main_mesh_verts = main_mesh.vertices
-        main_mesh_faces= main_mesh.faces
+
         
     if main_skeleton is None:
         edge_coordinates = []
@@ -1742,10 +1748,32 @@ def plot_objects(main_mesh=None,
         
     convert_to_list_vars = [meshes,meshes_colors,skeletons,
                             skeletons_colors,scatters,scatters_colors]
-    for k in convert_to_list_vars:
-        if type(k) != list:
-            k = [k]
     
+    def convert_to_list(curr_item):
+        if type(curr_item) != list:
+            return [curr_item]
+        else:
+            return curr_item
+    
+    meshes =  convert_to_list(meshes)
+    meshes_colors =  convert_to_list(meshes_colors)
+    skeletons =  convert_to_list(skeletons)
+    skeletons_colors =  convert_to_list(skeletons_colors)
+    scatters =  convert_to_list(scatters)
+    scatters_colors =  convert_to_list(scatters_colors)
+    
+    
+    if (subtract_from_main_mesh and (not main_mesh is None) and (len(meshes)>0)):
+        main_mesh = tu.subtract_mesh(original_mesh=main_mesh,
+                                  subtract_mesh=meshes)
+        
+    
+    if main_mesh is None:
+        main_mesh_verts = []
+        main_mesh_faces= []
+    else:
+        main_mesh_verts = main_mesh.vertices
+        main_mesh_faces= main_mesh.faces
         
     return sk.graph_skeleton_and_mesh(main_mesh_verts=main_mesh_verts,
                            main_mesh_faces=main_mesh_faces,
@@ -1768,3 +1796,13 @@ def plot_objects(main_mesh=None,
                            )
         
         
+def plot_branch_spines(curr_branch):
+    import trimesh_utils as tu
+    """
+    Purpose: To plot a branch with certain spines
+    """
+    shaft_mesh = tu.subtract_mesh(curr_branch.mesh,curr_branch.spines)
+    nviz.plot_objects(main_mesh=shaft_mesh,
+                     meshes=curr_branch.spines,
+                      meshes_colors="red",
+                     mesh_alpha=1)

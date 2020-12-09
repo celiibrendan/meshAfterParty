@@ -2423,7 +2423,10 @@ def width_no_spine_perc(neuron_obj,perc=90):
 # -- spine data --
 
 def n_spines(neuron_obj):
-    return len(neuron_obj.spines)
+    if neuron_obj.spines is None:
+        return 0
+    else:
+        return len(neuron_obj.spines)
 
 def spine_density(neuron_obj):
     skeletal_length = neuron_obj.skeletal_length
@@ -2480,7 +2483,7 @@ def spines_per_branch_eligible(neuron_obj):
 
 # ------- all the spine volume stuff -----------
 def total_spine_volume(neuron_obj):
-    if len(neuron_obj.spines) > 0:
+    if neuron_obj.n_spines > 0:
         spines_vol = np.array(neuron_obj.spines_volume)
         return np.sum(spines_vol)
         
@@ -2489,7 +2492,7 @@ def total_spine_volume(neuron_obj):
 
 def spine_volume_median(neuron_obj):
     spines_vol = np.array(neuron_obj.spines_volume)
-    if len(neuron_obj.spines) > 0:
+    if neuron_obj.n_spines > 0:
         #spine_volume_median
         valid_spine_vol = spines_vol[spines_vol>0]
 
@@ -2504,7 +2507,7 @@ def spine_volume_median(neuron_obj):
         return 0
     
 def spine_volume_density(neuron_obj):
-    if len(neuron_obj.spines) > 0:
+    if neuron_obj.n_spines > 0:
         if neuron_obj.skeletal_length_eligible > 0:
             spine_volume_density_eligible = neuron_obj.total_spine_volume/neuron_obj.skeletal_length
         else:
@@ -2517,7 +2520,7 @@ def spine_volume_density(neuron_obj):
 
 
 def spine_volume_density_eligible(neuron_obj):
-    if len(neuron_obj.spines) > 0:
+    if neuron_obj.n_spines > 0:
         if neuron_obj.skeletal_length > 0:
             spine_volume_density = neuron_obj.total_spine_volume/neuron_obj.skeletal_length_eligible
         else:
@@ -2529,7 +2532,7 @@ def spine_volume_density_eligible(neuron_obj):
         return 0
     
 def spine_volume_per_branch_eligible(neuron_obj):
-    if len(neuron_obj.spines) > 0:
+    if neuron_obj.n_spines > 0:
         if neuron_obj.n_spine_eligible_branches > 0:
             spine_volume_per_branch_eligible = neuron_obj.total_spine_volume/neuron_obj.n_spine_eligible_branches
         else:
@@ -2810,6 +2813,83 @@ def branch_boundary_transition(curr_limb,
         return upstream_width_average,base_width_average
     
 
+def find_parent_child_skeleton_angle(curr_limb_obj,
+                            child_node,   
+                            parent_node=None,
+                           comparison_distance=3000,
+                            offset=0,
+                           verbose=False):
+    
+    if parent_node is None:
+        parent_node = xu.upstream_node(curr_limb_obj.concept_network_directional,child_node)
+        
+    # -------Doing the parent calculation---------
+    parent_child_edge = [parent_node,child_node]
+
+    up_width,d_width,up_sk,d_sk = branch_boundary_transition(curr_limb_obj,
+                                      edge=parent_child_edge,
+                                      comparison_distance = comparison_distance,
+                                    offset=offset,
+                                    verbose=False)
+    up_sk_flipped = sk.flip_skeleton(up_sk)
+
+    up_vec = up_sk_flipped[-1][-1] - up_sk_flipped[0][0] 
+    d_vec_child = d_sk[-1][-1] - d_sk[0][0]
+
+    parent_child_angle = np.round(nu.angle_between_vectors(up_vec,d_vec_child),2)
+
+    if verbose:
+        print(f"parent_child_angle = {parent_child_angle}")
+        
+    return parent_child_angle    
+
+
+def find_sibling_child_skeleton_angle(curr_limb_obj,
+                            child_node,
+                            parent_node=None,
+                           comparison_distance=3000,
+                            offset=0,
+                           verbose=False):
+    
+    
+    # -------Doing the parent calculation---------
+    if parent_node is None:
+        parent_node = xu.upstream_node(curr_limb_obj.concept_network_directional,child_node)
+        
+    parent_child_edge = [parent_node,child_node]
+
+    up_width,d_width,up_sk,d_sk = branch_boundary_transition(curr_limb_obj,
+                                      edge=parent_child_edge,
+                                      comparison_distance = comparison_distance,
+                                    offset=offset,
+                                    verbose=False)
+    
+    d_vec_child = d_sk[-1][-1] - d_sk[0][0]
+
+    # -------Doing the child calculation---------
+    sibling_nodes = xu.sibling_nodes(curr_limb_obj.concept_network_directional,
+                                    child_node)
+    
+    sibl_angles = dict()
+    for s_n in sibling_nodes:
+        sibling_child_edge = [parent_node,s_n]
+
+        up_width,d_width,up_sk,d_sk = branch_boundary_transition(curr_limb_obj,
+                                          edge=sibling_child_edge,
+                                          comparison_distance = comparison_distance,
+                                        offset=offset,
+                                        verbose=False)
+
+        up_vec = up_sk[-1][-1] - up_sk[0][0] 
+        d_vec_sibling = d_sk[-1][-1] - d_sk[0][0]
+
+        sibling_child_angle = np.round(nu.angle_between_vectors(d_vec_child,d_vec_sibling),2)
+        
+        sibl_angles[s_n] = sibling_child_angle
+        
+    return sibl_angles
+    
+
 def all_concept_network_data_to_dict(all_concept_network_data):
     return_dict = dict()
     for st_info in all_concept_network_data:
@@ -2948,7 +3028,47 @@ def filter_limbs_below_soma_percentile(neuron_obj,
         return convert_int_names_to_string_names(keep_limb_idx)
     else:
         return keep_limb_idx
+
+def limb_branch_dict_to_faces(neuron_obj,limb_branch_dict):
+    """
+    Purpose: To return the face indices of the main
+    mesh that correspond to the limb/branches indicated by dictionary
+    
+    Pseudocode: 
+    0) Have a final face indices list
+    
+    Iterate through all of the limbs
+        Iterate through all of the branches
+            1) Get the original indices of the branch on main mesh
+            2) Add to the list
+            
+    3) Concatenate List and return
+    
+    ret_val = nru.limb_branch_dict_to_faces(neuron_obj,dict(L1=[0,1,2]))
+    """
+    final_face_indices = []
+    
+    for limb_name,branch_names in limb_branch_dict.items():
         
+        all_branch_meshes = [neuron_obj[limb_name][k].mesh for k in branch_names]
+        
+        if len(all_branch_meshes)>0:
+            match_faces = tu.original_mesh_faces_map(neuron_obj.mesh,
+                                                        all_branch_meshes,
+                                                           matching=True,
+                                                           print_flag=False)
+        else:
+            match_faces = []
+        
+        final_face_indices.append(match_faces)
+    
+    if len(final_face_indices)>0:
+        match_faces_idx = np.concatenate(final_face_indices).astype("int")
+    else:
+        match_faces_idx = np.array([])
+        
+    return match_faces_idx
+ 
 
 import neuron #package where can use the Branches class to help do branch skeleton analysis
 

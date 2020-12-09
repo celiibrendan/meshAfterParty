@@ -714,7 +714,8 @@ def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
                                          return_mesh_perc_drop=False,
                                           stitch_patches=50,
                                          buffer=100,
-                                         distance_threshold=3000):
+                                         distance_threshold=3000,
+                                         return_closest_face_on_empty=False):
     
     debug=False
     #making the skeletons resized to 1000 widths and then can use outlier finding
@@ -751,6 +752,12 @@ def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
     if len(mesh_correspondence_indices)== 0:
         if print_flag:
             print("empty mesh_correspondence_indices returned so returning an empty array")
+        if return_closest_face_on_empty:
+            #1) Get the current nodes of skeleton
+            curr_nodes,curr_edges = sk.convert_skeleton_to_nodes_edges(curr_branch_skeleton)
+            closest_face = tu.find_closest_face_to_coordinates(curr_branch_mesh,curr_nodes,verbose=True)
+            return np.array([closest_face]),0
+            
         return []
     
     #now use the new submesh to calculate the new threshold
@@ -893,7 +900,8 @@ def waterfill_labeling(
                 total_mesh_graph=None,
                  propagation_type="random",
                 max_iterations = 1000,
-                max_submesh_threshold = 1000
+                max_submesh_threshold = 1000,
+                connectivity="vertices"
                 ):
     """
     Pseudocode:
@@ -906,9 +914,13 @@ def waterfill_labeling(
     """
     try:
         if not total_mesh_graph:
-            print(f"converted the mesh ({total_mesh}) into a mesh_graph")
+            #print(f"converted the mesh ({total_mesh}) into a mesh_graph")
             #finding the face adjacency:
-            total_mesh_graph = nx.from_edgelist(total_mesh.face_adjacency)
+            if connectivity == "edges":
+                total_mesh_graph = nx.from_edgelist(total_mesh.face_adjacency)
+            else:
+                #total_mesh_graph = tu.mesh_face_graph_by_vertex(total_mesh)
+                total_mesh_graph = None
 
 
 
@@ -924,9 +936,21 @@ def waterfill_labeling(
 
         for i in range(max_iterations):
             #s2) for each unmarked face get the neighbors of all of the faces, and for all these neighbors get all the labels
-            unmarked_faces_neighbors = [xu.get_neighbors(total_mesh_graph,j) for j in curr_unmarked_faces] #will be list of lists
-            #print(f"unmarked_faces_neighbors = {unmarked_faces_neighbors}")
-            unmarked_face_neighbor_labels = [np.array([total_mesh_correspondence[curr_neighbor] for curr_neighbor in z]) for z in unmarked_faces_neighbors]
+            if connectivity == "edges":
+                unmarked_faces_neighbors = [xu.get_neighbors(total_mesh_graph,j) for j in curr_unmarked_faces] #will be list of lists
+                
+            else:
+                unmarked_faces_neighbors = tu.face_neighbors_by_vertices_seperate(total_mesh,curr_unmarked_faces)
+                
+            # old way
+            #unmarked_face_neighbor_labels = [np.array([total_mesh_correspondence[curr_neighbor] for curr_neighbor in z]) for z in unmarked_faces_neighbors]
+            
+            #new way that just indexes into array
+            total_mesh_correspondence = np.array(total_mesh_correspondence)
+            unmarked_face_neighbor_labels = [total_mesh_correspondence[z] for z in unmarked_faces_neighbors]
+            
+            total_labels = list(np.unique(np.concatenate(unmarked_face_neighbor_labels)))
+            
             #print(f"unmarked_face_neighbor_labels = {unmarked_face_neighbor_labels}")
 
             if len(unmarked_face_neighbor_labels) == 0:
@@ -936,12 +960,13 @@ def waterfill_labeling(
                 print(f"unmarked_face_neighbor_labels = {unmarked_face_neighbor_labels}")
 
             #check if there is only one type of label and if so then autofil
-            total_labels = list(np.unique(np.concatenate(unmarked_face_neighbor_labels)))
+            
 
             if -1 in total_labels:
                 total_labels.remove(-1)
 
             if len(total_labels) == 0:
+                #try to get labels by vertices
                 su.compressed_pickle(curr_unmarked_faces,"curr_unmarked_faces")
                 su.compressed_pickle(total_mesh_graph,"total_mesh_graph")
                 su.compressed_pickle(total_mesh_correspondence,"total_mesh_correspondence")
@@ -993,6 +1018,7 @@ def waterfill_labeling(
 
 
 import system_utils as su
+import numpy_utils as nu
 def resolve_empty_conflicting_face_labels(
                      curr_limb_mesh,
                      face_lookup,
@@ -1000,7 +1026,8 @@ def resolve_empty_conflicting_face_labels(
                     max_submesh_threshold=50000,
                     max_color_filling_iterations=10,
                     debug=False,
-                    must_keep_labels=dict() # dictionary mapping labels to the faces they must label at the start
+                    must_keep_labels=dict(), # dictionary mapping labels to the faces they must label at the start,
+                    connectivity="vertices",
     ):
     
     """
@@ -1044,10 +1071,10 @@ def resolve_empty_conflicting_face_labels(
 
 
     """
-    
-    if len(curr_limb_mesh.split(only_watertight=False)) > 1:
+    split_results = tu.split(curr_limb_mesh,only_watertight=False,return_components=False)
+    if len(split_results) > 1:
         su.compressed_pickle(curr_limb_mesh,"curr_limb_mesh")
-        raise Exception("The mesh passed to resolve_empty was not just one connected mesh")
+        raise Exception(f"The mesh passed to resolve_empty was not just one connected mesh, split results = {split_results}")
     
     if len(no_missing_labels) == 0:
         no_missing_labels = list(set(list(itertools.chain.from_iterable(list(face_lookup.values())))))
@@ -1116,9 +1143,26 @@ def resolve_empty_conflicting_face_labels(
     # -----now just divide the groups into seperate components
     empty_faces = np.where(face_coloring==-1)[0]
 
-    mesh_graph = nx.from_edgelist(curr_limb_mesh.face_adjacency) # creating a graph from the faces
-    empty_submesh = mesh_graph.subgraph(empty_faces) #gets the empty submeshes that are disconnected
-    empty_connected_components = list(nx.connected_components(empty_submesh))
+    if connectivity == "edges":
+        mesh_graph = nx.from_edgelist(curr_limb_mesh.face_adjacency) # creating a graph from the faces
+        empty_submesh = mesh_graph.subgraph(empty_faces) #gets the empty submeshes that are disconnected
+        empty_connected_components = list(nx.connected_components(empty_submesh))
+    else:
+        #mesh_graph = tu.mesh_face_graph_by_vertex(curr_limb_mesh)
+        """
+        Pseudocode:
+        
+        """
+        empty_face_submesh = curr_limb_mesh.submesh([empty_faces],append=True,repair=False)
+        if not nu.is_array_like(empty_face_submesh):
+            meshes,comp_ind = tu.split_by_vertices(empty_face_submesh,return_components=True)
+            empty_connected_components = [empty_faces[k] for k in comp_ind]
+        else:
+            empty_connected_components = []
+        mesh_graph=None
+        
+        
+
 
     # ---- Functions that will fill in the rest of the mesh correspondence ---- #
 
@@ -1130,11 +1174,11 @@ def resolve_empty_conflicting_face_labels(
     for comp in tqdm(empty_connected_components):
         #print("len(mesh_graph) = {len(mesh_graph)}")
         
-        face_lookup_resolved_test = waterfill_labeling(
+        face_coloring_copy = waterfill_labeling(
                         #total_mesh_correspondence=face_lookup_resolved_test,
                         total_mesh_correspondence=face_coloring_copy,
                          submesh_indices=list(comp),
-                         total_mesh=None,
+                         total_mesh=curr_limb_mesh, #added this in case doing the vertex connectivity
                         total_mesh_graph=mesh_graph,
                          propagation_type="random",
                         max_iterations = 1000,
@@ -1196,33 +1240,46 @@ def groups_of_labels_to_resolved_labels(current_mesh,face_correspondence_lists):
 
 
 """ ------------ 9/17 Addition: Will expand a certain label until hits the soma border -------- """
+import copy
 def waterfill_starting_label_to_soma_border(curr_branch_mesh,
                                            border_vertices,
-                                            label_to_expand,
+                                            label_to_expand, #the one we want to expand to the border
                                            total_face_labels,
                                            print_flag=True,
-                                           n_touching_soma_threshold=10):
+                                           n_touching_soma_threshold=10,
+                                           connectivity="vertices"):
 
     """
     Purpose: To expand a certain label so it is touching the soma 
     border vertices
     
     """
+#     total_face_labels_original = copy.deepcopy(total_face_labels)
+#     su.compressed_pickle(total_face_labels_original,"total_face_labels_original")
     no_missing_labels = np.unique(total_face_labels)
     
     #0) Turn the mesh into a graph
-    total_mesh_graph = nx.from_edgelist(curr_branch_mesh.face_adjacency)
+    if connectivity == "edges":
+        total_mesh_graph = nx.from_edgelist(curr_branch_mesh.face_adjacency)
+    else:
+        #total_mesh_graph = tu.mesh_face_graph_by_vertex(curr_branch_mesh)
+        total_mesh_graph = None
 
     #1) Get the nodes that represent the border
     border_faces = set(tu.vertices_coordinates_to_faces(curr_branch_mesh,border_vertices))
 
-    final_faces = np.where(total_face_labels == label_to_expand)[0]
+    #the face list of the label we want to expand at its current status
+    final_faces = np.where(total_face_labels == label_to_expand)[0] 
 
     n_touching_soma = len(border_faces.intersection(set(final_faces)))
     counter = 0
     max_iterations = 1000
     while n_touching_soma < n_touching_soma_threshold and n_touching_soma < len(border_faces):
-        final_faces = np.unique(np.concatenate([xu.get_neighbors(total_mesh_graph,k) for k in final_faces]))
+        if connectivity == "edges":
+            final_faces = np.unique(np.concatenate([xu.get_neighbors(total_mesh_graph,k) for k in final_faces]))
+        else:
+            final_faces = tu.face_neighbors_by_vertices(curr_branch_mesh,final_faces)
+            
         n_touching_soma = len(border_faces.intersection(set(final_faces)))
         counter+= 1
         if counter > max_iterations:
@@ -1235,10 +1292,15 @@ def waterfill_starting_label_to_soma_border(curr_branch_mesh,
     if print_flag:
         print(f"Took {counter} iterations to expand the label back")
         
-    total_face_labels[final_faces] = label_to_expand
     
-    
+    # ------ 12/3 Addition to make sure no labels are overwritten --------#
     face_lookup = dict([(k,[v]) for k,v in enumerate(total_face_labels)])
+    for f1 in final_faces:
+        if label_to_expand not in face_lookup[f1]:
+            face_lookup[f1].append(label_to_expand)
+        
+#     total_face_labels[final_faces] = label_to_expand
+#     face_lookup = dict([(k,[v]) for k,v in enumerate(total_face_labels)])
     
     
     total_face_labels = resolve_empty_conflicting_face_labels(
@@ -1248,6 +1310,7 @@ def waterfill_starting_label_to_soma_border(curr_branch_mesh,
                      )
     
     return total_face_labels
+
 
 
     

@@ -268,6 +268,7 @@ def subtract_soma(current_soma,main_mesh,
 def subtract_soma(current_soma_list,main_mesh,
                  significance_threshold=200,
                  distance_threshold = 550,
+                  connectivity="edges",
                  ):
     if type(current_soma_list) == type(trimesh.Trimesh()):
         current_soma_list = [current_soma_list]
@@ -322,7 +323,8 @@ def subtract_soma(current_soma_list,main_mesh,
 
 
     #get the significant mesh pieces
-    mesh_pieces = tu.split_significant_pieces(without_soma_mesh,significance_threshold=significance_threshold)
+    mesh_pieces = tu.split_significant_pieces(without_soma_mesh,significance_threshold=significance_threshold,
+                                             connectivity=connectivity)
     
     # ----- 11/22 turns out weren't even using this part --------- #
 #     print(f"mesh pieces in subtact soma BEFORE the filtering inside pieces = {mesh_pieces}")
@@ -1092,6 +1094,8 @@ def extract_soma_center(segment_id,
 
 
     #filtered_soma_list_saved = copy.deepcopy(filtered_soma_list)
+    import system_utils as su
+    su.compressed_pickle(filtered_soma_list,"filtered_soma_list")
 
     if len(filtered_soma_list) > 0:
         filtered_soma_list_revised = []
