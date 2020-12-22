@@ -4,3 +4,16 @@ Magic commands:
 
 %load_ext autoreload
 %autoreload 2
+
+#===== debugging =====
+%debug
+n --> next line
+c --> continue until next breakpoint
+q --> quits debuger
+
+w(here) – Print the stack trace
+d(own) – Move the current frame X number of levels down. Defaults to one.
+u(p) – Move the current frame X number of levels up. Defaults to one.
+b(reak) – With a *lineno* argument, set a break point at that line number in the current file / context
+s(tep) – Execute the current line and stop at the next possible line
+c(ontinue) – Continue execution

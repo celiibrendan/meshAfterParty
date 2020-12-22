@@ -221,3 +221,16 @@ def restrict_pandas(df,index_restriction=[],column_restriction=[],value_restrict
 
 def turn_off_scientific_notation(n_decimal_places=3):
     pd.set_option('display.float_format', lambda x: '%.0f' % x)
+    
+def find_all_rows_with_nan(df,return_indexes=True):
+    if return_indexes:
+        return np.where(df.isna().any(axis=1))[0]
+    else:
+        return df[df.isna().any(axis=1)]
+    
+def filter_away_nan_rows(df):
+    return df[~(df.isna().any(axis=1))]
+    
+from IPython.display import display
+def display_df(df):
+    display(df)

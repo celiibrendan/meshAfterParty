@@ -19,7 +19,10 @@ def get_skeletal_distance_no_skipping(main_mesh,edges,
                                       distance_by_mesh_center=False,
                                 print_flag=False,
                                 edge_loop_print=False,
-                                     stitch_patches=30):
+                                     stitch_patches=0,#30,
+                                      significant_sub_components=20,
+                                     connectivity="edges",
+                                     fast_mesh_split=True):
     """
     Purpose: To return the histogram of distances along a mesh subtraction process
     so that we could evenutally find an adaptive distance threshold
@@ -98,7 +101,7 @@ def get_skeletal_distance_no_skipping(main_mesh,edges,
 
 
         #get all disconnected mesh pieces of the submesh and the face indices for lookup later
-        sub_components,sub_components_face_indexes = tu.split(main_mesh_sub,only_watertight=False)
+        sub_components,sub_components_face_indexes = tu.split(main_mesh_sub,only_watertight=False,connectivity=connectivity)
        
         
         
@@ -109,6 +112,17 @@ def get_skeletal_distance_no_skipping(main_mesh,edges,
             else:
                 raise Exception("The sub_components were not an array, list or trimesh")
         
+        if significant_sub_components > 0:
+            sub_components_len = np.array([len(k) for k in sub_components_face_indexes])
+            sub_components_sig_idx = np.where(sub_components_len>=significant_sub_components)[0]
+            if len(sub_components_sig_idx) > 0:
+                sub_components = sub_components[sub_components_sig_idx]
+                sub_components_face_indexes = sub_components_face_indexes[sub_components_sig_idx]
+#                 sub_components_sig = [sub_components[k] for k in sub_components_sig_idx]
+#                 sub_components_face_indexes_sig = [sub_components_face_indexes[k] for k in sub_components_sig_idx]
+                
+#                 sub_components = sub_components_sig
+#                 sub_components_face_indexes = sub_components_face_indexes_sig
 
         #getting the indices of the submeshes whose bounding box contain the edge 
         contains_points_results = np.array([s_comp.bounding_box.contains(ex_edge.reshape(-1,3)) for s_comp in sub_components])
@@ -226,7 +240,7 @@ def get_skeletal_distance_no_skipping(main_mesh,edges,
                 #0) Get the border vertices for all of the kept_mesh and 
                 #map them to the main mesh
                 kept_mesh = main_mesh.submesh([unique_removed_faces],append=True,repair=False)
-                kept_mesh_splits,kept_mesh_splits_idx = tu.split(kept_mesh)
+                kept_mesh_splits,kept_mesh_splits_idx = tu.split(kept_mesh,connectivity=connectivity)
                 kept_border_verts = []
                 for km in kept_mesh_splits:
                     curr_border_verts = tu.find_border_vertices(km)
@@ -241,7 +255,7 @@ def get_skeletal_distance_no_skipping(main_mesh,edges,
                 eliminated_mesh = main_mesh.submesh([eliminated_mesh_faces_idx],append=True,repair =False)
 
                 #2) Divide the eliminated_mesh into split pieces
-                elim_mesh_splits,elim_mesh_splits_idx = tu.split(eliminated_mesh)
+                elim_mesh_splits,elim_mesh_splits_idx = tu.split(eliminated_mesh,connectivity=connectivity)
 
                 # 3) For each split pieces of the eliminated_mesh
                 # a. Get the border vertices
@@ -272,51 +286,122 @@ def get_skeletal_distance_no_skipping(main_mesh,edges,
 
             """ ------------------ END OF 9/28 ADDITION -------------------"""
 
-        #faces_to_keep = set(np.arange(0,len(main_mesh.faces))).difference(unique_removed_faces)
-        new_submesh = main_mesh.submesh([unique_removed_faces],only_watertight=False,append=True)
-        
-        split_meshes,components_faces = tu.split(new_submesh,return_components=True)
-        
-         #don't just want to take the biggest mesh: but want to take the one that has the most of the skeleton
-        #piece corresponding to it
-        
-        """
-        Pseudocode: 
-        1) turn all of the mesh edge_skeleton_faces into meshes, have the main mesh be the whole mesh and 
-        have each of the mesh pieces be a central piece
-        2) Call the mesh_pieces_connectivity function and see how many of the periphery pieces are touching each of the submehses
-        3) Pick the mesh that has the most 
-        
-        """
-        
-        if len(split_meshes) > 1: 
-            branch_touching_number = []
-            branch_correspondence_meshes = [main_mesh.submesh([k],only_watertight=False,append=True) for k in face_subtract_indices]
-            for curr_central_piece in split_meshes:
-                touching_periphery_pieces =tu.mesh_pieces_connectivity(
-                                            main_mesh = new_submesh,
-                                            central_piece = curr_central_piece,
-                                            periphery_pieces = branch_correspondence_meshes,
-                                            return_vertices=False)
-                branch_touching_number.append(len(touching_periphery_pieces))
+        if not fast_mesh_split:
+            new_submesh = main_mesh.submesh([unique_removed_faces],only_watertight=False,append=True)
+            if debug:
+                print("--------------------- Starting new trial --------------------")
+                print(f"main_mesh.faces.shape = {main_mesh.faces.shape}")
+                print(f"new_submesh.faces.shape = {new_submesh.faces.shape}")
+                print(f"unique_removed_faces.shape = {unique_removed_faces.shape}")
+                print(f"max(unique_removed_faces) = {max(unique_removed_faces)}")
+
+            split_meshes,components_faces = tu.split(new_submesh,return_components=True,connectivity=connectivity)
+
+            if debug:
+                current_random_number = np.random.randint(10,10000)
+                print()
+                print("After the split has been called")
+                print(f"split_meshes = {split_meshes}")
+                print(f"components_faces = {[np.array(k).shape for k in components_faces]}")
+                main_mesh.export(f"main_mesh_{len(main_mesh.faces)}.off")
+                new_submesh.export(f"new_submesh_{len(new_submesh.faces)}.off")
+                np.savez(f"unique_removed_faces_{unique_removed_faces.shape[0]}.npz",unique_removed_faces=unique_removed_faces)
+
+
+             #don't just want to take the biggest mesh: but want to take the one that has the most of the skeleton
+            #piece corresponding to it
+
+            """
+            Pseudocode: 
+            1) turn all of the mesh edge_skeleton_faces into meshes, have the main mesh be the whole mesh and 
+            have each of the mesh pieces be a central piece
+            2) Call the mesh_pieces_connectivity function and see how many of the periphery pieces are touching each of the submehses
+            3) Pick the mesh that has the most 
+
+            """
+
+            if len(split_meshes) > 1: 
+
+
+                branch_touching_number = []
+                #getting the mesh correspondence for each skeleton segment
+                branch_correspondence_meshes = [main_mesh.submesh([k],only_watertight=False,append=True) for k in face_subtract_indices]
+                #Out of all the submesh splits, see how many of the segment mesh correspondence it is touching
+                for curr_central_piece in split_meshes:
+                    touching_periphery_pieces =tu.mesh_pieces_connectivity(
+                                                main_mesh = new_submesh,
+                                                central_piece = curr_central_piece,
+                                                periphery_pieces = branch_correspondence_meshes,
+                                                return_vertices=False,
+                                                )
+                    branch_touching_number.append(len(touching_periphery_pieces))
+                    if print_flag:
+                        print(f"branch_touching_number = {branch_touching_number}")
+
+                #CONCLUSION: find the submesh split piece that is touching the most skeleton segment mesh correspondences (winning mesh)
+                most_branch_containing_piece = np.argmax(branch_touching_number)
                 if print_flag:
-                    print(f"branch_touching_number = {branch_touching_number}")
-            
-            #find the argmax
-            most_branch_containing_piece = np.argmax(branch_touching_number)
-            if print_flag:
-                print(f"most_branch_containing_piece = {most_branch_containing_piece}")
-            
-            new_submesh = split_meshes[most_branch_containing_piece]
-            unique_removed_faces = unique_removed_faces[components_faces[most_branch_containing_piece]]
-            
-        elif len(split_meshes) == 1: 
-            new_submesh = split_meshes[0]
-            unique_removed_faces = unique_removed_faces[components_faces[0]]
-        else:
-            raise Exception("The split meshes in the mesh correspondence was 0 length")
+                    print(f"most_branch_containing_piece = {most_branch_containing_piece}")
+
+                #Make this the 
+
+
+                new_submesh = split_meshes[most_branch_containing_piece]
+                unique_removed_faces = unique_removed_faces[components_faces[most_branch_containing_piece]]
+
+                if debug:
+                    print()
+                    print(f"main_mesh.faces.shape = {main_mesh.faces.shape}")
+                    print("reassigning new_submesh to one of many sub pieces")
+                    print(f"new_submesh.faces.shape = {new_submesh.faces.shape}")
+                    print(f"unique_removed_faces.shape = {unique_removed_faces.shape}")
+                    print(f"max(unique_removed_faces) = {max(unique_removed_faces)}")
+
+            elif len(split_meshes) == 1: 
+                new_submesh = split_meshes[0]
+                unique_removed_faces = unique_removed_faces[components_faces[0]]
+
+                if debug:
+                    print()
+                    print(f"main_mesh.faces.shape = {main_mesh.faces.shape}")
+                    print("Assigning submesh to the only submesh")
+                    print(f"new_submesh.faces.shape = {new_submesh.faces.shape}")
+                    print(f"unique_removed_faces.shape = {unique_removed_faces.shape}")
+                    print(f"max(unique_removed_faces) = {max(unique_removed_faces)}")
+            else:
+                raise Exception("The split meshes in the mesh correspondence was 0 length")
         
         #need to further restric the unique_removed_faces to those of most significant piece
+        else: 
+            """
+            12/17 Addition that does a faster spliting of the mesh
+            
+            Pseudocode:
+            1) Find the largest connected component of the face_subtract_indices groups
+            2) Get the face indices for all those in the group
+            3) Get a submesh of that
+            4) Split the submesh into largest conneted component
+            
+            """
+
+            #1) Find the largest connected component of the face_subtract_indices groups
+            
+            conn_face_components = nu.intersecting_array_components(face_subtract_indices,sort_components=True)
+            conn_comps_lenghts = np.array([len(k) for k in conn_face_components])
+            max_len_components_idx = np.where(conn_comps_lenghts == np.max(conn_comps_lenghts))[0]
+            
+            #2) Get the face indices for all those in the group
+            max_len_components_unique_faces = [np.unique(np.concatenate([face_subtract_indices[k] 
+                                                                         for k in conn_face_components[cmp_idx]])) for cmp_idx in  max_len_components_idx]
+            unique_removed_faces_pre = max_len_components_unique_faces[np.argmax([len(k) for k in max_len_components_unique_faces])]
+            
+            #3) Get a submesh of that
+            new_submesh = main_mesh.submesh([unique_removed_faces_pre],only_watertight=False,append=True)
+            split_meshes,components_faces = tu.split(new_submesh,return_components=True,connectivity=connectivity)
+            
+            #4) Split the submesh into largest conneted component
+            new_submesh = split_meshes[0]
+            unique_removed_faces = unique_removed_faces_pre[components_faces[0]]
     
     else:
         unique_removed_faces = np.array([])
@@ -334,7 +419,10 @@ def get_skeletal_distance(main_mesh,edges,
                                distance_by_mesh_center=True,
                                 print_flag=False,
                                 edge_loop_print=False,
-                              stitch_patches=50):
+                              stitch_patches=0,#50,
+                         connectivity="edges",
+                         fast_mesh_split=True,
+                         significant_sub_components=20):
     """
     Purpose: To return the histogram of distances along a mesh subtraction process
     so that we could evenutally find an adaptive distance threshold
@@ -414,8 +502,21 @@ def get_skeletal_distance(main_mesh,edges,
             print(f"face_list = {face_list}")    
             
         #get all disconnected mesh pieces of the submesh and the face indices for lookup later
-        sub_components,sub_components_face_indexes = tu.split(main_mesh_sub,only_watertight=False)
-       
+        sub_components,sub_components_face_indexes = tu.split(main_mesh_sub,only_watertight=False,connectivity=connectivity)
+        
+        if significant_sub_components > 0:
+            sub_components_len = np.array([len(k) for k in sub_components_face_indexes])
+            sub_components_sig_idx = np.where(sub_components_len>=significant_sub_components)[0]
+            if len(sub_components_sig_idx) > 0:
+                sub_components = sub_components[sub_components_sig_idx]
+                sub_components_face_indexes = sub_components_face_indexes[sub_components_sig_idx]
+#                 sub_components_sig = [sub_components[k] for k in sub_components_sig_idx]
+#                 sub_components_face_indexes_sig = [sub_components_face_indexes[k] for k in sub_components_sig_idx]
+                
+#                 sub_components = sub_components_sig
+#                 sub_components_face_indexes = sub_components_face_indexes_sig
+            
+        
         if debug:
             print(f"sub_components = {sub_components}")
         
@@ -507,14 +608,14 @@ def get_skeletal_distance(main_mesh,edges,
         total_distances.append(np.mean(mesh_slice_distances))
         total_distances_std.append(np.std(mesh_slice_distances))
     
-    debug = False
+   
     
     if debug:
         print(f"face_subtract_indices = {face_subtract_indices}")
     
     if len(face_subtract_indices)>0:
+        
         all_removed_faces = np.concatenate(face_subtract_indices)
-
         unique_removed_faces = np.array(list(set(all_removed_faces)))
         
         if len(unique_removed_faces) < 1:
@@ -549,6 +650,8 @@ def get_skeletal_distance(main_mesh,edges,
             4) Continue with rest of processing
 
             """
+            print(f"inside stitch pathes: {stitch_patches}")
+            
             debug = False
             #-1) Cheuck that there were actually eliminated faces
             eliminated_mesh_faces_idx = np.setdiff1d(np.arange(len(main_mesh.faces)),unique_removed_faces)
@@ -558,7 +661,7 @@ def get_skeletal_distance(main_mesh,edges,
                 #0) Get the border vertices for all of the kept_mesh and 
                 #map them to the main mesh
                 kept_mesh = main_mesh.submesh([unique_removed_faces],append=True,repair=False)
-                kept_mesh_splits,kept_mesh_splits_idx = tu.split(kept_mesh)
+                kept_mesh_splits,kept_mesh_splits_idx = tu.split(kept_mesh,connectivity=connectivity)
                 kept_border_verts = []
                 for km in kept_mesh_splits:
                     curr_border_verts = tu.find_border_vertices(km)
@@ -573,7 +676,7 @@ def get_skeletal_distance(main_mesh,edges,
                 eliminated_mesh = main_mesh.submesh([eliminated_mesh_faces_idx],append=True,repair =False)
 
                 #2) Divide the eliminated_mesh into split pieces
-                elim_mesh_splits,elim_mesh_splits_idx = tu.split(eliminated_mesh)
+                elim_mesh_splits,elim_mesh_splits_idx = tu.split(eliminated_mesh,connectivity=connectivity)
                 
                 
                 if debug:
@@ -613,88 +716,147 @@ def get_skeletal_distance(main_mesh,edges,
         debug = False
         #faces_to_keep = set(np.arange(0,len(main_mesh.faces))).difference(unique_removed_faces)
         #print(f"unique_removed_faces.shape = {unique_removed_faces.shape}")
-        new_submesh = main_mesh.submesh([unique_removed_faces],only_watertight=False,append=True)
-        if debug:
-            print("--------------------- Starting new trial --------------------")
-            print(f"main_mesh.faces.shape = {main_mesh.faces.shape}")
-            print(f"new_submesh.faces.shape = {new_submesh.faces.shape}")
-            print(f"unique_removed_faces.shape = {unique_removed_faces.shape}")
-            print(f"max(unique_removed_faces) = {max(unique_removed_faces)}")
         
-        split_meshes,components_faces = tu.split(new_submesh,return_components=True)
-        
-        if debug:
-            current_random_number = np.random.randint(10,10000)
-            print()
-            print("After the split has been called")
-            print(f"split_meshes = {split_meshes}")
-            print(f"components_faces = {[np.array(k).shape for k in components_faces]}")
-            main_mesh.export(f"main_mesh_{len(main_mesh.faces)}.off")
-            new_submesh.export(f"new_submesh_{len(new_submesh.faces)}.off")
-            np.savez(f"unique_removed_faces_{unique_removed_faces.shape[0]}.npz",unique_removed_faces=unique_removed_faces)
-            
-        
-         #don't just want to take the biggest mesh: but want to take the one that has the most of the skeleton
-        #piece corresponding to it
-        
-        """
-        Pseudocode: 
-        1) turn all of the mesh edge_skeleton_faces into meshes, have the main mesh be the whole mesh and 
-        have each of the mesh pieces be a central piece
-        2) Call the mesh_pieces_connectivity function and see how many of the periphery pieces are touching each of the submehses
-        3) Pick the mesh that has the most 
-        
-        """
-        
-        if len(split_meshes) > 1: 
-            branch_touching_number = []
-            #getting the mesh correspondence for each skeleton segment
-            branch_correspondence_meshes = [main_mesh.submesh([k],only_watertight=False,append=True) for k in face_subtract_indices]
-            #Out of all the submesh splits, see how many of the segment mesh correspondence it is touching
-            for curr_central_piece in split_meshes:
-                touching_periphery_pieces =tu.mesh_pieces_connectivity(
-                                            main_mesh = new_submesh,
-                                            central_piece = curr_central_piece,
-                                            periphery_pieces = branch_correspondence_meshes,
-                                            return_vertices=False)
-                branch_touching_number.append(len(touching_periphery_pieces))
+        if not fast_mesh_split:
+            new_submesh = main_mesh.submesh([unique_removed_faces],only_watertight=False,append=True)
+            if debug:
+                print("--------------------- Starting new trial --------------------")
+                print(f"main_mesh.faces.shape = {main_mesh.faces.shape}")
+                print(f"new_submesh.faces.shape = {new_submesh.faces.shape}")
+                print(f"unique_removed_faces.shape = {unique_removed_faces.shape}")
+                print(f"max(unique_removed_faces) = {max(unique_removed_faces)}")
+
+            split_meshes,components_faces = tu.split(new_submesh,return_components=True,connectivity=connectivity)
+
+            if debug:
+                current_random_number = np.random.randint(10,10000)
+                print()
+                print("After the split has been called")
+                print(f"split_meshes = {split_meshes}")
+                print(f"components_faces = {[np.array(k).shape for k in components_faces]}")
+                main_mesh.export(f"main_mesh_{len(main_mesh.faces)}.off")
+                new_submesh.export(f"new_submesh_{len(new_submesh.faces)}.off")
+                np.savez(f"unique_removed_faces_{unique_removed_faces.shape[0]}.npz",unique_removed_faces=unique_removed_faces)
+
+
+             #don't just want to take the biggest mesh: but want to take the one that has the most of the skeleton
+            #piece corresponding to it
+
+            """
+            Pseudocode: 
+            1) turn all of the mesh edge_skeleton_faces into meshes, have the main mesh be the whole mesh and 
+            have each of the mesh pieces be a central piece
+            2) Call the mesh_pieces_connectivity function and see how many of the periphery pieces are touching each of the submehses
+            3) Pick the mesh that has the most 
+
+            """
+
+            if len(split_meshes) > 1: 
+
+
+                branch_touching_number = []
+                #getting the mesh correspondence for each skeleton segment
+                branch_correspondence_meshes = [main_mesh.submesh([k],only_watertight=False,append=True) for k in face_subtract_indices]
+                #Out of all the submesh splits, see how many of the segment mesh correspondence it is touching
+                for curr_central_piece in split_meshes:
+                    touching_periphery_pieces =tu.mesh_pieces_connectivity(
+                                                main_mesh = new_submesh,
+                                                central_piece = curr_central_piece,
+                                                periphery_pieces = branch_correspondence_meshes,
+                                                return_vertices=False,
+                                                )
+                    branch_touching_number.append(len(touching_periphery_pieces))
+                    if print_flag:
+                        print(f"branch_touching_number = {branch_touching_number}")
+
+                #CONCLUSION: find the submesh split piece that is touching the most skeleton segment mesh correspondences (winning mesh)
+                most_branch_containing_piece = np.argmax(branch_touching_number)
                 if print_flag:
-                    print(f"branch_touching_number = {branch_touching_number}")
-            
-            #CONCLUSION: find the submesh split piece that is touching the most skeleton segment mesh correspondences (winning mesh)
-            most_branch_containing_piece = np.argmax(branch_touching_number)
-            if print_flag:
-                print(f"most_branch_containing_piece = {most_branch_containing_piece}")
-            
-            #Make this the 
-            
-            
-            new_submesh = split_meshes[most_branch_containing_piece]
-            unique_removed_faces = unique_removed_faces[components_faces[most_branch_containing_piece]]
-            
-            if debug:
-                print()
-                print(f"main_mesh.faces.shape = {main_mesh.faces.shape}")
-                print("reassigning new_submesh to one of many sub pieces")
-                print(f"new_submesh.faces.shape = {new_submesh.faces.shape}")
-                print(f"unique_removed_faces.shape = {unique_removed_faces.shape}")
-                print(f"max(unique_removed_faces) = {max(unique_removed_faces)}")
-            
-        elif len(split_meshes) == 1: 
-            new_submesh = split_meshes[0]
-            unique_removed_faces = unique_removed_faces[components_faces[0]]
-            
-            if debug:
-                print()
-                print(f"main_mesh.faces.shape = {main_mesh.faces.shape}")
-                print("Assigning submesh to the only submesh")
-                print(f"new_submesh.faces.shape = {new_submesh.faces.shape}")
-                print(f"unique_removed_faces.shape = {unique_removed_faces.shape}")
-                print(f"max(unique_removed_faces) = {max(unique_removed_faces)}")
-        else:
-            raise Exception("The split meshes in the mesh correspondence was 0 length")
+                    print(f"most_branch_containing_piece = {most_branch_containing_piece}")
+
+                #Make this the 
+
+
+                new_submesh = split_meshes[most_branch_containing_piece]
+                unique_removed_faces = unique_removed_faces[components_faces[most_branch_containing_piece]]
+
+                if debug:
+                    print()
+                    print(f"main_mesh.faces.shape = {main_mesh.faces.shape}")
+                    print("reassigning new_submesh to one of many sub pieces")
+                    print(f"new_submesh.faces.shape = {new_submesh.faces.shape}")
+                    print(f"unique_removed_faces.shape = {unique_removed_faces.shape}")
+                    print(f"max(unique_removed_faces) = {max(unique_removed_faces)}")
+
+            elif len(split_meshes) == 1: 
+                new_submesh = split_meshes[0]
+                unique_removed_faces = unique_removed_faces[components_faces[0]]
+
+                if debug:
+                    print()
+                    print(f"main_mesh.faces.shape = {main_mesh.faces.shape}")
+                    print("Assigning submesh to the only submesh")
+                    print(f"new_submesh.faces.shape = {new_submesh.faces.shape}")
+                    print(f"unique_removed_faces.shape = {unique_removed_faces.shape}")
+                    print(f"max(unique_removed_faces) = {max(unique_removed_faces)}")
+            else:
+                raise Exception("The split meshes in the mesh correspondence was 0 length")
         
         #need to further restric the unique_removed_faces to those of most significant piece
+        else: 
+            """
+            12/17 Addition that does a faster spliting of the mesh
+            
+            Pseudocode:
+            1) Find the largest connected component of the face_subtract_indices groups
+            2) Get the face indices for all those in the group
+            3) Get a submesh of that
+            4) Split the submesh into largest conneted component
+            
+            """
+            
+            debug = False
+            
+            #1) Find the largest connected component of the face_subtract_indices groups
+            if debug:
+                print("In fast_mesh_split")
+                c_time = time.time()
+                
+            conn_face_components = nu.intersecting_array_components(face_subtract_indices,sort_components=True)
+            conn_comps_lenghts = np.array([len(k) for k in conn_face_components])
+            max_len_components_idx = np.where(conn_comps_lenghts == np.max(conn_comps_lenghts))[0]
+            
+            if debug:
+                print(f"Largest component time = {time.time() - c_time}")
+                c_time = time.time()
+                
+            
+            #2) Get the face indices for all those in the group
+            max_len_components_unique_faces = [np.unique(np.concatenate([face_subtract_indices[k] 
+                                                                         for k in conn_face_components[cmp_idx]])) for cmp_idx in  max_len_components_idx]
+            unique_removed_faces_pre = max_len_components_unique_faces[np.argmax([len(k) for k in max_len_components_unique_faces])]
+            
+            if debug:
+                print(f"max_len_components_unique_faces = {time.time() - c_time}")
+                c_time = time.time()
+            
+            #3) Get a submesh of that
+            new_submesh = main_mesh.submesh([unique_removed_faces_pre],only_watertight=False,append=True)
+            split_meshes,components_faces = tu.split(new_submesh,return_components=True,connectivity=connectivity)
+            
+            if debug:
+                print(f"split_meshes (connectivity = {connectivity}) = {time.time() - c_time}")
+                c_time = time.time()
+            
+            #4) Split the submesh into largest conneted component
+            new_submesh = split_meshes[0]
+            unique_removed_faces = unique_removed_faces_pre[components_faces[0]]
+            
+            if debug:
+                print(f"right split = {time.time() - c_time}")
+                c_time = time.time()
+            
+            
     
     else:
         unique_removed_faces = np.array([])
@@ -712,10 +874,12 @@ def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
                                           distance_by_mesh_center = True,
                                          print_flag=False,
                                          return_mesh_perc_drop=False,
-                                          stitch_patches=50,
+                                          stitch_patches=0,#50,
                                          buffer=100,
+                                          bbox_ratio=1.2,
                                          distance_threshold=3000,
-                                         return_closest_face_on_empty=False):
+                                         return_closest_face_on_empty=False,
+                                         connectivity="vertices"):
     
     debug=False
     #making the skeletons resized to 1000 widths and then can use outlier finding
@@ -733,11 +897,12 @@ def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
                         main_mesh = curr_branch_mesh,
                         edges = new_skeleton,
                         buffer=buffer,
-                        bbox_ratio=1.2,
+                        bbox_ratio=bbox_ratio,
                         distance_threshold=distance_threshold,
                         distance_by_mesh_center=distance_by_mesh_center,
                         print_flag=False,
-        stitch_patches= stitch_patches
+        stitch_patches= stitch_patches,
+        connectivity=connectivity
     )
     
     
@@ -797,11 +962,12 @@ def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
                         main_mesh = mesh_correspondence,
                         edges = new_skeleton,
                         buffer=buffer,
-                        bbox_ratio=1.2,
+                        bbox_ratio=bbox_ratio,
                         distance_threshold=total_threshold,
                         distance_by_mesh_center=distance_by_mesh_center,
                         print_flag=False,
-                        stitch_patches=1000,
+                        #stitch_patches=1000,
+        connectivity=connectivity,
     )
     
     
@@ -861,7 +1027,7 @@ def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
 
 
 # -------- for the mesh correspondence that creates an exact 1-to1 correspondence of mesh face to skeleton branch------- #
-def filter_face_coloring_to_connected_components(curr_limb_mesh,face_coloring):
+def filter_face_coloring_to_connected_components(curr_limb_mesh,face_coloring,connectivity="vertices"):
     """
     Purpose: To eliminate all but the largest connected component
     of a label on the mesh face coloring 
@@ -876,7 +1042,7 @@ def filter_face_coloring_to_connected_components(curr_limb_mesh,face_coloring):
     for curr_label in leftover_labels:
         label_indices = np.where(face_coloring==curr_label)[0]
         curr_submesh = curr_limb_mesh.submesh([label_indices],append=True)
-        split_meshes,split_components = tu.split(curr_submesh,return_components=True)
+        split_meshes,split_components = tu.split(curr_submesh,return_components=True,connectivity=connectivity)
         
         
         try:
@@ -1019,15 +1185,272 @@ def waterfill_labeling(
 
 import system_utils as su
 import numpy_utils as nu
+import copy
 def resolve_empty_conflicting_face_labels(
                      curr_limb_mesh,
                      face_lookup,
                      no_missing_labels = [],
                     max_submesh_threshold=50000,
-                    max_color_filling_iterations=10,
+                    max_color_filling_iterations=4,
                     debug=False,
                     must_keep_labels=dict(), # dictionary mapping labels to the faces they must label at the start,
                     connectivity="vertices",
+                    branch_skeletons=None,
+    ):
+
+    """
+    Input: 
+    - full mesh
+    - current face coloring of mesh (could be incomplete) corresponding to skeletal pieces
+    (but doesn't need the skeletal pieces to do it's jobs, those are just represented in the labels)
+
+    Output: 
+    - better face coloring which has labels that:
+        a. cover entire mesh
+        b. the labels exist as only 1 connected component on the mesh
+
+
+
+    Pseudocode of what doing:
+    - clearing out the branch_mesh correspondence stored in limb_correspondence[limb_idx][k]["branch_mesh"]
+    - gets a list of how many subdivided branches there were (becuase this should be the number of labels) and the mesh of whole limb
+    - Builds a face to skeleeton branch correspondence bassed on the current  branch_piece["correspondence_face_idx"] that already exists
+        This may have overlaps or faces mapped to zero branches that we need to resolve
+    - computes the percentage of empty and conflicting faces 
+    - makes sure that at least one face that corresponds to each branch piece (and throws error if so)
+
+    #Doing the resolution of the empty and conflicting faces:
+    - clears out all conflicting faces and leaves them just like the empty ones
+    - uses the filter_face_coloring_to_connected_components which only keeps the largest connected component of a label 
+        (because the zeroing out of conflicting labels could have eliminated or split up some of the labels)
+    - if  a face was totally eliminated then add it back to the face coloring
+    (only does this once so a face could still be missing if one face totally overwrites another face)
+
+    **At this point: there is at one-to-one correspondence of mesh face to skeletal piece label OR empty label (-1)
+
+    # Using the waterfilling algorithm: designed at fixing the correspondence to empty label (-1) 
+    - get a submesh of the original mesh but only for those empty faces and divide into disconnecteed mesh pieces
+    - run through waterfilling algorithm to color each empty piece
+    - check that there are no more empty faces
+    - gets the one connected mesh component that corresponds to that label (get both the actual mesh and the mesh indexes)
+
+    #the output of all of the algorithm: 
+    - save the result back in  limb_correspondence[limb_idx][k]["branch_mesh"] so it is accurately updated
+
+
+    """
+    split_results = tu.split(curr_limb_mesh,only_watertight=False,return_components=False,connectivity=connectivity)
+    if len(split_results) > 1:
+        su.compressed_pickle(curr_limb_mesh,"curr_limb_mesh")
+        raise Exception(f"The mesh passed to resolve_empty was not just one connected mesh, split results = {split_results}")
+
+    if len(no_missing_labels) == 0:
+        no_missing_labels = list(set(list(itertools.chain.from_iterable(list(face_lookup.values())))))
+
+    #get all of the faces that don't have any faces corresponding
+    empty_indices = np.array([k for k,v in face_lookup.items() if len(v) == 0])
+
+    #get all of the faces that don't have any faces corresponding
+    conflict_indices = np.array([k for k,v in face_lookup.items() if len(v) >= 2])
+
+    print(f"empty_indices % = {len(empty_indices)/len(face_lookup.keys())}\n conflict_indices % = {len(conflict_indices)/len(face_lookup.keys())}")
+
+
+
+    resolved_flag = False
+    for ii in range(0,2):
+        #doing the face coloring (new way if the keys are unordered)
+        face_coloring = np.full(len(curr_limb_mesh.faces),-1)
+        for k,v in face_lookup.items():
+            if len(v) == 1:
+                face_coloring[k] = v[0]
+
+        #adding in the must keep labels
+        for k,v in must_keep_labels.items():
+            for face_idx in v:
+                face_coloring[face_idx] = k
+
+        # -- Need to only take the biggest piece of the non-conflicted mesh and resolve those that were eliminated--
+        missing_labels_history = []
+        for i in range(0,max_color_filling_iterations):
+
+            face_coloring = filter_face_coloring_to_connected_components(curr_limb_mesh,face_coloring,connectivity=connectivity)
+
+            # ----fixing if there were any missing labels --- **** this still has potential for erroring ****
+
+            leftover_labels = np.unique(face_coloring)
+            missing_labels = set(np.setdiff1d(no_missing_labels.copy(), leftover_labels))
+
+
+            for curr_label in missing_labels:
+                labels_idx = [k for k,v in face_lookup.items() if curr_label in v]
+                face_coloring[labels_idx] = curr_label
+
+            #filter the faces again: 
+            face_coloring = filter_face_coloring_to_connected_components(curr_limb_mesh,face_coloring,connectivity=connectivity)
+
+            leftover_labels = np.unique(face_coloring)
+            missing_labels = set(np.setdiff1d(no_missing_labels.copy(), leftover_labels))
+
+            if len(missing_labels) == 0:
+                break
+            else:
+                if i > 0:
+                    print(f"Doing No Color conflicts iteration {i+1} because missing_labels = {missing_labels} ")
+                    missing_labels_history.append(list(missing_labels))
+        if len(missing_labels) == 0:
+            resolved_flag = True
+            break
+        else:
+            """
+            Will resolve any conflicts when exact patches
+
+            Pseudcode: 
+            1) get all the labels that were missing at one time
+            2) Get all the face numbers belonging to those labels
+            3) Find if any are completely overlapping
+
+            """
+
+            all_possible_missing = np.unique(np.concatenate(missing_labels_history))
+            all_possible_missing_faces = dict([(k,[]) for k in all_possible_missing])
+
+            #getting the original faces
+            for k,v in face_lookup.items():
+                for mf in all_possible_missing_faces.keys():
+                    if mf in v:
+                        all_possible_missing_faces[mf].append(k)
+
+
+
+            all_poss_miss_idx = np.array(list(all_possible_missing_faces.keys()))
+            perf_connection = nu.intersecting_array_components(list(all_possible_missing_faces.values()),perfect_match=True)
+
+            connections_to_fix = [k for k in all_poss_miss_idx[perf_connection] if len(k)>1]
+
+
+            """
+            Pseudocode: 
+            1) For all the pairs
+            2) Divide up the submesh of the faces by the closest distance skeleton
+            3) check that all of them have at least one:
+            - If not just do a random assignment (temporary solution for now)
+            4) Doing the actual relabeling
+
+
+            """
+            for conn in connections_to_fix:
+                shared_faces_idx = np.array(all_possible_missing_faces[conn[0]])
+                curr_submesh = curr_limb_mesh.submesh([shared_faces_idx],append=True)
+                split_mesh_faces = tu.split_mesh_by_closest_skeleton(curr_submesh,[branch_skeletons[j] for j in conn])
+
+                split_mesh_faces_len = np.array([len(k) for k in split_mesh_faces])
+                if np.any(split_mesh_faces_len == 0):
+                    print("Just divide up the faces between all the labels (don't even randomize)")
+                    faces_to_relabel = np.array_split(shared_faces_idx,len(conn))
+                else:
+                    faces_to_relabel = [shared_faces_idx[k] for k in split_mesh_faces]
+
+                faces_to_relabel_len = np.array([len(k) for k in faces_to_relabel])
+                if np.any(faces_to_relabel_len == 0):
+                    print("Some of labels did not hae any faces that belonged to them after random/closest skeleton assignment")
+                    resolved_flag = False
+                    break
+
+
+                # rewriting the face lookup
+                for conn_idx,conn_faces in zip(conn,faces_to_relabel):
+                    conn_idx_to_delete = conn[conn != conn_idx]
+                    for f_idx in conn_faces:
+                        face_lookup[f_idx] = list(np.setdiff1d(face_lookup[f_idx],conn_idx_to_delete))
+
+    if not resolved_flag:
+        print(f"leftover_labels = {leftover_labels}")
+        print(f"no_missing_labels = {no_missing_labels}")
+        print(f"missing_labels = {missing_labels}")
+        su.compressed_pickle(curr_limb_mesh,"curr_limb_mesh")
+        su.compressed_pickle(face_lookup,"face_lookup")
+        su.compressed_pickle(no_missing_labels,"no_missing_labels")
+        su.compressed_pickle(max_submesh_threshold,"max_submesh_threshold")
+        su.compressed_pickle(branch_skeletons,"branch_skeletons")
+        raise Exception("missing labels was not resolved")
+
+
+
+    # -----now just divide the groups into seperate components
+    empty_faces = np.where(face_coloring==-1)[0]
+
+    if connectivity == "edges":
+        mesh_graph = nx.from_edgelist(curr_limb_mesh.face_adjacency) # creating a graph from the faces
+        empty_submesh = mesh_graph.subgraph(empty_faces) #gets the empty submeshes that are disconnected
+        empty_connected_components = list(nx.connected_components(empty_submesh))
+    else:
+        #mesh_graph = tu.mesh_face_graph_by_vertex(curr_limb_mesh)
+        """
+        Pseudocode:
+
+        """
+        empty_face_submesh = curr_limb_mesh.submesh([empty_faces],append=True,repair=False)
+        if not nu.is_array_like(empty_face_submesh):
+            meshes,comp_ind = tu.split_by_vertices(empty_face_submesh,return_components=True)
+            empty_connected_components = [empty_faces[k] for k in comp_ind]
+        else:
+            empty_connected_components = []
+        mesh_graph=None
+
+
+
+
+    # ---- Functions that will fill in the rest of the mesh correspondence ---- #
+
+    face_coloring_copy = face_coloring.copy()
+    if debug:
+        print("BEFORE face_lookup_resolved_test")
+        su.compressed_pickle(empty_connected_components,"empty_connected_components")
+
+    for comp in tqdm(empty_connected_components):
+        #print("len(mesh_graph) = {len(mesh_graph)}")
+
+        face_coloring_copy = waterfill_labeling(
+                        #total_mesh_correspondence=face_lookup_resolved_test,
+                        total_mesh_correspondence=face_coloring_copy,
+                         submesh_indices=list(comp),
+                         total_mesh=curr_limb_mesh, #added this in case doing the vertex connectivity
+                        total_mesh_graph=mesh_graph,
+                         propagation_type="random",
+                        max_iterations = 1000,
+                        max_submesh_threshold = max_submesh_threshold,
+                        connectivity=connectivity,
+                        )
+
+    print("AFTER face_lookup_resolved_test")
+
+    # -- wheck that the face coloring did not have any empty faces --
+    empty_faces = np.where(face_coloring_copy==-1)[0]
+    if len(empty_faces) > 0:
+
+        su.compressed_pickle(curr_limb_mesh,"curr_limb_mesh")
+        su.compressed_pickle(face_lookup,"face_lookup")
+        su.compressed_pickle(no_missing_labels,"no_missing_labels")
+        su.compressed_pickle(max_submesh_threshold,"max_submesh_threshold")
+
+        raise Exception(f"empty faces were greater than 0 after waterfilling at: {empty_faces}")
+
+
+    return face_coloring_copy
+
+
+
+def resolve_empty_conflicting_face_labels_old(
+                     curr_limb_mesh,
+                     face_lookup,
+                     no_missing_labels = [],
+                    max_submesh_threshold=50000,
+                    max_color_filling_iterations=5,
+                    debug=False,
+                    must_keep_labels=dict(), # dictionary mapping labels to the faces they must label at the start,
+                    connectivity="vertices",
+                    branch_skeletons=None,
     ):
     
     """
@@ -1071,7 +1494,9 @@ def resolve_empty_conflicting_face_labels(
 
 
     """
-    split_results = tu.split(curr_limb_mesh,only_watertight=False,return_components=False)
+    face_lookup_original = copy.copy(face_lookup)
+    
+    split_results = tu.split(curr_limb_mesh,only_watertight=False,return_components=False,connectivity=connectivity)
     if len(split_results) > 1:
         su.compressed_pickle(curr_limb_mesh,"curr_limb_mesh")
         raise Exception(f"The mesh passed to resolve_empty was not just one connected mesh, split results = {split_results}")
@@ -1094,6 +1519,8 @@ def resolve_empty_conflicting_face_labels(
     
     #doing the face coloring (new way if the keys are unordered)
     face_coloring = np.full(len(curr_limb_mesh.faces),-1)
+    
+    
     for k,v in face_lookup.items():
         if len(v) == 1:
             face_coloring[k] = v[0]
@@ -1104,25 +1531,29 @@ def resolve_empty_conflicting_face_labels(
             face_coloring[face_idx] = k
 
     # -- Need to only take the biggest piece of the non-conflicted mesh and resolve those that were eliminated--
-
+    missing_labels_history = []
     for i in range(0,max_color_filling_iterations):
         
-        face_coloring = filter_face_coloring_to_connected_components(curr_limb_mesh,face_coloring)
+        face_coloring = filter_face_coloring_to_connected_components(curr_limb_mesh,face_coloring,connectivity=connectivity)
 
         # ----fixing if there were any missing labels --- **** this still has potential for erroring ****
 
         leftover_labels = np.unique(face_coloring)
         missing_labels = set(np.setdiff1d(no_missing_labels.copy(), leftover_labels))
-
+        
+        missing_labels_history.append(list(missing_labels))
+        
         for curr_label in missing_labels:
             labels_idx = [k for k,v in face_lookup.items() if curr_label in v]
             face_coloring[labels_idx] = curr_label
 
         #filter the faces again: 
-        face_coloring = filter_face_coloring_to_connected_components(curr_limb_mesh,face_coloring)
+        face_coloring = filter_face_coloring_to_connected_components(curr_limb_mesh,face_coloring,connectivity=connectivity)
 
         leftover_labels = np.unique(face_coloring)
         missing_labels = set(np.setdiff1d(no_missing_labels.copy(), leftover_labels))
+        missing_labels_history.append(list(missing_labels))
+        
         if len(missing_labels) == 0:
             break
         else:
@@ -1130,13 +1561,36 @@ def resolve_empty_conflicting_face_labels(
                 print(f"Doing No Color conflicts iteration {i+1} because missing_labels = {missing_labels} ")
                 
     if len(missing_labels)>0:
+        """
+        Will resolve any conflicts when exact patches
+        
+        Pseudcode: 
+        1) get all the labels that were missing at one time
+        2) Get all the face numbers belonging to those labels
+        3) Find if any are completely overlapping
+        
+        """
+#         all_possible_missing = np.unique(np.concatenate(missing_labels_history))
+#         all_possible_missing_faces = dict([(k,[]) for k in all_possible_missing])
+        
+#         #getting the original faces
+#         for k,v in face_lookup.items():
+#             for mf in all_possible_missing_faces.keys():
+#                 if mf in v:
+#                     all_possible_missing_faces[mf].append(k)
+                    
+#         #getting the 
+        
+        
+        
         print(f"leftover_labels = {leftover_labels}")
         print(f"no_missing_labels = {no_missing_labels}")
         print(f"missing_labels = {missing_labels}")
         su.compressed_pickle(curr_limb_mesh,"curr_limb_mesh")
-        su.compressed_pickle(face_lookup,"face_lookup")
+        su.compressed_pickle(face_lookup,"face_lookup_original")
         su.compressed_pickle(no_missing_labels,"no_missing_labels")
         su.compressed_pickle(max_submesh_threshold,"max_submesh_threshold")
+        su.compressed_pickle(branch_skeletons,"branch_skeletons")
         raise Exception("missing labels was not resolved")
         
 
@@ -1182,7 +1636,8 @@ def resolve_empty_conflicting_face_labels(
                         total_mesh_graph=mesh_graph,
                          propagation_type="random",
                         max_iterations = 1000,
-                        max_submesh_threshold = max_submesh_threshold
+                        max_submesh_threshold = max_submesh_threshold,
+                        connectivity=connectivity,
                         )
 
     print("AFTER face_lookup_resolved_test")
@@ -1307,6 +1762,7 @@ def waterfill_starting_label_to_soma_border(curr_branch_mesh,
                      curr_limb_mesh=curr_branch_mesh,
                      face_lookup=face_lookup,
                      no_missing_labels = no_missing_labels,
+                    connectivity=connectivity,
                      )
     
     return total_face_labels

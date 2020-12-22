@@ -416,16 +416,12 @@ def remove_cycle(branch_subgraph, max_cycle_iterations=1000):
         except:
             break
         else:
-            print(f"type(branch_subgraph) = {type(branch_subgraph)}")
             #make a copy to unfreeze
             branch_subgraph = GraphOrderedEdges(branch_subgraph)
-            #print(f"edges_in_cycle = {edges_in_cycle}")
             #not doing random deletion just picking first edge
             picked_edge_to_delete = edges_in_cycle[-1]
             #print(f"picked_edge_to_delete = {picked_edge_to_delete}")
             branch_subgraph.remove_edge(picked_edge_to_delete[0],picked_edge_to_delete[-1])
-            #nx.draw(G)
-            #plt.show()
             
 
     try:

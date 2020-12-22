@@ -73,6 +73,8 @@ import copy
 import neuron_utils as nru
 import networkx_utils as xu
 
+connectivity = "edges"
+
 def cgal_segmentation(written_file_location,
                       clusters=2,
                       smoothness=0.03,

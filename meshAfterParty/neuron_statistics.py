@@ -170,3 +170,7 @@ def neuron_path_analysis(neuron_obj,
         return dj_inserts
     else:
         return neuron_path_inserts_by_limb
+    
+    
+
+    

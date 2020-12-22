@@ -54,7 +54,8 @@ def mesh_correspondence_first_pass(mesh,
         returned_data = cu.mesh_correspondence_adaptive_distance(curr_branch_sk,
                                       curr_limb_mesh,
                                      skeleton_segment_width = 1000,
-                                     distance_by_mesh_center=distance_by_mesh_center)
+                                     distance_by_mesh_center=distance_by_mesh_center,
+                                                                connectivity="edges")
         if len(returned_data) == 0:
             print("Got nothing from first pass so expanding the mesh correspondnece parameters ")
             returned_data = cu.mesh_correspondence_adaptive_distance(curr_branch_sk,
@@ -63,7 +64,8 @@ def mesh_correspondence_first_pass(mesh,
                                      distance_by_mesh_center=distance_by_mesh_center,
                                     buffer=300,
                                      distance_threshold=6000,
-                                    return_closest_face_on_empty=True)
+                                    return_closest_face_on_empty=True,
+                                        connectivity="edges")
             
         # Need to just pick the closest face is still didn't get anything
         
@@ -204,7 +206,6 @@ def correspondence_1_to_1(
     original_labels = set(list(itertools.chain.from_iterable(list(face_lookup.values()))))
     print(f"max(original_labels),len(original_labels) = {(max(original_labels),len(original_labels))}")
 
-
     if len(original_labels) != len(no_missing_labels):
         raise Exception(f"len(original_labels) != len(no_missing_labels) for original_labels = {len(original_labels)},no_missing_labels = {len(no_missing_labels)}")
 
@@ -219,6 +220,7 @@ def correspondence_1_to_1(
                      face_lookup=face_lookup,
                      no_missing_labels = list(original_labels),
                     must_keep_labels=must_keep_labels,
+                    branch_skeletons = [local_correspondence[k]["branch_skeleton"] for k in local_correspondence.keys()],
     )
 
     """  9/17 Addition: Will make sure that the desired starting node is touching the soma border """
@@ -760,7 +762,7 @@ def preprocess_limb(mesh,
                    meshparty_n_surface_downsampling = 2,
                     combine_close_skeleton_nodes=True,
                     combine_close_skeleton_nodes_threshold=700,
-                    filter_end_node_length=1500,#4001,
+                    filter_end_node_length=4500,
                     use_meshafterparty=True,
                     perform_cleaning_checks = True,
                     
@@ -786,6 +788,8 @@ def preprocess_limb(mesh,
                     #printing controls
                     verbose = True,
                     print_fusion_steps=True,
+                    
+                    check_correspondence_branches = True,
                     
                    ):
     curr_limb_time = time.time()
@@ -866,7 +870,7 @@ def preprocess_limb(mesh,
 
         #finds the connectivity edges of all the MAP candidates
         mesh_large_connectivity = tu.mesh_list_connectivity(meshes = mesh_large_idx,
-                                                            connectivity="vertices",
+                                                            connectivity="edges",
                                 main_mesh = limb_mesh_mparty,
                                 print_flag = False)
         if print_fusion_steps:
@@ -1385,6 +1389,16 @@ def preprocess_limb(mesh,
 
     # ------------------------------------- Part C: Will make sure the correspondences can all be stitched together --------------- #
 
+    
+    
+#     su.compressed_pickle(limb_correspondence_MAP,"limb_correspondence_MAP_before_stitch")
+#     su.compressed_pickle(limb_correspondence_MP,"limb_correspondence_MP_before_stitch")
+
+    
+    if check_correspondence_branches:
+        sk.check_correspondence_branches_have_2_endpoints(limb_correspondence_MAP)
+        sk.check_correspondence_branches_have_2_endpoints(limb_correspondence_MP)
+    
     # Only want to perform this step if both MP and MAP pieces
     if len(limb_correspondence_MAP)>0 and len(limb_correspondence_MP)>0:
 
@@ -1478,6 +1492,7 @@ def preprocess_limb(mesh,
                     print(f"so changing type to {connectivity_type}")
             else:
                 print(f"Successful mesh connectivity with type {connectivity_type}")
+                break
 
 
         #adjust the connection indices for MP and MAP indices
@@ -1892,7 +1907,7 @@ def preprocess_limb(mesh,
                     except:
                         su.compressed_pickle(MP_stitch_branch_graph,"MP_stitch_branch_graph")
                         su.compressed_pickle(keep_neighbor_coordinates,"keep_neighbor_coordinates")
-                        su.compressed_pickle(MAP_stitch_point,"MAP_stitch_point")
+                        su.compressed_pickle(winning_vertex,"winning_vertex")
 
 
                         raise Exception("Something went wrong with add_and_smooth_segment_to_branch")
@@ -2051,6 +2066,13 @@ def preprocess_limb(mesh,
             stitch_counter += 1
     #         if cut_flag:
     #             raise Exception("Cut flag was activated")
+
+            if check_correspondence_branches:
+                sk.check_correspondence_branches_have_2_endpoints(limb_correspondence_MAP[MAP_idx])
+                sk.check_correspondence_branches_have_2_endpoints(limb_correspondence_MP[MP_idx])
+                
+#             su.compressed_pickle(limb_correspondence_MAP,f"limb_correspondence_MAP_{MAP_idx}_{MP_idx}")
+#             su.compressed_pickle(limb_correspondence_MP,f"limb_correspondence_MP_{MAP_idx}_{MP_idx}")
 
 
     else:
@@ -2313,7 +2335,7 @@ def preprocess_neuron(
                 sig_th_initial_split=15, #for significant splitting meshes in the intial mesh split
                 limb_threshold = 2000, #the mesh faces threshold for a mesh to be qualified as a limb (otherwise too small)
     
-                filter_end_node_length=1500,#4001, #used in cleaning the skeleton during skeletonizations
+                filter_end_node_length=4500, #used in cleaning the skeleton during skeletonizations
                 return_no_somas = False, #whether to error or to return an empty list for somas
     
                 decomposition_type="meshafterparty",

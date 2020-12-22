@@ -14,6 +14,14 @@ matplot colors can be described with
 but the number can go as high as you want it just repeats after 10
 Ex: C100  = C110
 
+#How to set the figure size:
+fig.set_size_inches(18.5, 10.5)
+
+# not have the subplots run into each other
+fig.tight_layout()
+
+
+
 
 
 """
@@ -387,3 +395,64 @@ def plot_color_dict(colors,sorted_names=None,
                         top=1, bottom=0,
                         hspace=0, wspace=0)
     plt.show()
+    
+    
+    
+# -------------------- Generic Plotting functions --------------------
+
+"""
+Best Idea for concatenating plotting is to create the figure 
+first and then to pass the figure to different functions
+and one of the subaxes will be altered within function
+
+
+"""
+
+def get_axes_locations_from_figure(fig):
+    return [[f.get_subplotspec().colspan.start,
+             f.get_subplotspec().rowspan.start] for f in fig.get_children()[1:]]
+def get_axes_layout_from_figure(fig):
+    return np.max(np.array(get_axes_locations_from_figure(fig)),axis=0) + np.array([1,1])
+
+# plotting the BIC curve
+from matplotlib.ticker import MaxNLocator
+def plot_graph(title,
+                y_values,
+                x_values,
+                x_axis_label,
+                y_axis_label,
+              return_fig = False,
+              figure = None,
+              ax_index=None,
+              label=None,
+              x_axis_int=True):
+    """
+    Purpose: For easy plotting and concatenating plots
+    """
+    if figure is None:
+        figure,ax = plt.subplots(1,1)
+    else:
+        ax = figure.axes[ax_index]
+        return_fig = True
+    
+    
+    ax.plot(x_values,y_values,label=label)
+    ax.set_xlabel(x_axis_label)
+    ax.set_ylabel(y_axis_label)
+    ax.set_title(title)
+    if not label is None:
+        ax.legend()
+        
+    if x_axis_int:
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        
+    if return_fig:
+        plt.close()
+        return figure
+    else:
+        plt.show()
+
+        
+from IPython.display import display
+def display_figure(fig):
+    display(fig)

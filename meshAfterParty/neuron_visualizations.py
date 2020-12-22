@@ -800,6 +800,8 @@ def visualize_neuron(
     soma_border_vertices = False,
     soma_border_vertices_color="random",
     
+    verbose=True
+    
     ):
     
     """
@@ -904,8 +906,8 @@ def visualize_neuron(
     #do the mesh visualization type
     for viz_type in visualize_type:
         local_time = time.time()
-        
-        print(f"\n Working on visualization type: {viz_type}")
+        if verbose:
+            print(f"\n Working on visualization type: {viz_type}")
         if viz_type=="mesh":
             current_type = "mesh"
             
@@ -1506,7 +1508,8 @@ def visualize_neuron(
     
     if soma_border_vertices:
         if len(plot_items_order) > 0:
-            print("working on soma border vertices")
+            if verbose:
+                print("working on soma border vertices")
             unique_limb_names = np.unique([k[0] for k in plot_items_order])
             all_soma_verts = [[k["touching_soma_vertices"] for k in 
                                         input_neuron[curr_limb_idx].all_concept_network_data] for curr_limb_idx in unique_limb_names]
@@ -1527,7 +1530,6 @@ def visualize_neuron(
     if len(scatters) > 0 and len(scatters_colors) == 0:
         scatters_colors = [main_scatter_color]*len(scatters)
     
-    print("Working on  new stand alone scatter points")
     for curr_scatter,curr_color in zip(scatters,scatters_colors):
         
         plot_ipv_scatter(curr_scatter,scatter_color=curr_color,

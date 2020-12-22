@@ -15,6 +15,8 @@ import trimesh
 
 from tqdm_utils import tqdm
 
+
+
 def compare_endpoints(endpoints_1,endpoints_2,**kwargs):
     """
     comparing the endpoints of a graph: 
@@ -1342,12 +1344,12 @@ from calcification_param_Module import calcification_param
 def calcification(
                     location_with_filename,
                     max_triangle_angle =1.91986,
-                    quality_speed_tradeoff=0.1,
-                    medially_centered_speed_tradeoff=0.2,
-                    area_variation_factor=0.0001,
-                    max_iterations=500,
+                    quality_speed_tradeoff=0.2,#0.1,
+                    medially_centered_speed_tradeoff=0.2,#0.2,
+                    area_variation_factor=0.0001,#0.0001,
+                    max_iterations=500,#500,
                     is_medially_centered=True,
-                    min_edge_length = 0,
+                    min_edge_length = 75,
                     edge_length_multiplier = 0.002,
                     print_parameters=True
                 ):
@@ -1359,6 +1361,7 @@ def calcification(
         location_with_filename = location_with_filename[:-4]
     
     #print(f"location_with_filename = {location_with_filename}")
+    print(f"min_edge_length = {min_edge_length}")
     
     return_value = calcification_param(
         location_with_filename,
@@ -2659,11 +2662,12 @@ def skeletonize_connected_branch(current_mesh,
                         mesh_subtraction_distance_threshold=3000,
                         mesh_subtraction_buffer=50,
                         max_stitch_distance = 18000,
-                        current_min_edge = 200,
+                        current_min_edge = 75,
                         close_holes=True,
                         limb_name=None,
                         use_surface_after_CGAL = True,
-                        remove_cycles=True
+                        remove_cycles=True,
+                                 connectivity="edges",
                                  
                         ):
     """
@@ -2682,9 +2686,11 @@ def skeletonize_connected_branch(current_mesh,
     print(f"inside skeletonize_connected_branch and use_surface_after_CGAL={use_surface_after_CGAL}, surface_reconstruction_size={surface_reconstruction_size}")
     #check that the mesh is all one piece
     current_mesh_splits = split_significant_pieces(current_mesh,
-                               significance_threshold=1)
+                               significance_threshold=1,
+                                                  connectivity=connectivity)
     if len(current_mesh_splits) > 1:
-        raise Exception(f"The mesh passed has {len(current_mesh_splits)} pieces")
+        print(f"The mesh passed has {len(current_mesh_splits)} pieces so just taking the largest one {current_mesh_splits[0]}")
+        current_mesh = current_mesh_splits[0]
 
     # check the size of the branch and if small enough then just do
     # Surface Skeletonization
@@ -2734,7 +2740,8 @@ def skeletonize_connected_branch(current_mesh,
         
         #2) Filter away for largest_poisson_piece:
         mesh_pieces = split_significant_pieces(new_mesh,
-                                            significance_threshold=surface_reconstruction_size)
+                                            significance_threshold=surface_reconstruction_size,
+                                              connectivity=connectivity)
         
         if skeleton_print:
             print(f"Signifiant mesh pieces of {surface_reconstruction_size} size "
@@ -2746,7 +2753,8 @@ def skeletonize_connected_branch(current_mesh,
                 print("No signficant skeleton pieces so just doing surface skeletonization")
             # do surface skeletonization on all of the pieces
             surface_mesh_pieces = split_significant_pieces(new_mesh,
-                                            significance_threshold=2)
+                                            significance_threshold=2,
+                                                          connectivity=connectivity)
             
             #get the skeletons for all those pieces
             current_mesh_skeleton_list = [
@@ -2882,13 +2890,18 @@ def skeletonize_connected_branch(current_mesh,
         #now want to stitch together whether generated from 
         if skeleton_print:
             print(f"After cgal process the un-stitched skeleton has shape {skeleton_ready_for_stitching.shape}")
+            #su.compressed_pickle(skeleton_ready_for_stitching,"sk_before_stitiching")
         
-        stitched_skeletons_full = stitch_skeleton(
-                                                  skeleton_ready_for_stitching,
-                                                  max_stitch_distance=max_stitch_distance,
-                                                  stitch_print = False,
-                                                  main_mesh = []
-                                                )
+        if use_surface_after_CGAL:
+            stitched_skeletons_full = stitch_skeleton(
+                                                      skeleton_ready_for_stitching,
+                                                      max_stitch_distance=max_stitch_distance,
+                                                      stitch_print = False,
+                                                      main_mesh = []
+                                                    )
+        else:
+            stitched_skeletons_full = skeleton_ready_for_stitching
+            
         #stitched_skeletons_full_cleaned = clean_skeleton(stitched_skeletons_full)
         
         # erase the skeleton files if need to be
@@ -3421,7 +3434,8 @@ def split_skeleton_into_edges(current_skeleton):
 def decompose_skeleton_to_branches(current_skeleton,
                                    max_branch_distance=-1,
                                   skip_branch_threshold=20000,
-                                  return_indices=False):
+                                  return_indices=False,
+                                  remove_cycles=True):
     """
     Example of how to run: 
     elephant_skeleton = sk.read_skeleton_edges_coordinates("../test_neurons/elephant_skeleton.cgal")
@@ -3498,8 +3512,11 @@ def decompose_skeleton_to_branches(current_skeleton,
         
         
         branch_subgraph = el_sk_graph.subgraph(total_neighbors)
-        #attempting to eliminate any cycles
-        branch_subgraph = xu.remove_cycle(branch_subgraph)
+        
+        #12/17 NO LONGER attempting to eliminate any cycles
+        if remove_cycles:
+            branch_subgraph = xu.remove_cycle(branch_subgraph)
+        
         branch_skeletons.append(sk.convert_graph_to_skeleton(branch_subgraph))
         branch_skeleton_indices.append(list(branch_subgraph.nodes()))
         
@@ -3531,7 +3548,10 @@ def decompose_skeleton_to_branches(current_skeleton,
             
             #new method that will delete any cycles might find in the branches
         
-            branch_subgraph = xu.remove_cycle(branch_subgraph)
+            #12/17 NO LONGER attempting to eliminate any cycles
+            if remove_cycles:
+                branch_subgraph = xu.remove_cycle(branch_subgraph)
+        
             high_degree_branch_complex = sk.convert_graph_to_skeleton(branch_subgraph)
             seperated_high_degree_edges = split_skeleton_into_edges(high_degree_branch_complex)
                     
@@ -3542,12 +3562,7 @@ def decompose_skeleton_to_branches(current_skeleton,
             
             #check if there every was a cycle: 
             
-    
-    # why is this here???
-    if max_branch_distance > 0:
-        for br in branch_skeletons:
-            sk.resize_skeleton_branch()
-    
+
     for br in branch_skeletons:
         try:
             #print("Testing for cycle")
@@ -4366,7 +4381,9 @@ def skeletonize_and_clean_connected_branch_CGAL(mesh,
                        perform_cleaning_checks=False,
                        combine_close_skeleton_nodes = True,
                         combine_close_skeleton_nodes_threshold=700,
-                                               verbose=False,**kwargs):
+                                               verbose=False,
+                                                remove_cycles_at_end = True,
+                                                **kwargs):
     """
     Purpose: To create a clean skeleton from a mesh
     (used in the neuron preprocessing package)
@@ -4378,8 +4395,8 @@ def skeletonize_and_clean_connected_branch_CGAL(mesh,
     print("Checking connected components after skeletonize_connected_branch")
     check_skeleton_connected_component(current_skeleton)
 
-    
-    current_skeleton = remove_cycles_from_skeleton(current_skeleton)
+    if not remove_cycles_at_end:
+        current_skeleton = remove_cycles_from_skeleton(current_skeleton)
     
 
 
@@ -4497,12 +4514,30 @@ def skeletonize_and_clean_connected_branch_CGAL(mesh,
                                                             combine_threshold = combine_close_skeleton_nodes_threshold,
                                                             print_flag=True) 
 
+        
+    
+    if remove_cycles_at_end:
+        cleaned_branch = remove_cycles_from_skeleton(cleaned_branch)
+        
+    cleaned_branch = clean_skeleton_with_decompose(cleaned_branch)
 
 
     if perform_cleaning_checks:
         n_components = nx.number_connected_components(convert_skeleton_to_graph(cleaned_branch)) 
         if n_components > 1:
             raise Exception(f"After combine: Original limb was not a single component: it was actually {n_components} components")
+            
+        divided_branches = sk.decompose_skeleton_to_branches(cleaned_branch)
+        
+        #check that when we downsample it is not one component:
+        curr_branch_meshes_downsampled = [sk.resize_skeleton_branch(b,n_segments=1) for b in divided_branches]
+        downsampled_skeleton = sk.stack_skeletons(curr_branch_meshes_downsampled)
+        curr_sk_graph_debug = sk.convert_skeleton_to_graph(downsampled_skeleton)
+
+
+        con_comp = list(nx.connected_components(curr_sk_graph_debug))
+        if len(con_comp) > 1:
+            raise Exception(f"There were more than 1 component when downsizing: {[len(k) for k in con_comp]}")
 
     return cleaned_branch,curr_limb_endpoints_must_keep
 
@@ -4516,7 +4551,8 @@ def remove_cycles_from_skeleton(skeleton,
     max_cycle_distance = 5000,
     verbose = False,
     check_cycles_at_end=True,
-    return_original_if_error=False):
+    return_original_if_error=False,
+    error_on_more_than_two_paths_between_high_degree_nodes=False):
     
     """
     Purpose: To remove small cycles from a skeleton
@@ -4606,8 +4642,11 @@ def remove_cycles_from_skeleton(skeleton,
             both_paths = list(nx.all_simple_paths(cycle_graph,high_degree_nodes[0],high_degree_nodes[1],len(cycle_graph)))
 
             if len(both_paths) != 2:
-                su.compressed_pickle(skeleton,"skeleton")
-                raise Exception(f"Did not come up with only 2 paths between high degree nodes: both_paths = {both_paths} ")
+                if error_on_more_than_two_paths_between_high_degree_nodes:
+                    su.compressed_pickle(skeleton,"skeleton")
+                    raise Exception(f"Did not come up with only 2 paths between high degree nodes: both_paths = {both_paths} ")
+                else:
+                    print(f"Did not come up with only 2 paths between high degree nodes: both_paths = {both_paths} ")
 
             path_lengths = [xu.find_skeletal_distance_along_graph_node_path(skeleton_graph,g) for g in both_paths]
 
@@ -4976,6 +5015,14 @@ def add_and_smooth_segment_to_branch(skeleton,
     orig_sk_func_smoothed = add_and_smooth_segment_to_branch(orig_sk,
                            new_seg = np.array([stitch_point_MAP,stitch_point_MP]).reshape(-1,2,3))
     """
+    # 12/21 Addition: If the point you are trying to stitch to is already there then just return the skeleton
+    sk_graph_at_beginning = sk.convert_skeleton_to_graph(skeleton)
+    match_nodes_to_new_stitch_point = xu.get_nodes_with_attributes_dict(sk_graph_at_beginning,dict(coordinates=new_stitch_point))
+    if len(match_nodes_to_new_stitch_point)>0:
+        print("New stitch point was already on the skeleton so don't need to add it")
+        return skeleton
+    
+    
     if len(skeleton) == 0:
         raise Exception("The skeleton passed to the smoothing function was empty")
     
@@ -5093,8 +5140,24 @@ def add_and_smooth_segment_to_branch(skeleton,
         final_sk = smooth_skeleton_branch(skeleton_reshaped,coordinates_to_keep=coordinates_to_keep,**kwargs)
         
     #need to resize the final_sk
-    final_sk = sk.resize_skeleton_branch(final_sk,segment_width=orig_sk_segment_width)
-    return final_sk
+    if len(final_sk) == 0:
+        """
+        Pseudocode: 
+        3) Create a skeleton segment from the skeleton_stitch_point to the new point
+        4) Stack the skeletons
+        5) Return 
+        
+        """
+        print("The Skeleton at the end of smoothing was empty so just going to stitch the new point to skeleton without stitching")
+        
+        
+        new_sk_seg = np.array([skeleton_stitch_point,new_stitch_point])
+        final_sk = sk.stack_skeletons([skeleton,new_sk_seg])
+        return final_sk
+        
+    else: 
+        final_sk = sk.resize_skeleton_branch(final_sk,segment_width=orig_sk_segment_width)
+        return final_sk
 
 def number_connected_components(skeleton):
     """
@@ -5332,7 +5395,70 @@ def restrict_skeleton_from_start(skeleton,
     return return_values
 
 
+from tqdm_utils import tqdm
+from pykdtree.kdtree import KDTree
 
-
+def matching_skeleton_branches_by_vertices(branches):
+    
+    decomposed_branches = branches
+    kdtree_branches = [KDTree(k.reshape(-1,3)) for k in decomposed_branches]
+    matching_edges_kdtree = []
+    for i,d_br_1 in tqdm(enumerate(decomposed_branches)):
+        for j,d_br_2 in enumerate(decomposed_branches):
+            if i < j:
+                dist, nearest = kdtree_branches[i].query(d_br_2.reshape(-1,3))
+                if sum(dist) == 0:
+                    matching_edges_kdtree.append([i,j])
+                    
+    return matching_edges_kdtree
+                    
+                    
+def matching_skeleton_branches_by_endpoints(branches):
+    matching_edges = []
+    decomposed_branches = branches
+    
+    for i,d_br_1 in tqdm(enumerate(decomposed_branches)):
+        for j,d_br_2 in enumerate(decomposed_branches):
+            if i < j:
+                c_t = time.time()
+                br_1_end = sk.find_branch_endpoints(d_br_1)
+                br_2_end = sk.find_branch_endpoints(d_br_2)
+                #print(f"branch: {time.time() - c_t}")
+                c_t = time.time()
+                if sk.compare_endpoints(br_1_end,br_2_end):
+                    matching_edges.append([i,j])
+    return matching_edges
     
 
+def check_correspondence_branches_have_2_endpoints(correspondence,
+                                                  verbose=True,
+                                                  raise_error= True):
+    """
+    Purpose: check that all branches have 2 endpoints
+    """
+
+    irregular_branches = []
+    for piece_idx,piece_correspondence in correspondence.items():
+        
+        if "branch_skeleton" in piece_correspondence.keys():
+            k = piece_idx
+            v = piece_correspondence
+            
+            curr_sk = v["branch_skeleton"]
+            curr_sk_endpoint_coord = sk.find_skeleton_endpoint_coordinates(curr_sk)
+            if len(curr_sk_endpoint_coord) != 2:
+                if verbose:
+                    print(f"Branch {k} had {len(curr_sk_endpoint_coord)} endpoints")
+                irregular_branches.append([piece_idx,k,len(curr_sk_endpoint_coord)])
+        else:
+            for k,v in piece_correspondence.items():
+                curr_sk = v["branch_skeleton"]
+                curr_sk_endpoint_coord = sk.find_skeleton_endpoint_coordinates(curr_sk)
+                if len(curr_sk_endpoint_coord) != 2:
+                    if verbose:
+                        print(f"Piece {piece_idx}, Branch {k} had {len(curr_sk_endpoint_coord)} endpoints")
+                    irregular_branches.append([piece_idx,k,len(curr_sk_endpoint_coord)])
+    if raise_error and len(irregular_branches)>0:
+        raise Exception(f"Found the following irregular branches: {irregular_branches}")
+        
+    return irregular_branches

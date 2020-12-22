@@ -1,5 +1,5 @@
 import numpy as np
-
+import networkx as nx
 """
 Notes on functionality: 
 np.concatenate: combines list of lists into one list like itertools does
@@ -342,3 +342,58 @@ def angle_between_vectors(v1, v2, acute=True,degrees=True,verbose=False):
             
     
     return return_angle
+
+
+def intersecting_array_components(arrays,sort_components=True,verbose=False,perfect_match=False):
+    """
+    Purpose: 
+    Will find the groups of arrays that are
+    connected components based on overlap of elements
+    
+    Pseudocode: 
+    1) Create an empty edges list
+    2) Iterate through all combinations of arrays (skipping the redundants)
+    a. heck if there is an intersection
+    b. If yes then add to edges list
+    3) Trun the edges into a graph 
+    4) Return the connected components
+    
+    """
+    
+    array_edges = []
+    for i,arr1 in enumerate(arrays):
+        for j,arr2 in enumerate(arrays):
+            if i < j:
+                if perfect_match:
+                    if len(arr1) != len(arr2):
+                        continue
+                intersect_elem = np.intersect1d(arr1,arr2)
+                if perfect_match:
+                    if len(intersect_elem) < len(arr1):
+                        continue
+                if len(intersect_elem)>0:
+                    if verbose:
+                        print(f"for edge {[i,j]}, # matching element = {len(intersect_elem)}")
+                    array_edges.append([i,j])
+                    
+                    
+    if verbose:
+        print(f"array_edges = {array_edges}")
+        
+    G = nx.Graph()
+    G.add_nodes_from(np.arange(len(arrays)))
+    G.add_edges_from(array_edges)
+    
+    conn_comps = list([list(k) for k in nx.connected_components(G)])
+    
+    if sort_components:
+        conn_comps_lenghts = [len(k) for k in conn_comps]
+        conn_comps_ordered = [conn_comps[k] for k in np.flip(np.argsort(conn_comps_lenghts))]
+        if verbose: 
+            print(f"Returning ordered connected components, original lens = {conn_comps_lenghts}")
+        conn_comps =  conn_comps_ordered
+    
+    return np.array(conn_comps)
+
+def array_split(array,n_groups):
+    return np.array_split(array,n_groups)

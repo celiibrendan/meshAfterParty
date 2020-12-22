@@ -1216,6 +1216,39 @@ def split_mesh_into_face_groups(base_mesh,face_mapping,return_idx=True,
         return total_submeshes,total_submeshes_idx
     else:
         return total_submeshes
+    
+def split_mesh_by_closest_skeleton(mesh,skeletons,return_meshes=False):
+    """
+    Pseudocode: 
+    For each N branch: 
+    1) Build a KDTree of the skeleton
+    2) query the mesh against the skeleton, get distances
+
+    3) Concatenate all the distances and turn into (DxN) matrix 
+    4) Find the argmin of each row and that is the assignment
+
+    """
+
+
+    dist_list = []
+    for s in skeletons:
+        sk_kd = KDTree(s.reshape(-1,3))
+        dist, _ = sk_kd.query(mesh.triangles_center)
+        dist_list.append(dist)
+
+    dist_matrix = np.array(dist_list).T
+    face_assignment = np.argmin(dist_matrix,axis=1)
+    
+    split_meshes_faces = [np.where(face_assignment == s_i)[0] for s_i in range(len(skeletons))]
+    
+    if return_meshes:
+        split_meshes = [mesh.submesh([k],append=True,repair=False) for k in split_meshes_faces]
+        return split_meshes,split_meshes_faces 
+    else:
+        return split_meshes_faces
+        
+#     split_meshes,split_meshes_faces = tu.split_mesh_into_face_groups(mesh,face_assignment,return_dict=False)
+#     return split_meshes,split_meshes_faces 
 
 
  
