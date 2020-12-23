@@ -29,7 +29,8 @@ import neuron
 def mesh_correspondence_first_pass(mesh,
                                    skeleton=None,
                                    skeleton_branches=None,
-                                  distance_by_mesh_center=True):
+                                  distance_by_mesh_center=True,
+                                  connectivity="edges"):
     """
     Will come up with the mesh correspondences for all of the skeleton
     branches: where there can be overlaps and empty faces
@@ -55,7 +56,7 @@ def mesh_correspondence_first_pass(mesh,
                                       curr_limb_mesh,
                                      skeleton_segment_width = 1000,
                                      distance_by_mesh_center=distance_by_mesh_center,
-                                                                connectivity="edges")
+                                                                connectivity=connectivity)
         if len(returned_data) == 0:
             print("Got nothing from first pass so expanding the mesh correspondnece parameters ")
             returned_data = cu.mesh_correspondence_adaptive_distance(curr_branch_sk,
@@ -65,7 +66,7 @@ def mesh_correspondence_first_pass(mesh,
                                     buffer=300,
                                      distance_threshold=6000,
                                     return_closest_face_on_empty=True,
-                                        connectivity="edges")
+                                        connectivity=connectivity)
             
         # Need to just pick the closest face is still didn't get anything
         
@@ -1086,7 +1087,8 @@ def preprocess_limb(mesh,
         print(f"Working on limb correspondence for #{sublimb_idx} MAP piece")
         local_correspondence = mesh_correspondence_first_pass(mesh=mesh,
                                                              skeleton=cleaned_branch,
-                                                             distance_by_mesh_center=distance_by_mesh_center)
+                                                             distance_by_mesh_center=distance_by_mesh_center,
+                                                             connectivity="edges")
 
 
         print(f"Total time for decomposition = {time.time() - start_time}")
@@ -1950,13 +1952,25 @@ def preprocess_limb(mesh,
                 pre_stitch_mesh = limb_mesh_mparty.submesh([pre_stitch_mesh_idx],append=True,repair=False)
                 local_correspondnece_stitch = mesh_correspondence_first_pass(mesh=pre_stitch_mesh,
                                           skeleton_branches=curr_MAP_sk)
-                local_correspondence_stitch_revised = correspondence_1_to_1(mesh=pre_stitch_mesh,
+                local_correspondence_stitch_revised_MAP = correspondence_1_to_1(mesh=pre_stitch_mesh,
                                                             local_correspondence=local_correspondnece_stitch,
                                                             curr_limb_endpoints_must_keep=None,
                                                             curr_soma_to_piece_touching_vertices=None)
 
-                curr_MAP_meshes_idx = [pre_stitch_mesh_idx[local_correspondence_stitch_revised[nn]["branch_face_idx"]] for 
-                                               nn in local_correspondence_stitch_revised.keys()]
+#                 curr_MAP_meshes_idx = [pre_stitch_mesh_idx[local_correspondence_stitch_revised_MAP[nn]["branch_face_idx"]] for 
+#                                                nn in local_correspondence_stitch_revised_MAP.keys()]
+                
+                #Need to readjust the mesh correspondence idx
+                for k,v in local_correspondence_stitch_revised_MAP.items():
+                    local_correspondence_stitch_revised_MAP[k]["branch_face_idx"] = pre_stitch_mesh_idx[local_correspondence_stitch_revised_MAP[k]["branch_face_idx"]]
+                    
+                curr_MAP_meshes_idx = [v["branch_face_idx"] for v in local_correspondence_stitch_revised_MAP.values()]
+            else:
+                local_correspondence_stitch_revised_MAP = dict([(gg,limb_correspondence_MAP[MAP_idx][kk]) for gg,kk in enumerate(MAP_pieces_for_correspondence)])
+                
+                for gg,kk in enumerate(MAP_pieces_for_correspondence):
+                    local_correspondence_stitch_revised_MAP[gg]["branch_skeleton"] = curr_MAP_sk[gg]
+                    
 
 
             #To make sure that the MAP never gives up ground on the labels
@@ -1996,27 +2010,50 @@ def preprocess_limb(mesh,
             
             # ******************************** this is where should do thing about no mesh correspondence ***************** #
 
-            #3) Run mesh correspondence to get new meshes and mesh_idx and widths
-            local_correspondnece_stitch = mesh_correspondence_first_pass(mesh=stitching_mesh,
-                                          skeleton_branches=stitching_skeleton_branches)
+            # -------- 12/22: Trying to do the re-correspondence but if doesn't work then just resort to old one --------- #
 
             try:
+                
+                #3) Run mesh correspondence to get new meshes and mesh_idx and widths
+                local_correspondnece_stitch = mesh_correspondence_first_pass(mesh=stitching_mesh,
+                                              skeleton_branches=stitching_skeleton_branches)
 
                 local_correspondence_stitch_revised = correspondence_1_to_1(mesh=stitching_mesh,
                                                             local_correspondence=local_correspondnece_stitch,
                                                             curr_limb_endpoints_must_keep=None,
                                                             curr_soma_to_piece_touching_vertices=None,
                                                             must_keep_labels=must_keep_labels_MAP)
+                
+                #Need to readjust the mesh correspondence idx
+                for k,v in local_correspondence_stitch_revised.items():
+                    local_correspondence_stitch_revised[k]["branch_face_idx"] = stitching_mesh_idx[local_correspondence_stitch_revised[k]["branch_face_idx"]]
             except:
-                su.compressed_pickle(stitching_skeleton_branches,"stitching_skeleton_branches")
-                su.compressed_pickle(stitching_mesh,"stitching_mesh")
-                su.compressed_pickle(local_correspondnece_stitch,"local_correspondnece_stitch")
-                raise Exception("Something went wrong with 1 to 1 correspondence")
+                print("Errored in 1 to 1 correspondence in stitching so just reverting to the original mesh assignments")
+                # Setting the correspondence manually because the adaptive way did not work
+                local_counter = 0
+                local_correspondence_stitch_revised = dict()
+                
+                # setting the MAP parts (the new skeletons have already been adjusted)
+                for k in local_correspondence_stitch_revised_MAP:
+                    local_correspondence_stitch_revised[local_counter] = local_correspondence_stitch_revised_MAP[k]
+                    local_counter += 1
+
+                # setting the MP parts (the new skeletons have not been adjusted yet so adjusting them here)
+                for mp_idx, k in enumerate(MP_branches_for_correspondence):
+                    local_correspondence_stitch_revised[local_counter] = limb_correspondence_MP[MP_idx][k] 
+                    local_correspondence_stitch_revised[local_counter]["branch_skeleton"] = curr_MP_sk[mp_idx]
+                    local_counter += 1
+                
+                
+#                 su.compressed_pickle(stitching_skeleton_branches,"stitching_skeleton_branches")
+#                 su.compressed_pickle(stitching_mesh,"stitching_mesh")
+#                 su.compressed_pickle(local_correspondnece_stitch,"local_correspondnece_stitch")
+#                 su.compressed_pickle(must_keep_labels_MAP,"must_keep_labels_MAP")
+                
+#                 raise Exception("Something went wrong with 1 to 1 correspondence")
 
 
-            #Need to readjust the mesh correspondence idx
-            for k,v in local_correspondence_stitch_revised.items():
-                local_correspondence_stitch_revised[k]["branch_face_idx"] = stitching_mesh_idx[local_correspondence_stitch_revised[k]["branch_face_idx"]]
+            
 
 
 

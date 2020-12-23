@@ -4547,6 +4547,12 @@ def check_skeleton_connected_component(skeleton):
     if n_comp != 1:
         raise Exception(f"There were {n_comp} number of components detected in the skeleton")
 
+def skeleton_connected_components(skeleton):
+    total_limb_sk_graph = sk.convert_skeleton_to_graph(skeleton)
+    conn_comp_graph = list(nx.connected_components(total_limb_sk_graph))
+    conn_comp_sk = [sk.convert_graph_to_skeleton(total_limb_sk_graph.subgraph(list(k))) for k in conn_comp_graph]
+    return conn_comp_sk
+        
 def remove_cycles_from_skeleton(skeleton,
     max_cycle_distance = 5000,
     verbose = False,
@@ -4636,6 +4642,12 @@ def remove_cycles_from_skeleton(skeleton,
                 continue
 
             high_degree_nodes = cyc[np.where(node_degrees>2)[0]]
+            
+            if len(high_degree_nodes) == 0:
+                print("No higher degree (above 2) nodes detected")
+                continue
+            
+            
             cycle_graph = skeleton_graph.subgraph(cyc)
 
             #3) Get the 2 paths between the high degree nodes

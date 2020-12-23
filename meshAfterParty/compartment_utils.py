@@ -1027,7 +1027,8 @@ def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
 
 
 # -------- for the mesh correspondence that creates an exact 1-to1 correspondence of mesh face to skeleton branch------- #
-def filter_face_coloring_to_connected_components(curr_limb_mesh,face_coloring,connectivity="vertices"):
+def filter_face_coloring_to_connected_components(curr_limb_mesh,face_coloring,connectivity="vertices",
+     must_keep_labels=dict()):
     """
     Purpose: To eliminate all but the largest connected component
     of a label on the mesh face coloring 
@@ -1041,22 +1042,35 @@ def filter_face_coloring_to_connected_components(curr_limb_mesh,face_coloring,co
     leftover_labels =np.setdiff1d( np.unique(face_coloring),[-1])
     for curr_label in leftover_labels:
         label_indices = np.where(face_coloring==curr_label)[0]
-        curr_submesh = curr_limb_mesh.submesh([label_indices],append=True)
+        curr_submesh = curr_limb_mesh.submesh([label_indices],append=True,repair=False)
         split_meshes,split_components = tu.split(curr_submesh,return_components=True,connectivity=connectivity)
         
-        
-        try:
+        winning_index = -1
+        if curr_label in must_keep_labels.keys():
+            for j,sc  in enumerate(split_components):
+                curr_component_labels = label_indices[sc]
+                
+                if len(np.intersect1d(curr_component_labels,must_keep_labels[curr_label])) == len(must_keep_labels[curr_label]):
+                    winning_index = j
+                    break
+        else:
+            winning_index = 0
+            
+        if winning_index >=0:
             label_indices = np.array(label_indices)
-            split_components_0 = np.array(list(split_components[0])).astype("int")
+            split_components_0 = np.array(list(split_components[winning_index])).astype("int")
             to_keep_indices = label_indices[split_components_0]
-        except:
+        else:
             print(f"label_indices = {label_indices}")
             print(f"curr_submesh = {curr_submesh}")
             print(f"split_components = {split_components}")
             print(f"split_components[0] = {split_components[0]}")
-            raise Exception("")
+            raise Exception("No winning index in filter_face_coloring_to_connected_components")
+        
+            
         to_clear_indices = np.setdiff1d(label_indices, to_keep_indices)
         face_coloring[to_clear_indices] = -1
+        
     return face_coloring
 
 def waterfill_labeling(
@@ -1090,8 +1104,8 @@ def waterfill_labeling(
 
 
 
-        if len(submesh_indices)> max_submesh_threshold:
-            raise Exception(f"The len of the submesh ({len(submesh_indices)}) exceeds the maximum threshold of {max_submesh_threshold} ")
+#         if len(c)> max_submesh_threshold:
+#             raise Exception(f"The len of the submesh ({len(submesh_indices)}) exceeds the maximum threshold of {max_submesh_threshold} ")
 
         #check that these are unmarked
         curr_unmarked_faces = [k for k in submesh_indices if total_mesh_correspondence[k] == -1] 
@@ -1267,14 +1281,21 @@ def resolve_empty_conflicting_face_labels(
 
         #adding in the must keep labels
         for k,v in must_keep_labels.items():
-            for face_idx in v:
-                face_coloring[face_idx] = k
+            face_coloring[v] = k
 
         # -- Need to only take the biggest piece of the non-conflicted mesh and resolve those that were eliminated--
         missing_labels_history = []
         for i in range(0,max_color_filling_iterations):
 
-            face_coloring = filter_face_coloring_to_connected_components(curr_limb_mesh,face_coloring,connectivity=connectivity)
+            
+            face_coloring = filter_face_coloring_to_connected_components(curr_limb_mesh,face_coloring,connectivity=connectivity,
+                                                                        must_keep_labels=must_keep_labels)
+            
+            # checking that the face coloring was still maintained
+            for k,v in must_keep_labels.items():
+                for face_idx in v:
+                    if face_coloring[face_idx] != k:
+                        raise Exception("The face_coloring did not maintain the labels to keep")
 
             # ----fixing if there were any missing labels --- **** this still has potential for erroring ****
 
@@ -1285,9 +1306,24 @@ def resolve_empty_conflicting_face_labels(
             for curr_label in missing_labels:
                 labels_idx = [k for k,v in face_lookup.items() if curr_label in v]
                 face_coloring[labels_idx] = curr_label
+            
+            #adding in the must keep labels
+            for k,v in must_keep_labels.items():
+                face_coloring[v] = k
+                
+            for k,v in must_keep_labels.items():
+                for face_idx in v:
+                    if face_coloring[face_idx] != k:
+                        raise Exception("The face_coloring did not maintain the labels to keep")
 
             #filter the faces again: 
-            face_coloring = filter_face_coloring_to_connected_components(curr_limb_mesh,face_coloring,connectivity=connectivity)
+            face_coloring = filter_face_coloring_to_connected_components(curr_limb_mesh,face_coloring,connectivity=connectivity,
+                                                                        must_keep_labels=must_keep_labels)
+            
+            for k,v in must_keep_labels.items():
+                for face_idx in v:
+                    if face_coloring[face_idx] != k:
+                        raise Exception("The face_coloring did not maintain the labels to keep")
 
             leftover_labels = np.unique(face_coloring)
             missing_labels = set(np.setdiff1d(no_missing_labels.copy(), leftover_labels))
@@ -1445,7 +1481,7 @@ def resolve_empty_conflicting_face_labels_old(
                      curr_limb_mesh,
                      face_lookup,
                      no_missing_labels = [],
-                    max_submesh_threshold=50000,
+                    max_submesh_threshold=100000,
                     max_color_filling_iterations=5,
                     debug=False,
                     must_keep_labels=dict(), # dictionary mapping labels to the faces they must label at the start,

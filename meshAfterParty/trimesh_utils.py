@@ -1415,7 +1415,24 @@ def ray_trace_distance(mesh,
             break
     return rs
         
+def vertices_coordinates_to_vertex_index(mesh,vertex_coordinates,error_on_unmatches=True):
+    """
+    Purpose: To map the vertex coordinates to vertex indices
     
+    """
+    m_kd = KDTree(mesh.vertices)
+    dist,closest_vertex = m_kd.query(vertex_coordinates)
+    zero_dist = np.where(dist == 0)[0]
+    if error_on_unmatches:
+        mismatch_number = len(vertex_coordinates)-len(zero_dist)
+        if mismatch_number > 0:
+            raise Exception(f"{mismatch_number} of the vertices coordinates were not a perfect match")
+    
+    return closest_vertex[zero_dist]
+
+def vertices_coordinates_to_faces(mesh,vertex_coordinates,error_on_unmatches=False,concatenate_unique_list=True):
+    vertex_indices = vertices_coordinates_to_vertex_index(mesh,vertex_coordinates,error_on_unmatches)
+    return vertices_to_faces(mesh,vertex_indices,concatenate_unique_list)
 
 def vertices_to_faces(current_mesh,vertices,
                      concatenate_unique_list=False):
@@ -1439,7 +1456,7 @@ def vertices_to_faces(current_mesh,vertices,
 
 import numpy_utils as nu
 import system_utils as su
-def vertices_coordinates_to_faces(current_mesh,vertex_coordinates):
+def vertices_coordinates_to_faces_old(current_mesh,vertex_coordinates):
     """
     
     Purpose: If have a list of vertex coordinates, to get the face indices associated with them
