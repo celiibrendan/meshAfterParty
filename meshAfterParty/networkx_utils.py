@@ -267,7 +267,10 @@ def remove_selfloops(UG):
 
 def get_neighbors(G,node,int_label=True):
     if int_label:
-        return [int(n) for n in G[node]]
+        try:
+            return [int(n) for n in G[node]]
+        except:
+            return [int(n[1:]) for n in G[node]]
     else:
         return [n for n in G[node]]
     
@@ -290,6 +293,22 @@ def get_node_degree(G,node_name):
         return node_degrees
     else:
         return node_degrees[0]
+    
+def get_coordinate_degree(G,coordinate):
+    """
+    Purpose: To return the degrees of coordinates
+    inside of a graph
+    
+    """
+    coordinate = np.array(coordinate).reshape(-1,3)
+    endpoint_nodes = [xu.get_graph_node_by_coordinate(G,k) for k in coordinate]
+    endpoint_degrees = np.array(xu.get_node_degree(G,endpoint_nodes))
+    
+    if len(coordinate) == 1:
+        return endpoint_degrees[0]
+    else:
+        return endpoint_degrees
+    
 
 
 def set_node_attributes_dict(G,attrs):
@@ -1262,5 +1281,5 @@ def add_new_coordinate_node(G,
         return G
     
     
-
+import networkx_utils as xu
     

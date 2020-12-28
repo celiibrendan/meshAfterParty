@@ -622,7 +622,8 @@ def attach_floating_pieces_to_limb_correspondence(
 
 def calculate_limb_concept_networks(limb_correspondence,
                                     network_starting_info,
-                                   run_concept_network_checks=True):
+                                   run_concept_network_checks=True,
+                                   verbose=False):
     """
     Can take a limb correspondence and the starting vertices and endpoints
     and create a list of concept networks organized by 
@@ -679,7 +680,8 @@ def calculate_limb_concept_networks(limb_correspondence,
         for soma_group_idx,st_dict in network_starting_info[soma_idx].items():
             t_verts = st_dict["touching_verts"]
             endpt = st_dict["endpoint"]
-            print(f"\n\n---------Working on soma_idx = {soma_idx}, soma_group_idx {soma_group_idx}, endpt = {endpt}---------")
+            if verbose:
+                print(f"\n\n---------Working on soma_idx = {soma_idx}, soma_group_idx {soma_group_idx}, endpt = {endpt}---------")
 
 
 
@@ -701,12 +703,11 @@ def calculate_limb_concept_networks(limb_correspondence,
                                                                   starting_coordinate=endpt,
                                                                   starting_edge=start_branch_endpoints,
                                                                   touching_soma_vertices=t_verts,
-                                                                       soma_group_idx=soma_group_idx)
-            print("Done generating concept network \n\n")
+                                                                       soma_group_idx=soma_group_idx,
+                                                                       verbose=verbose)
+            if verbose:
+                print("Done generating concept network \n\n")
 
-
-            run_checks = True
-            check_print_flag = True
 
             if run_concept_network_checks:
                 #3) Run the checks on the concept network
@@ -714,7 +715,7 @@ def calculate_limb_concept_networks(limb_correspondence,
 
                 recovered_touching_piece = xu.get_nodes_with_attributes_dict(curr_limb_concept_network,dict(starting_coordinate=endpt))
 
-                if check_print_flag:
+                if verbose:
                     print(f"recovered_touching_piece = {recovered_touching_piece}")
                 if recovered_touching_piece[0] != start_branch:
                     raise Exception(f"For limb and soma {soma_idx} the recovered_touching and original touching do not match\n"

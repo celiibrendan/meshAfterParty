@@ -69,6 +69,66 @@ def width_jump_edges(limb,
         print(f"Total time for width = {time.time() - width_start_time}")
     return error_edges
 
+def path_to_edges(path):
+    return np.vstack([path[:-1],path[1:]]).T
+
+def width_jump_edges_path(limb, #assuming the concept network is already set
+                          path_to_check,
+                    width_type = "no_spine_median_mesh_center",
+                     width_jump_threshold = 100,
+                     verbose=False,
+                          return_all_edge_info = True,
+                          offset=1000,
+                    ):
+    """
+    Will only look to see if the width jumps up by a width_jump_threshold threshold ammount
+    
+    **but only along a certain path**
+    
+    
+    Example: 
+    curr_limb.set_concept_network_directional(starting_node = 4)
+    err_edges,edges,edges_width_jump = ed.width_jump_edges_path(curr_limb,
+                            path_to_check=np.flip(soma_to_soma_path),
+                                        width_jump_threshold=200  )
+
+    err_edges,edges,edges_width_jump
+    """
+
+
+    width_start_time = time.time()
+    curr_net = limb.concept_network_directional
+    edges = path_to_edges(path_to_check)
+    edges_width_jump = []
+    error_edges = []
+    
+    
+    for current_nodes in edges:
+        if verbose:
+            print(f"  Edge: {current_nodes}")
+
+        up_width,d_width,up_sk,d_sk = nru.branch_boundary_transition(limb,
+                              edge=current_nodes,
+                            offset=1000,
+                            verbose=False)
+
+        downstream_jump = d_width-up_width
+        edges_width_jump.append(downstream_jump)
+        
+        if downstream_jump >= width_jump_threshold:
+            if verbose:
+                print(f"Adding error edge {current_nodes} because width jump was {downstream_jump}")
+            error_edges.append(list(current_nodes))
+
+    
+    edges_width_jump = np.array(edges_width_jump)
+    if verbose: 
+        print(f"Total time for width = {time.time() - width_start_time}")
+    if return_all_edge_info:
+        return error_edges,edges,edges_width_jump
+    else:
+        return error_edges
+
 
 
 import skeleton_utils as sk
@@ -152,187 +212,244 @@ def double_back_edges(
         print(f"Total time for width = {time.time() - width_start_time}")
     
     return error_edges
+
+
+
+def double_back_edges_path(
+    limb,
+    path_to_check,
+    double_back_threshold = 130,
+    verbose = True,
+    comparison_distance=3000,
+    offset=0,
+    return_all_edge_info = True):
+
+    """
+    Purpose: To get all of the edges where the skeleton doubles back on itself
+    **but only along a certain path**
+
+    Application: For error detection
+    
+    
+    Example: 
+    curr_limb.set_concept_network_directional(starting_node = 2)
+    err_edges,edges,edges_width_jump = ed.double_back_edges_path(curr_limb,
+                            path_to_check=soma_to_soma_path )
+
+    err_edges,edges,edges_width_jump
+
+
+    """
+
+    curr_limb = limb
+
+
+    width_start_time = time.time()
+    
+    curr_net = limb.concept_network_directional
+    edges = path_to_edges(path_to_check)
+    edges_doubling_back = []
+    error_edges = []
+    
+    
+    for current_nodes in tqdm(edges):
+        if verbose:
+            print(f"  Edge: {current_nodes}")
+
+
+        up_width,d_width,up_sk,d_sk = nru.branch_boundary_transition(curr_limb,
+                              edge=current_nodes,
+                              comparison_distance = comparison_distance,
+                            offset=offset,
+                            verbose=False)
+
+        """
+        Pseudocode:
+        1) Flip the upstream skeleton (the downstream one should be in right direction)
+        2) Get the endpoints from first and last of skeleton coordinates for both to find the vectors
+        3) Find the angle between them
+
+        """
+        up_sk_flipped = sk.flip_skeleton(up_sk)
+
+        up_vec = up_sk_flipped[-1][-1] - up_sk_flipped[0][0] 
+        d_vec = d_sk[-1][-1] - d_sk[0][0]
+
+        curr_angle = nu.angle_between_vectors(up_vec,d_vec)
+        edges_doubling_back.append(curr_angle)
+        
+        
+        if curr_angle > double_back_threshold:
+            error_edges.append(list(current_nodes))
+
+    if verbose: 
+        print(f"Total time for doubling_back = {time.time() - width_start_time}")
+    if return_all_edge_info:
+        return error_edges,edges,edges_doubling_back
+    else:
+        return error_edges
+
+
             
     
-import numpy as np
-import preprocessing_vp2 as pre
-import networkx_utils as xu
-import trimesh_utils as tu
 import neuron_utils as nru
-import neuron
-import copy
+import numpy_utils as nu
 import networkx as nx
-
-def split_neuron_limb(neuron_obj,
-                     seperated_graphs,
-                     curr_limb_idx,
-                     verbose = True):
+import matplotlib.pyplot as plt
+def resolving_crossovers(limb_obj,
+                        coordinate,
+                        match_threshold = 35,
+                        verbose = True,
+                         return_new_edges = True,
+                        return_subgraph=False,
+                        plot_intermediates=False,
+                         offset=1000,
+                         comparison_distance = 1000,
+                        **kwargs):
+    
     """
-    Purpose: To Split a neuron limb up into sepearte limb graphs specific
+    Purpose: To determine the connectivity that should be at the location
+    of a crossover (the cuts that should be made and the new connectivity)
 
-    Arguments:
-    neuron_obj
-    seperated_graphs
-    limb_idx
-
+    Pseudocode: 
+    1) Get all the branches that correspond to the coordinate
+    2) For each branch
+    - get the boundary cosine angle between the other branches
+    - if within a threshold then add edge
+    3) Ge the subgraph of all these branches:
+    - find what edges you have to cut
+    4) Return the cuts/subgraph
+    
+    Ex: 
+    resolving_crossovers(limb_obj = copy.deepcopy(curr_limb),
+                     coordinate = high_degree_coordinates[0],
+                    match_threshold = 40,
+                    verbose = False,
+                     return_new_edges = True,
+                    return_subgraph=True,
+                    plot_intermediates=False)
 
     """
     
-    
-    # -------- Getting the mesh and correspondence information --------- #
-    """
-    1) Assemble all the faces of the nodes and concatenate them
-    - copy the data into the new limb correspondence
-    - save the order they were concatenated in the new limb correspondence
-    - copy of 
-    2) Use the concatenated faces idx to obtain the new limb mesh
-    3) index the concatenated faces idx into the limb.mesh_face_idx to get the neew limb.mesh_face_idx
-    """
-    new_limb_data = []
-    curr_limb = neuron_obj[curr_limb_idx]
+    #1) Get all the branches that correspond to the coordinate
+    sk_branches = [br.skeleton for br in limb_obj]
 
-    for seg_graph_idx,sep_G in enumerate(seperated_graphs):
+    coordinate_branches = np.sort(sk.find_branch_skeleton_with_specific_coordinate(sk_branches,coordinate))
+    curr_colors = ["red","aqua","purple","green"]
+    
+    if verbose: 
+        print(f"coordinate_branches = {coordinate_branches}")
+        for c,col in zip(coordinate_branches,curr_colors):
+            print(f"{c} = {col}")
+    
+    
+    
+    if plot_intermediates:
+        nviz.plot_objects(meshes=[limb_obj[k].mesh for k in coordinate_branches],
+                         meshes_colors=curr_colors,
+                         skeletons=[limb_obj[k].skeleton for k in coordinate_branches],
+                         skeletons_colors=curr_colors)
+    
+    # 2) For each branch
+    # - get the boundary cosine angle between the other branches
+    # - if within a threshold then add edge
+
+    match_branches = []
+    all_aligned_skeletons = []
+    for br1_idx in coordinate_branches:
+        for br2_idx in coordinate_branches:
+            if br1_idx>=br2_idx:
+                continue
+
+                
+            edge = [br1_idx,br2_idx]
+            edge_skeletons = [sk_branches[e] for e in edge]
+            aligned_sk_parts = sk.offset_skeletons_aligned_at_shared_endpoint(edge_skeletons,
+                                                                             offset=offset,
+                                                                             comparison_distance=comparison_distance)
+            
+
+            curr_angle = sk.parent_child_skeletal_angle(aligned_sk_parts[0],aligned_sk_parts[1])
+            
+            
+            if verbose:
+                print(f"Angle between {br1_idx} and {br2_idx} = {curr_angle} ")
+
+            # - if within a threshold then add edge
+            if curr_angle <= match_threshold:
+                match_branches.append([br1_idx,br2_idx])
+                
+            if plot_intermediates:
+                #saving off the aligned skeletons to visualize later
+                all_aligned_skeletons.append(aligned_sk_parts[0])
+                all_aligned_skeletons.append(aligned_sk_parts[1])
+    
+    if verbose: 
+        print(f"Final Matches = {match_branches}")
+        
+    if plot_intermediates:
+        print("Aligned Skeleton Parts")
+        nviz.plot_objects(meshes=[limb_obj[k].mesh for k in coordinate_branches],
+                         meshes_colors=curr_colors,
+                         skeletons=all_aligned_skeletons)
+    
+    if plot_intermediates:
+        for curr_match in match_branches:
+            nviz.plot_objects(meshes=[limb_obj[k].mesh for k in curr_match],
+                 meshes_colors=curr_colors,
+                 skeletons=[limb_obj[k].skeleton for k in curr_match],
+                 skeletons_colors=curr_colors)
+            
+    
+    # find what cuts and connections need to make
+    limb_subgraph = limb_obj.concept_network.subgraph(coordinate_branches)
+    
+    if verbose:
+        print("Original graph")
+        nx.draw(limb_subgraph,with_labels=True)
+        plt.show()
+    
+    
+    sorted_edges = np.sort(limb_subgraph.edges(),axis=1)
+    if len(match_branches)>0:
+        
+        sorted_confirmed_edges = np.sort(match_branches,axis=1)
+
+
+        edges_to_delete = []
+
+        for ed in sorted_edges:
+            if len(nu.matching_rows_old(sorted_confirmed_edges,ed))==0:
+                edges_to_delete.append(ed)
+
+        edges_to_create = []
+
+        for ed in sorted_confirmed_edges:
+            if len(nu.matching_rows_old(sorted_edges,ed))==0:
+                edges_to_create.append(ed)
+    else:
+        edges_to_delete = sorted_edges
+        edges_to_create = []
+            
+    if verbose: 
+        print(f"edges_to_delete = {edges_to_delete}")
+        print(f"edges_to_create = {edges_to_create}")
+    
+    return_value = [edges_to_delete] 
+    if return_new_edges:
+        return_value.append(edges_to_create)
+    if return_subgraph:
+        #actually creating the new sugraph
+        limb_obj.concept_network.remove_edges_from(edges_to_delete)
+        limb_obj.concept_network.add_edges_from(edges_to_create)
+        
         if verbose:
-            print(f"\n\n----Working on seperate_graph {seg_graph_idx}----")
-
-        curr_subgraph = list(sep_G)
-
-        #will store all of the relevant info in the 
-        sep_graph_data = dict()
+            print(f"n_components in adjusted graph = {nx.number_connected_components(limb_obj.concept_network)}")
+        return_value.append(limb_obj.concept_network)
+        
+    return return_value
 
 
-        fixed_node_objects = dict()
-
-        limb_face_idx_concat = []
-        face_counter = 0
-        old_node_to_new_node_mapping = dict()
-        for i,n_name in enumerate(curr_subgraph):
-            #store the mapping for the new names
-            old_node_to_new_node_mapping[n_name] = i
-
-            fixed_node_objects[i] = copy.deepcopy(curr_limb[n_name])
-            curr_mesh_face_idx = fixed_node_objects[i].mesh_face_idx
-            limb_face_idx_concat.append(curr_mesh_face_idx)
-            fixed_node_objects[i].mesh_face_idx = np.arange(face_counter,face_counter+len(curr_mesh_face_idx))
-            face_counter += len(curr_mesh_face_idx)
-
-
-        total_limb_face_idx = np.concatenate(limb_face_idx_concat)
-        new_limb_mesh = curr_limb.mesh.submesh([total_limb_face_idx],append=True,repair=False)
-
-
-        new_limb_mesh_face_idx = tu.original_mesh_faces_map(neuron_obj.mesh, new_limb_mesh,
-                                   matching=True,
-                                   print_flag=False)
-
-        #recovered_new_limb_mesh = neuron_obj.mesh.submesh([new_limb_mesh_face_idx],append=True,repair=False)
-        sep_graph_data["limb_meshes"] = new_limb_mesh
-
-        # ------- How to get the new concept network starting info --------- #
-
-        #get all of the starting dictionaries that match a node in the subgraph
-        curr_all_concept_network_data = [k for k in curr_limb.all_concept_network_data if k["starting_node"] in list(curr_subgraph)]
-        if len(curr_all_concept_network_data) != 1:
-            raise Exception(f"There were more not exactly one starting dictinoary: {curr_all_concept_network_data} ")
-
-        curr_all_concept_network_data[0]["soma_group_idx"] = 0
-
-        curr_limb_network_stating_info = nru.all_concept_network_data_to_dict(curr_all_concept_network_data)
-
-        #calculate the concept networks
-
-
-        limb_corresp_for_networks = dict([(i,dict(branch_skeleton=k.skeleton,
-                                                 width_from_skeleton=k.width,
-                                                 branch_mesh=k.mesh,
-                                                 branch_face_idx=k.mesh_face_idx)) for i,k in fixed_node_objects.items()])
-
-        sep_graph_data["limb_correspondence"] = limb_corresp_for_networks
-
-        sep_graph_data["limb_network_stating_info"] = curr_limb_network_stating_info
-
-        limb_to_soma_concept_networks = pre.calculate_limb_concept_networks(limb_corresp_for_networks,
-                                                                                        curr_limb_network_stating_info,
-                                                                                        run_concept_network_checks=True,
-                                                                                       )   
-
-        sep_graph_data["limb_concept_networks"] = limb_to_soma_concept_networks
-
-
-        # --------------- Making the new limb object -------------- #
-        new_labels = ["split_limb"]
-        new_limb_obj = neuron.Limb(mesh=new_limb_mesh,
-                     curr_limb_correspondence=limb_corresp_for_networks,
-                     concept_network_dict=limb_to_soma_concept_networks,
-                     mesh_face_idx=new_limb_mesh_face_idx,
-                    labels=new_labels,
-                     branch_objects = fixed_node_objects,#this will have a dictionary mapping to the branch objects if provided
-                   )
-
-
-        sep_graph_data["limb_labels"] = new_labels
-        sep_graph_data["Limb_obj"] = new_limb_obj
-
-        new_limb_data.append(sep_graph_data)
-    
-    
-    
-    
-    
-    # Phase 2: ------------- Adjusting the existing neuron object --------------- #
-    
-    neuron_obj_cp = copy.deepcopy(neuron_obj)
-    #1) map the new neuron objects to unused limb names
-    new_limb_dict = dict()
-    new_limb_idxs = [curr_limb_idx] + [len(neuron_obj_cp) + i for i in range(len(new_limb_data[1:]))]
-    new_limb_string_names = [f"L{k}" for k in new_limb_idxs]
-    for l_i,limb_data in zip(new_limb_idxs,new_limb_data):
-        new_limb_dict[l_i] = limb_data
-
-
-    #3) Delete the old limb data in the preprocessing dictionary (Adjust the soma_to_piece_connectivity)
-    attr_to_update = ['limb_meshes', 'limb_correspondence', 'limb_network_stating_info', 'limb_concept_networks', 'limb_labels']
-    for attr_upd in attr_to_update:
-        del neuron_obj_cp.preprocessed_data[attr_upd][curr_limb_idx]
-
-    # --- revise the soma_to_piece_connectivity -- #
-    somas_to_delete_from = np.unique(neuron_obj_cp[curr_limb_idx].touching_somas())
-
-    for sm_d in somas_to_delete_from:
-        neuron_obj_cp.preprocessed_data["soma_to_piece_connectivity"][sm_d].remove(curr_limb_idx)
-
-    #4) Delete the old limb from the neuron concept network   
-    neuron_obj_cp.concept_network.remove_node(f"L{curr_limb_idx}")
-
-    #5) Add the new limb nodes with edges to the somas they are touching
-    for l_i,limb_data in new_limb_dict.items():
-        curr_limb_obj = limb_data["Limb_obj"]
-        curr_limb_touching_somas = curr_limb_obj.touching_somas()
-
-
-
-        str_node_name = f"L{l_i}"
-        neuron_obj_cp.concept_network.add_node(str_node_name)
-
-        xu.set_node_data(curr_network=neuron_obj_cp.concept_network,
-                                         node_name=str_node_name,
-                                         curr_data=curr_limb_obj,
-                                         curr_data_label="data")
-
-        for sm_d in curr_limb_touching_somas:
-            neuron_obj_cp.preprocessed_data["soma_to_piece_connectivity"][sm_d].append(l_i)
-            neuron_obj_cp.concept_network.add_edge(str_node_name,f"S{sm_d}")
-
-        for attr_upd in attr_to_update:
-            if attr_upd == "limb_meshes":
-                neuron_obj_cp.preprocessed_data[attr_upd].insert(l_i,limb_data[attr_upd])
-            else:
-                neuron_obj_cp.preprocessed_data[attr_upd][l_i] = limb_data[attr_upd]
-
-    
-    
-    
-    return neuron_obj_cp
 
 
 

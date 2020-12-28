@@ -5474,3 +5474,107 @@ def check_correspondence_branches_have_2_endpoints(correspondence,
         raise Exception(f"Found the following irregular branches: {irregular_branches}")
         
     return irregular_branches
+
+
+# ---------------- 12/23 -------------------- #
+def offset_skeletons_aligned_at_shared_endpoint(skeletons,
+                                               offset=1000,
+                                            comparison_distance=2000,
+                                                min_comparison_distance=1000,
+                                            verbose=True,
+                                               ):
+
+    """
+    Pseudocode: 
+
+    1) Get the shared endpoint of the branches
+    2) Reorder the branches so both start with the endpoint and then resize
+
+    For each edge skeleton (in order to get the final edge skeletons):
+    3) Use the restrict skeelton function to subtract the offset
+    - if not then add whole skeleton to final skeleton
+    4) if it was a sucess, see if the distance is greater than comparison distance
+    - if not then add current skeleton to final
+    5) Use the subtract skeleton to only keep the comparison distance of skeleton
+    6) Add to final skeleton
+
+    offset_skeletons_aligned_at_shared_endpoint()
+    
+    Ex: 
+    vis_branches_idx = [7,9]
+    vis_branches = [curr_limb[k] for k in vis_branches_idx]
+    vis_branches
+
+
+    curr_skeletons = [k.skeleton for k in vis_branches]
+    stripped_skeletons = sk.offset_skeletons_aligned_at_shared_endpoint(curr_skeletons)
+
+    curr_colors = ["red","black"]
+    nviz.plot_objects(meshes=[k.mesh for k in vis_branches],
+                      meshes_colors=curr_colors,
+                      skeletons=stripped_skeletons,
+                      skeletons_colors=curr_colors,
+                      scatters=[np.array([stripped_skeletons[0][-1][-1],stripped_skeletons[1][-1][-1]])],
+                      scatter_size=1
+                     )
+
+
+    sk.parent_child_skeletal_angle(stripped_skeletons[1],stripped_skeletons[0])
+
+
+    """
+    edge_skeletons = skeletons
+    seg_size = 100
+
+
+    common_endpoint = sk.shared_endpoint(edge_skeletons[0],edge_skeletons[1])
+    
+    edge_skeletons_ordered = [sk.order_skeleton(sk.resize_skeleton_branch(e,seg_size),common_endpoint) for e in edge_skeletons]
+    
+    final_skeletons = []
+    for e in edge_skeletons_ordered:
+        
+        # -------- Making sure that we don't take off too much so it's just a spec
+        original_sk_length = sk.calculate_skeleton_distance(e)
+        if original_sk_length < offset + min_comparison_distance:
+            offset_adjusted = original_sk_length - min_comparison_distance
+            if offset_adjusted < 0:
+                offset_adjusted = 0
+                
+            #print(f" Had to Adjust Offset to {offset_adjusted}")
+        else:
+            offset_adjusted  = offset
+            
+        ret_sk,_,success = sk.restrict_skeleton_from_start(e,
+                                                           cutoff_distance = offset_adjusted,
+                                                           subtract_cutoff=True)
+        if not success:
+            final_skeletons.append(e)
+        else:
+            if sk.calculate_skeleton_distance(ret_sk) > comparison_distance:
+                ret_sk,_,success = sk.restrict_skeleton_from_start(ret_sk,
+                                                           cutoff_distance = comparison_distance,
+                                                           subtract_cutoff=False)
+            final_skeletons.append(ret_sk)
+    return final_skeletons
+
+
+def parent_child_skeletal_angle(parent_skeleton,child_skeleton):
+    """
+    To find the angle from continuation that the
+    second skeleton deviates from the parent angle 
+    
+    angles are just computed from the vectors of the endpoints
+    
+    """
+    up_sk = parent_skeleton
+    d_sk = child_skeleton
+    
+    up_sk_flipped = sk.flip_skeleton(up_sk)
+
+    up_vec = up_sk_flipped[-1][-1] - up_sk_flipped[0][0] 
+    d_vec_child = d_sk[-1][-1] - d_sk[0][0]
+
+    parent_child_angle = np.round(nu.angle_between_vectors(up_vec,d_vec_child),2)
+    return parent_child_angle
+

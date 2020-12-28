@@ -474,7 +474,9 @@ def convert_concept_network_to_undirectional(concept_network):
 
 def convert_concept_network_to_directional(concept_network,
                                         node_widths=None,
-                                          no_cycles=True):
+                                          no_cycles=True,
+                                          suppress_disconnected_errors=False,
+                                          verbose=False):
     """
     Pseudocode: 
     0) Create a dictionary with the keys as all the nodes and empty list as values
@@ -586,22 +588,27 @@ def convert_concept_network_to_directional(concept_network,
     #- for every neruong with multiple neurons in list, choose the one that has the branch width that closest matches
 
     incoming_lengths = [k for k,v in incoming_edges_to_node.items() if len(v) >= 1]
-    if len(incoming_lengths) != len(curr_limb_concept_network.nodes())-1:
-        raise Exception("after loop in directed concept graph, not all nodes have incoming edges (except starter node)")
+    
+    if not suppress_disconnected_errors:
+        if len(incoming_lengths) != len(curr_limb_concept_network.nodes())-1:
+            raise Exception("after loop in directed concept graph, not all nodes have incoming edges (except starter node)")
 
     if no_cycles == True:
-        print("checking and resolving cycles")
+        if verbose:
+            print("checking and resolving cycles")
         #get the nodes with multiple incoming edges
         multi_incoming = dict([(k,v) for k,v in incoming_edges_to_node.items() if len(v) >= 2])
 
 
         if len(multi_incoming) > 0:
-            print("There are loops to resolve and 'no_cycles' parameters set requires us to fix eliminate them")
+            if verbose:
+                print("There are loops to resolve and 'no_cycles' parameters set requires us to fix eliminate them")
             #find the mesh widths of all the incoming edges and the current edge
 
             #if mesh widths are available then go that route
             if not mesh_widths is None:
-                print("Using mesh_widths for resolving loops")
+                if verbose:
+                    print("Using mesh_widths for resolving loops")
                 for curr_node,incoming_nodes in multi_incoming.items():
                     curr_node_width = mesh_widths[curr_node]
                     incoming_nodes_width_difference = [np.linalg.norm(mesh_widths[k]- curr_node_width) for k in incoming_nodes]
@@ -613,26 +620,31 @@ def convert_concept_network_to_directional(concept_network,
                 """
                 node_coordinates_dict = xu.get_node_attributes(curr_limb_concept_network,attribute_name="coordinates",return_array=False)
                 if set(list(node_coordinates_dict.keys())) != set(list(incoming_edges_to_node.keys())):
-                    print("The keys of the concept graph with 'coordinates' do not match the keys of the edge dictionary")
-                    print("Just going to use the first incoming edge by default")
+                    if verbose:
+                        print("The keys of the concept graph with 'coordinates' do not match the keys of the edge dictionary")
+                        print("Just going to use the first incoming edge by default")
                     for curr_node,incoming_nodes in multi_incoming.items():
                         winning_incoming_node = incoming_nodes[0]
                         incoming_edges_to_node[curr_node] = [winning_incoming_node]
                 else: #then have coordinate information
-                    print("Using coordinate distance to pick the winning node")
+                    if verbose:
+                        print("Using coordinate distance to pick the winning node")
                     curr_node_coordinate = node_coordinates_dict[curr_node]
                     incoming_nodes_distance = [np.linalg.norm(node_coordinates_dict[k]- curr_node_coordinate) for k in incoming_nodes]
                     winning_incoming_node = incoming_nodes[np.argmax(incoming_nodes_distance).astype("int")]
                     incoming_edges_to_node[curr_node] = [winning_incoming_node]
         else:
-            print("No cycles to fix")
+            if verbose:
+                print("No cycles to fix")
 
 
         #check that all have length of 1
         multi_incoming = dict([(k,v) for k,v in incoming_edges_to_node.items() if len(v) == 1])
-        if len(multi_incoming) != len(curr_limb_concept_network.nodes()) - 1:
-            raise Exception("Inside the no_cycles but at the end all of the nodes only don't have one incoming cycle"
-                           f"multi_incoming = {multi_incoming}")
+        
+        if not suppress_disconnected_errors:
+            if len(multi_incoming) != len(curr_limb_concept_network.nodes()) - 1:
+                raise Exception("Inside the no_cycles but at the end all of the nodes only don't have one incoming cycle"
+                               f"multi_incoming = {multi_incoming}")
 
     #7) convert the incoming edges dictionary to edge for a directional graph
     total_edges = []
@@ -654,12 +666,13 @@ def branches_to_concept_network(curr_branch_skeletons,
                                 touching_soma_vertices=None,
                                 soma_group_idx=None,
                                 starting_soma=None,
-                             max_iterations= 1000000):
+                             max_iterations= 1000000,
+                               verbose=False):
     """
     Will change a list of branches into 
     """
-    
-    print(f"Starting_edge inside branches_to_conept = {starting_edge}")
+    if verbose:
+        print(f"Starting_edge inside branches_to_conept = {starting_edge}")
     
     start_time = time.time()
     processed_nodes = []
@@ -741,7 +754,8 @@ def branches_to_concept_network(curr_branch_skeletons,
     original_idxs = np.arange(0,len(curr_branch_meshes_downsampled))
     
     if len(duplicate_edge_identifiers) > 0:
-        print(f"There were {len(duplicate_edge_identifiers)} duplication nodes found")
+        if verbose:
+            print(f"There were {len(duplicate_edge_identifiers)} duplication nodes found")
         all_conn_comp = []
         for d in duplicate_edge_identifiers:
             all_conn_comp.append(list(np.where(unique_edges_indices == [d] )[0]))
@@ -752,7 +766,8 @@ def branches_to_concept_network(curr_branch_skeletons,
             non_dom_nodes = curr_comp[1:]
             for n_dom in non_dom_nodes:
                 domination_map[n_dom] = dom_node
-        print(f"domination_map = {domination_map}")
+        if verbose:
+            print(f"domination_map = {domination_map}")
         
 
         to_delete_rows = list(domination_map.keys())
@@ -777,7 +792,8 @@ def branches_to_concept_network(curr_branch_skeletons,
 
     #1) Identify the starting node on the starting branch
     starting_node = xu.get_nodes_with_attributes_dict(branches_graph,dict(coordinates=starting_coordinate))
-    print(f"At the start, starting_node (in terms of the skeleton, that shouldn't match the starting edge) = {starting_node}")
+    if verbose:
+        print(f"At the start, starting_node (in terms of the skeleton, that shouldn't match the starting edge) = {starting_node}")
     if len(starting_node) != 1:
         raise Exception(f"The number of starting nodes found was not exactly one: {starting_node}")
     #1b) Add all edges incident and their other node label to a list to check (add the first node to processed nodes list)
@@ -806,14 +822,16 @@ def branches_to_concept_network(curr_branch_skeletons,
             concept_network_edges += [(np.array(curr_edge),np.array(edge_coeff))]
         else:
             starting_node_edge = curr_edge
-            print("printing out current edge:")
-            print(xu.get_node_attributes(branches_graph,node_list=starting_node_edge))
+            if verbose:
+                print("printing out current edge:")
+                print(xu.get_node_attributes(branches_graph,node_list=starting_node_edge))
         
     
     for i in range(max_iterations):
         #print(f"==\n\n On iteration {i}==")
         if len(edge_endpoints_to_process) == 0:
-            print(f"edge_endpoints_to_process was empty so exiting loop after {i} iterations")
+            if verbose:
+                print(f"edge_endpoints_to_process was empty so exiting loop after {i} iterations")
             break
 
         #2) Pop the edge edge number,endpoint of the stack
@@ -879,7 +897,8 @@ def branches_to_concept_network(curr_branch_skeletons,
         raise Exception(f"Only one starting edge index was not found,starting_order={starting_order} ")
     
     starting_edge_index = original_idxs[starting_order[0]]
-    print(f"starting_node in concept map (that should match the starting edge) = {starting_edge_index}")
+    if verbose:
+        print(f"starting_node in concept map (that should match the starting edge) = {starting_edge_index}")
     #attrs = {starting_node[0]:{"starting_coordinate":starting_coordinate}} #old way that think uses the wrong starting_node
     attrs = {starting_edge_index:{"starting_coordinate":starting_coordinate,"touching_soma_vertices":touching_soma_vertices,"soma_group_idx":soma_group_idx,"starting_soma":starting_soma}} 
     #print("setting touching_soma_vertices 2")
@@ -889,13 +908,14 @@ def branches_to_concept_network(curr_branch_skeletons,
     #want to set all of the edge endpoints on the nodes as well just for a check
     
     
-    
-    print(f"Total time for branches to concept conversion = {time.time() - start_time}\n")
+    if verbose:
+        print(f"Total time for branches to concept conversion = {time.time() - start_time}\n")
     
     
     # Add back the nodes that were deleted
     if len(duplicate_edge_identifiers) > 0:
-        print("Working on adding back the edges that were duplicates")
+        if verbose:
+            print("Working on adding back the edges that were duplicates")
         for non_dom,dom in domination_map.items():
             #print(f"Re-adding: {non_dom}")
             #get the endpoints attribute
@@ -927,10 +947,11 @@ def generate_limb_concept_networks_from_global_connectivity(
 """
 
 def check_concept_network(curr_limb_concept_network,closest_endpoint,
-                          curr_limb_divided_skeletons,print_flag=True,
-                         return_touching_piece=True):
+                          curr_limb_divided_skeletons,print_flag=False,
+                         return_touching_piece=True,
+                         verbose=False):
     recovered_touching_piece = xu.get_nodes_with_attributes_dict(curr_limb_concept_network,dict(starting_coordinate=closest_endpoint))
-    if print_flag:
+    if verbose:
         print(f"recovered_touching_piece = {recovered_touching_piece}")
         print(f"After concept mapping size = {len(curr_limb_concept_network.nodes())}")
     if len(curr_limb_concept_network.nodes()) != len(curr_limb_divided_skeletons):
@@ -1715,7 +1736,7 @@ def decompress_neuron(filepath,original_mesh,
 
 
             limb_concept_networks[curr_limb_idx] = limb_to_soma_concept_networks
-            limb_labels[curr_limb_idx]= "Unlabeled"
+            limb_labels[curr_limb_idx]= None
         
 
         recovered_preprocessed_data["limb_concept_networks"] = limb_concept_networks
@@ -2325,6 +2346,15 @@ def multi_soma_touching_limbs(neuron_obj):
 
     return np.array(multi_soma_touch_limbs)
 
+def error_limbs(neuron_obj):
+    """
+    Purpose: Will return all of the 
+    
+    """
+    multi_soma_limbs = nru.multi_soma_touching_limbs(neuron_obj)
+    multi_touch_limbs = nru.same_soma_multi_touching_limbs(neuron_obj)
+    return np.unique(np.concatenate([multi_soma_limbs,multi_touch_limbs]))
+
 
 # ---- 11/20 functions that will help compute statistics of the neuron object -----------
 
@@ -2554,7 +2584,6 @@ def branch_boundary_transition(curr_limb,
                               offset=500,
                               comparison_distance=2000,
                               skeleton_segment_size=1000,
-                              tolerane=10,
                               return_skeletons=True,
                               verbose=False):
     """
@@ -2818,7 +2847,8 @@ def find_parent_child_skeleton_angle(curr_limb_obj,
                             parent_node=None,
                            comparison_distance=3000,
                             offset=0,
-                           verbose=False):
+                           verbose=False,
+                           check_upstream_network_connectivity=True):
     
     if parent_node is None:
         parent_node = xu.upstream_node(curr_limb_obj.concept_network_directional,child_node)
@@ -2830,7 +2860,8 @@ def find_parent_child_skeleton_angle(curr_limb_obj,
                                       edge=parent_child_edge,
                                       comparison_distance = comparison_distance,
                                     offset=offset,
-                                    verbose=False)
+                                    verbose=False,               
+                                    check_upstream_network_connectivity=check_upstream_network_connectivity)
     up_sk_flipped = sk.flip_skeleton(up_sk)
 
     up_vec = up_sk_flipped[-1][-1] - up_sk_flipped[0][0] 
@@ -2842,6 +2873,7 @@ def find_parent_child_skeleton_angle(curr_limb_obj,
         print(f"parent_child_angle = {parent_child_angle}")
         
     return parent_child_angle    
+
 
 
 def find_sibling_child_skeleton_angle(curr_limb_obj,
@@ -3069,6 +3101,6 @@ def limb_branch_dict_to_faces(neuron_obj,limb_branch_dict):
         
     return match_faces_idx
  
-
+import neuron_utils as nru
 import neuron #package where can use the Branches class to help do branch skeleton analysis
 

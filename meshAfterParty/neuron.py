@@ -400,8 +400,16 @@ class Limb:
             return_dict[curr_data["starting_soma"]] = dict([(k,v) for k,v in curr_data.items() if k != "starting_soma"])
         return return_dict
     
+    @property
+    def concept_network_data_by_starting_node(self):
+        #compile a dictionary of all of the starting material
+        return_dict = dict()
+        for curr_data in self.all_concept_network_data:
+            return_dict[curr_data["starting_node"]] = dict([(k,v) for k,v in curr_data.items() if k != "starting_node"])
+        return return_dict
+    
     def touching_somas(self):
-        return [k["starting_soma"] for k in self.all_concept_network_data]
+        return [k["starting_soma"] for k in self.all_concept_network_data if k["starting_soma"] >= 0]
     
     
     '''    
@@ -454,6 +462,22 @@ class Limb:
         
         return self.concept_network_data_by_soma[soma]["starting_node"]
     
+    def get_soma_by_starting_node(self,starting_node,print_flag=False):
+        """
+        Purpose: from the all
+        
+        """
+        
+        return self.concept_network_data_by_starting_node[starting_node]["starting_soma"]
+    
+    def get_soma_group_by_starting_node(self,starting_node,print_flag=False):
+        """
+        Purpose: from the all
+        
+        """
+        
+        return self.concept_network_data_by_starting_node[starting_node]["soma_group_idx"]
+    
     
     def find_branch_by_skeleton_coordinate(self,target_coordinate):
     
@@ -485,7 +509,8 @@ class Limb:
         return matching_node
     
     
-    def convert_concept_network_to_directional(self,no_cycles = True,width_source=None,print_flag=False):
+    def convert_concept_network_to_directional(self,no_cycles = True,width_source=None,print_flag=False,
+                                              suppress_disconnected_errors=False):
         """
         
         
@@ -556,12 +581,14 @@ class Limb:
             curr_limb_concept_network,
             node_widths=node_widths,                                                    
             no_cycles=True,
-                                                                            )
+            suppress_disconnected_errors =suppress_disconnected_errors)
+                                                                            
         
         return directional_concept_network
     
     
-    def set_concept_network_directional(self,starting_soma,soma_group_idx=0,print_flag=False,**kwargs):
+    def set_concept_network_directional(self,starting_soma=None,soma_group_idx=0,starting_node=None,print_flag=False,
+                                       suppress_disconnected_errors=False,**kwargs):
         """
         Pseudocode: 
         1) Get the current concept_network
@@ -605,6 +632,11 @@ class Limb:
         
         """
         debug = False
+        
+        if not starting_node is None: 
+            soma_group_idx = self.get_soma_group_by_starting_node(starting_node)
+            starting_soma = self.get_soma_by_starting_node(starting_node)
+            
         
         if soma_group_idx == -1:
             soma_group_idx = self.current_soma_group_idx
@@ -674,10 +706,14 @@ class Limb:
         self.current_soma_group_idx = matching_concept_network_dict["soma_group_idx"]
         
         if print_flag:
-            self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True,print_flag=print_flag,**kwargs)
+            self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True,print_flag=print_flag,
+                                                                                           suppress_disconnected_errors=suppress_disconnected_errors,
+                                                                                           **kwargs)
         else:
             with su.suppress_stdout_stderr():
-                self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True,print_flag=print_flag,**kwargs)
+                self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True,print_flag=print_flag,
+                                                                                               suppress_disconnected_errors=suppress_disconnected_errors,
+                                                                                               **kwargs)
         
         
     
@@ -688,7 +724,7 @@ class Limb:
                              mesh_face_idx=None,
                             labels=[],
                              branch_objects = dict(),#this will have a dictionary mapping to the branch objects if provided
-                            ):
+                            verbose=False):
         
         
         """
@@ -771,7 +807,8 @@ class Limb:
         
         #print(f"Inside the Limb constructor and concept_network_dict = {concept_network_dict}")
         
-        print(f"concept_network_dict = {concept_network_dict}")
+        if verbose:
+            print(f"concept_network_dict = {concept_network_dict}")
         if len(concept_network_dict) > 0:
             concept_network_data = nru.get_starting_info_from_concept_network(concept_network_dict)
             #print(f"concept_network_data = {concept_network_data}")
@@ -807,7 +844,7 @@ class Limb:
         """
         
         for j,branch_data in curr_limb_correspondence.items():
-            if j in branch_objects:
+            if (not branch_objects is None) and j in branch_objects:
                 #print(f"using existing branch object for node {j}")
                 branch_obj = branch_objects[j]
             else:
@@ -1509,6 +1546,7 @@ class Neuron:
                 fill_hole_size=0,# The old value for the parameter when performing 2000,
                  
                  preprocessing_version=2,
+                 limb_to_branch_objects=None,
                 ):
 #                  concept_network=None,
 #                  non_graph_meshes=dict(),
@@ -1691,6 +1729,8 @@ class Neuron:
                 self.concept_network = concept_network
             else:
                 raise Exception(f"Recieved an incompatible type of {type(soma_to_piece_connectivity)} for the concept_network")
+                
+            
 
             print(f"--- 2) Finished creating neuron connectivity graph: {time.time() - neuron_start_time}")
             neuron_start_time =time.time()
@@ -1768,7 +1808,12 @@ class Neuron:
                 curr_limb_concept_networks = limb_concept_networks[j]
                 curr_limb_label = limb_labels[j]
 
-
+                
+                if not (limb_to_branch_objects is None) and j in limb_to_branch_objects.keys():
+                    branch_objects = limb_to_branch_objects[j]
+                else:
+                    branch_objects = None
+                    
 
                 print(f"curr_limb_concept_networks= {curr_limb_concept_networks}")
                 Limb_obj = Limb(
@@ -1776,12 +1821,16 @@ class Neuron:
                                  curr_limb_correspondence=curr_limb_correspondence,
                                  concept_network_dict=curr_limb_concept_networks,
                                  mesh_face_idx=curr_limb_mesh_face_idx,
-                                 labels=curr_limb_label
+                                 labels=curr_limb_label,
+                                branch_objects = branch_objects
                                 )
 
 
                 limb_name = f"L{j}"
                 #Add the soma object as data in
+                if limb_name not in self.concept_network.nodes():
+                    self.concept_network.add_node(limb_name)
+                
                 xu.set_node_data(curr_network=self.concept_network,
                                      node_name=limb_name,
                                      curr_data=Limb_obj,

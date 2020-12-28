@@ -1526,6 +1526,8 @@ def visualize_neuron(
                             scatter_size=scatter_size,flip_y=flip_y)
                 main_vertices.append(curr_scatter)
 
+    if type(scatters_colors) == str:
+        scatters_colors = [scatters_colors]
     
     if len(scatters) > 0 and len(scatters_colors) == 0:
         scatters_colors = [main_scatter_color]*len(scatters)
@@ -1808,3 +1810,69 @@ def plot_branch_spines(curr_branch):
                      meshes=curr_branch.spines,
                       meshes_colors="red",
                      mesh_alpha=1)
+    
+    
+import numpy as np
+def plot_split_suggestions_per_limb(neuron_obj,
+                                    limb_results,
+                                   scatter_color = "red",
+                                    scatter_alpha = 0.3,
+                                   scatter_size=0.3,
+                                   add_components_colors=True,
+                                   component_colors = "random"):
+
+    """
+    
+    
+    """
+
+    for curr_limb_idx,path_cut_info in limb_results.items():
+        print(f"\n\n-------- Suggestions for Limb {curr_limb_idx}------")
+        curr_scatters = []
+        for path_i in path_cut_info:
+            if len(path_i["coordinate_suggestions"])>0:
+                curr_scatters.append(np.concatenate(path_i["coordinate_suggestions"]).reshape(-1,3))
+        curr_scatters = np.vstack(curr_scatters)
+        scatter_color_list = [mu.color_to_rgba(scatter_color,scatter_alpha)]*len(curr_scatters)
+        
+        # will create a dictionary that will show all of the disconnected components in different colors
+        if add_components_colors:
+            limb_nx = nx.Graph(neuron_obj[curr_limb_idx].concept_network)
+            for cut in path_cut_info:
+                limb_nx.remove_edges_from(cut["edges_to_cut"])
+                limb_nx.add_edges_from(cut["edges_to_add"])
+            
+            conn_comp= list(nx.connected_components(limb_nx))
+            
+            if component_colors == "random":
+                component_colors = mu.generate_color_list(n_colors = len(conn_comp))
+            elif type(component_colors) == list:
+                component_colors = component_colors*np.ceil(len(conn_comp)/len(component_colors)).astype("int")
+            else:
+                component_colors = ["green"]*len(conn_comp)
+
+            color_dict = dict()
+            for groud_ids,c in zip(conn_comp,component_colors):
+                for i in groud_ids:
+                    color_dict[i] = c
+                    
+            mesh_component_colors = color_dict
+            skeleton_component_colors = color_dict
+            #print(f"skeleton_component_colors = {color_dict}")
+        else:
+            mesh_component_colors = "green"
+            skeleton_component_colors = "blue"
+            
+        #at this point have all of the scatters we want
+        nviz.visualize_neuron(neuron_obj,
+                             visualize_type=["mesh","skeleton"],
+                             limb_branch_dict={f"L{curr_limb_idx}":"all"},
+                             mesh_color={f"L{curr_limb_idx}":mesh_component_colors},
+                             skeleton_color={f"L{curr_limb_idx}":skeleton_component_colors},
+                             scatters=[curr_scatters],
+                             scatters_colors=scatter_color_list,
+                             scatter_size=scatter_size,
+                             )
+        
+
+import neuron_visualizations as nviz
