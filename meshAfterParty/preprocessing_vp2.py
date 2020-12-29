@@ -754,6 +754,140 @@ def calculate_limb_concept_networks(limb_correspondence,
 
     return limb_to_soma_concept_networks                    
 
+
+import general_utils as gu
+
+def filter_limb_correspondence_for_end_nodes(limb_correspondence,
+                                             mesh,
+                                             starting_info=None,
+                                             filter_end_node_length=4500,
+                                             plot_new_correspondence = False,
+                                            verbose = True
+                                             
+                                            ):
+    """
+    Pseudocode:
+    1) Get all of the starting coordinates
+    2) Assemble the entire skeleton and run the skeleton cleaning process
+    3) Decompose skeleton into branches and find out mappin gof old branches to new ones
+    4) Assemble the new width and mesh face idx for all new branches
+    - width: do weighted average by skeletal length
+    - face_idx: concatenate
+    5) Make face_lookup and Run waterfilling algorithm to fill in rest
+    6) Get the divided meshes and face idx from waterfilling
+    7) Store everything back inside a correspondence dictionary
+    """
+
+    limb_correspondence_individual=limb_correspondence
+    limb_mesh_mparty = mesh
+    network_starting_info_revised_cleaned = starting_info
+
+
+    lc_skeletons = [v["branch_skeleton"] for v in limb_correspondence_individual.values()]
+    lc_branch_meshes = [v["branch_mesh"] for v in limb_correspondence_individual.values()]
+    lc_branch_face_idx = [v["branch_face_idx"] for v in limb_correspondence_individual.values()]
+    lc_width_from_skeletons = [v["width_from_skeleton"] for v in limb_correspondence_individual.values()]
+
+    #1) Get all of the starting coordinates
+    all_starting_coords = []
+    if not starting_info is None:
+        for soma_idx,soma_v in network_starting_info_revised_cleaned.items():
+            for soma_group_idx,soma_group_v in soma_v.items():
+                all_starting_coords.append(soma_group_v["endpoint"])
+
+
+
+    #2) Assemble the entire skeleton and run the skeleton cleaning process
+    curr_limb_sk_cleaned,rem_branches = sk.clean_skeleton(sk.stack_skeletons(lc_skeletons),
+                         distance_func=sk.skeletal_distance,
+                         min_distance_to_junction=filter_end_node_length,
+                        endpoints_must_keep=all_starting_coords,
+                         return_skeleton=True,
+                         print_flag=False,
+                        return_removed_skeletons=True)
+
+    if verbose:
+        print(f"Removed {len(rem_branches)} skeletal branches")
+
+    #3) Decompose skeleton into branches and find out mappin gof old branches to new ones
+    cleaned_branches = sk.decompose_skeleton_to_branches(curr_limb_sk_cleaned)
+    original_br_mapping = sk.map_between_branches_lists(lc_skeletons,cleaned_branches)
+
+    # 4) Assemble the new width and mesh face idx for all new branches
+    # - width: do weighted average by skeletal length
+    # - face_idx: concatenate
+
+    new_width_from_skeletons = []
+    new_branch_face_idx = []
+
+    for j,cl_b in enumerate(cleaned_branches):
+        or_idx = np.where(original_br_mapping==j)[0]
+
+        #doing the width
+        total_skeletal_length = 0
+        weighted_width = 0
+        if len(or_idx) > 1:
+            #print(f"\n\nAverageing widths for {j}:")
+            for oi in or_idx:
+                curr_sk_len = sk.calculate_skeleton_distance(lc_skeletons[oi])
+                #print(f"curr_sk_len = {curr_sk_len}, curr_width = {lc_width_from_skeletons[oi]}")
+                weighted_width += curr_sk_len*lc_width_from_skeletons[oi]
+                total_skeletal_length+=curr_sk_len
+            final_width = weighted_width/total_skeletal_length
+            #print(f"Final width = {final_width}")
+            new_width_from_skeletons.append(final_width)
+        else:
+            new_width_from_skeletons.append(lc_width_from_skeletons[or_idx[0]])
+
+
+        #doing the face_idx
+        new_branch_face_idx.append(np.concatenate([lc_branch_face_idx[k] for k in or_idx]))
+
+
+    #5) Make face_lookup and Run waterfilling algorithm to fill in rest
+
+    face_lookup = {j:[] for j in range(0,len(limb_mesh_mparty.faces))}
+    face_lookup_marked = gu.invert_mapping(new_branch_face_idx)
+    ky = list(face_lookup.keys())
+    if verbose:
+        print(f"For marked faces: {print(np.max(ky),len(ky))}")
+    face_lookup.update(face_lookup_marked)
+
+
+
+
+
+    original_labels = np.arange(0,len(cleaned_branches))
+
+    face_coloring_copy = cu.resolve_empty_conflicting_face_labels(curr_limb_mesh = limb_mesh_mparty,
+                                                                    face_lookup=face_lookup,
+                                                                    no_missing_labels = list(original_labels))
+
+
+
+    #6) Get the divided meshes and face idx from waterfilling
+    # -- splitting the mesh pieces into individual pieces
+    divided_submeshes,divided_submeshes_idx = tu.split_mesh_into_face_groups(limb_mesh_mparty,face_coloring_copy,
+                                                                            return_dict=False)
+
+
+    #7) Store everything back inside a correspondence dictionary
+    limb_correspondence_individual_filtered = dict()
+    for j,curr_sk in enumerate(cleaned_branches):
+        local_dict = dict(branch_skeleton=curr_sk,
+                          width_from_skeleton=new_width_from_skeletons[j],
+                         branch_mesh=divided_submeshes[j],
+                         branch_face_idx=divided_submeshes_idx[j])
+        limb_correspondence_individual_filtered[j] = local_dict
+
+
+    if plot_new_correspondence:
+        plot_limb_correspondence(limb_correspondence_individual_filtered)
+
+    return limb_correspondence_individual_filtered
+
+
+
 import neuron_utils as nru
 import system_utils as su
 
@@ -792,6 +926,7 @@ def preprocess_limb(mesh,
                     print_fusion_steps=True,
                     
                     check_correspondence_branches = True,
+                    filter_end_nodes_from_correspondence=True,
                     
                    ):
     curr_limb_time = time.time()
@@ -2330,8 +2465,15 @@ def preprocess_limb(mesh,
             network_starting_info_revised_cleaned[soma_idx][bound_g_idx] = winning_dict
 
 
-    # -------------- Part 18: End ------------ #
-    
+    # -------------- Part 18: Filter the limb correspondence for any short stubs ------------ #
+    if filter_end_nodes_from_correspondence:
+        limb_correspondence_individual = pre.filter_limb_correspondence_for_end_nodes(limb_correspondence=limb_correspondence_individual,
+                                                     mesh=limb_mesh_mparty,
+                                                     starting_info=network_starting_info_revised_cleaned,
+                                                    filter_end_node_length=filter_end_node_length
+
+                                                    )
+
     
     
     

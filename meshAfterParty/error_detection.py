@@ -69,7 +69,10 @@ def width_jump_edges(limb,
         print(f"Total time for width = {time.time() - width_start_time}")
     return error_edges
 
-def path_to_edges(path):
+def path_to_edges(path,skip_nodes=[]):
+    path = np.array(path)
+    for ni in skip_nodes:
+        path = path[path != ni]
     return np.vstack([path[:-1],path[1:]]).T
 
 def width_jump_edges_path(limb, #assuming the concept network is already set
@@ -79,6 +82,8 @@ def width_jump_edges_path(limb, #assuming the concept network is already set
                      verbose=False,
                           return_all_edge_info = True,
                           offset=1000,
+                          
+                    skip_nodes=[]
                     ):
     """
     Will only look to see if the width jumps up by a width_jump_threshold threshold ammount
@@ -98,14 +103,18 @@ def width_jump_edges_path(limb, #assuming the concept network is already set
 
     width_start_time = time.time()
     curr_net = limb.concept_network_directional
-    edges = path_to_edges(path_to_check)
+    edges = path_to_edges(path_to_check,skip_nodes=skip_nodes)
     edges_width_jump = []
     error_edges = []
     
     
     for current_nodes in edges:
-        if verbose:
-            print(f"  Edge: {current_nodes}")
+        
+        skip_nodes_present = np.intersect1d(skip_nodes,current_nodes)
+        if len(skip_nodes_present)>0:
+            if verbose:
+                print(f"-->Skipping Edge {current_nodes} because had at least on skip node: {skip_nodes_present}")
+            continue
 
         up_width,d_width,up_sk,d_sk = nru.branch_boundary_transition(limb,
                               edge=current_nodes,
@@ -115,6 +124,9 @@ def width_jump_edges_path(limb, #assuming the concept network is already set
         downstream_jump = d_width-up_width
         edges_width_jump.append(downstream_jump)
         
+        if verbose:
+            print(f"  Edge: {current_nodes}: jump = {np.round(downstream_jump,2)}")
+            
         if downstream_jump >= width_jump_threshold:
             if verbose:
                 print(f"Adding error edge {current_nodes} because width jump was {downstream_jump}")
@@ -162,7 +174,8 @@ def double_back_edges(
         if verbose:
             print(f"Working on Soma {curr_soma} and Soma touching group {curr_soma_group}")
 
-
+        
+            
         curr_limb.set_concept_network_directional(starting_soma=curr_soma,
                                                  soma_group_idx=curr_soma_group)
         curr_net = curr_limb.concept_network_directional
@@ -222,7 +235,8 @@ def double_back_edges_path(
     verbose = True,
     comparison_distance=3000,
     offset=0,
-    return_all_edge_info = True):
+    return_all_edge_info = True,
+    skip_nodes=[]):
 
     """
     Purpose: To get all of the edges where the skeleton doubles back on itself
@@ -247,15 +261,18 @@ def double_back_edges_path(
     width_start_time = time.time()
     
     curr_net = limb.concept_network_directional
-    edges = path_to_edges(path_to_check)
+    edges = path_to_edges(path_to_check,skip_nodes=skip_nodes)
     edges_doubling_back = []
     error_edges = []
     
     
     for current_nodes in tqdm(edges):
-        if verbose:
-            print(f"  Edge: {current_nodes}")
 
+        skip_nodes_present = np.intersect1d(skip_nodes,current_nodes)
+        if len(skip_nodes_present)>0:
+            if verbose:
+                print(f"-->Skipping Edge {current_nodes} because had at least on skip node: {skip_nodes_present}")
+            continue
 
         up_width,d_width,up_sk,d_sk = nru.branch_boundary_transition(curr_limb,
                               edge=current_nodes,
@@ -278,6 +295,9 @@ def double_back_edges_path(
         curr_angle = nu.angle_between_vectors(up_vec,d_vec)
         edges_doubling_back.append(curr_angle)
         
+        if verbose:
+                print(f"  Edge: {current_nodes}: curr_angle = {np.round(curr_angle,2)}")
+                
         
         if curr_angle > double_back_threshold:
             error_edges.append(list(current_nodes))
@@ -338,7 +358,7 @@ def resolving_crossovers(limb_obj,
     curr_colors = ["red","aqua","purple","green"]
     
     if verbose: 
-        print(f"coordinate_branches = {coordinate_branches}")
+        print(f"coordinate_branches = {list(coordinate_branches)}")
         for c,col in zip(coordinate_branches,curr_colors):
             print(f"{c} = {col}")
     
@@ -440,12 +460,13 @@ def resolving_crossovers(limb_obj,
         return_value.append(edges_to_create)
     if return_subgraph:
         #actually creating the new sugraph
-        limb_obj.concept_network.remove_edges_from(edges_to_delete)
-        limb_obj.concept_network.add_edges_from(edges_to_create)
+        graph_copy = nx.Graph(limb_obj.concept_network)
+        graph_copy.remove_edges_from(edges_to_delete)
+        graph_copy.add_edges_from(edges_to_create)
         
         if verbose:
-            print(f"n_components in adjusted graph = {nx.number_connected_components(limb_obj.concept_network)}")
-        return_value.append(limb_obj.concept_network)
+            print(f"n_components in adjusted graph = {nx.number_connected_components(graph_copy)}")
+        return_value.append(graph_copy)
         
     return return_value
 

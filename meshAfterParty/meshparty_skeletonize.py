@@ -818,7 +818,7 @@ def skeletonize_mesh_largest_component(mesh,
                                     root=None,
                                       verbose=False,
                                       filter_mesh=True, #will filter the mesh for just one connected piece
-                                      ):
+                                      invalidation_d=12000,):#was 12000
     """
     To run the skeletonization on the 
     largest connected component of one mesh
@@ -828,6 +828,7 @@ def skeletonize_mesh_largest_component(mesh,
     sk_meshparty = sk_meshparty_obj.vertices[sk_meshparty_obj.edges]
     
     """
+    print(f"invalidation_d = {invalidation_d}")
     limb_mesh_mparty = deepcopy(mesh)
 
 #     # just getting the largest connected component
@@ -843,12 +844,12 @@ def skeletonize_mesh_largest_component(mesh,
 
     meshparty_time = time.time()
     if verbose:
-        print("\nStep 1: Starting Skeletonization")
+        print(f"\nStep 1: Starting Meshparty Skeletonization (invalidation_d = {invalidation_d})")
     sk_meshparty_obj, v = skeletonize_mesh(limb_obj_tr_io,
                           soma_pt = root,
                           soma_radius = 0,
                           collapse_soma = False,
-                          invalidation_d=12000,
+                          invalidation_d=invalidation_d,#12000,
                           smooth_vertices=True,
                            smooth_neighborhood = 1,
                           compute_radius = True, #Need the pyembree list
@@ -874,7 +875,11 @@ def skeleton_obj_to_branches(sk_meshparty_obj,
                              mesh,
                             meshparty_n_surface_downsampling = 0,
                             meshparty_segment_size = 100,
-                            verbose=False
+                            verbose=False,
+                             filter_end_nodes = False,
+                             filter_end_node_length=4500,
+                             combine_close_skeleton_nodes_threshold = 700,
+                             
                             ):
     debug = False
     
@@ -985,12 +990,58 @@ def skeleton_obj_to_branches(sk_meshparty_obj,
     # --------------- 10/29: Adding in the part that combines the branch points that are close ----------- #
     
     segment_branches_filtered,kept_branches_idx = sk.combine_close_branch_points(
-                                                            skeleton_branches=segment_branches)
+                                                            skeleton_branches=segment_branches,
+                                            combine_threshold=combine_close_skeleton_nodes_threshold)
     
     segment_branches_filtered = np.array(segment_branches_filtered)
     #print(f"kept_branches_idx = {kept_branches_idx}")
-    print(f"max(kept_branches_idx) = {max(kept_branches_idx)}, len(kept_branches_idx) = {len(kept_branches_idx)}")
+    print(f"After combining close endpoints max(kept_branches_idx) = {max(kept_branches_idx)}, len(kept_branches_idx) = {len(kept_branches_idx)}")
+    
     segment_mesh_faces_filtered = [k for i,k in enumerate(segment_mesh_faces) if i in set(kept_branches_idx)]
+    
+    # -------------- 12/27 Do the filtering for end-nodes ---------------------- #
+    
+    if filter_end_nodes:
+        """
+        Pseudocode: 
+        1) Do the cleaning and decomposition of branches
+        2) Get the mapping from original branches to the cleaned branches
+        3) For each of the new cleaned branch:
+        - get the indexes fo the original branches that it matched to
+        - build the face list by concatentating those
+
+        """
+        #1) Do the cleaning and decomposition of branches
+        curr_limb_sk_cleaned = sk.clean_skeleton(sk.stack_skeletons(segment_branches_filtered),
+                     distance_func=sk.skeletal_distance,
+                     min_distance_to_junction=filter_end_node_length,
+                     return_skeleton=True,
+                     print_flag=False,
+                    return_removed_skeletons=False)
+
+        cleaned_branches = sk.decompose_skeleton_to_branches(curr_limb_sk_cleaned)
+
+        #2) Get the mapping from original branches to the cleaned branches
+        original_br_mapping = sk.map_between_branches_lists(segment_branches_filtered,cleaned_branches)
+
+        #3) For each of the new cleaned branch:
+        #- get the indexes fo the original branches that it matched to
+        #- build the face list by concatentating those
+        
+        cleaned_branches_faces_filtered = []
+        for j,cl_b in enumerate(cleaned_branches):
+            or_idx = np.where(original_br_mapping==j)[0]
+            cleaned_branches_faces_filtered.append(np.concatenate([segment_mesh_faces_filtered[k] for k in or_idx]))
+            
+        #4) Do the reassignment
+        segment_mesh_faces_filtered = cleaned_branches_faces_filtered
+        segment_branches_filtered = np.array(cleaned_branches)
+    
+    
+    # ------------------ End of filtering for end nodes
+    
+    
+    
     
     
 
@@ -1022,9 +1073,20 @@ def skeleton_obj_to_branches(sk_meshparty_obj,
         print("\nStep 4: Retrieving Widths")
     meshparty_time = time.time()
 
+    #calculating the widths (need adjustment if did the filtering 12/28)
     segment_width_measurements = [sk_meshparty_obj.vertex_properties["rs"][k] for k in segments]
-    segment_widths_median = np.array([np.median(k) for k in segment_width_measurements])
-    segment_widths_median_filtered = segment_widths_median[kept_branches_idx]
+    segment_width_measurements_filterd = [k for i,k in enumerate(segment_width_measurements) if i in set(kept_branches_idx)]
+    
+    if filter_end_nodes:
+        segment_width_measurements_filterd_new = []
+        for j,cl_b in enumerate(cleaned_branches):
+            or_idx = np.where(original_br_mapping==j)[0]
+            segment_width_measurements_filterd_new.append(np.concatenate([segment_width_measurements_filterd[k] for k in or_idx]))
+        segment_width_measurements_filterd = segment_width_measurements_filterd_new
+    
+    
+    segment_widths_median_filtered = np.array([np.median(k) for k in segment_width_measurements_filterd])
+    
 
     if verbose:
         print(f"Total time for meshParty Retrieving Widths = {time.time() - meshparty_time}")

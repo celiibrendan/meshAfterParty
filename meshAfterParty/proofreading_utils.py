@@ -25,7 +25,7 @@ def find_high_degree_coordinates_on_path(limb_obj,curr_path_to_cut,
     
     return high_degree_endpoint_coordinates
 
-
+import skeleton_utils as sk
 def get_best_cut_edge(curr_limb,
                       cut_path,
                       
@@ -34,8 +34,13 @@ def get_best_cut_edge(curr_limb,
                       comparison_distance = 2000,
                       match_threshold = 35,
                       
+                      #parameter for both width and doubling back
+                      # This will prevent the edges that were added to extend to the soma from causing the doulbing back or width threshold errors
+                      skip_small_soma_connectors = True,
+                      small_soma_connectors_skeletal_threshold = 2500,
+                      
                       # parameters for the doubling back
-                      double_back_threshold = 130,
+                      double_back_threshold = 100,# 130,
                       offset = 1000,
                       
                       #parameters for the width threshold
@@ -65,6 +70,8 @@ def get_best_cut_edge(curr_limb,
     edges_to_create = None
     edges_to_delete = None
     
+    resolve_crossover_at_end = True
+    
     if verbose:
         print(f"Found {len(high_degree_endpoint_coordinates)} high degree coordinates to cut")
         
@@ -87,6 +94,8 @@ def get_best_cut_edge(curr_limb,
         if len(edges_to_delete_pre)>0:
             edges_to_delete = edges_to_delete_pre
             edges_to_create = edges_to_create_pre
+            
+        resolve_crossover_at_end = False
     
         
     
@@ -94,7 +103,25 @@ def get_best_cut_edge(curr_limb,
     
     curr_limb.set_concept_network_directional(starting_node = cut_path[0],suppress_disconnected_errors=True)
     
-    
+    # ------------- 12 /28 addition that allows us to skip end nodes if too small ------------------
+    skip_nodes = []
+    if skip_small_soma_connectors:
+        revised_cut_path = np.array(cut_path)
+        for endnode in [cut_path[0],cut_path[-1]]:
+            curr_sk_distance = sk.calculate_skeleton_distance(curr_limb[endnode].skeleton)
+            if curr_sk_distance<small_soma_connectors_skeletal_threshold:
+                print(f"Skipping endnode {endnode} because skeletal distance was {curr_sk_distance} and threshold was {small_soma_connectors_skeletal_threshold}")
+                revised_cut_path = revised_cut_path[revised_cut_path != endnode]
+                skip_nodes.append(endnode)
+                
+                
+        if len(revised_cut_path) <2 :
+            print("Could not used the revised endnodes path because empty")
+            skip_nodes = []
+            
+    if verbose:
+        print(f"skip_nodes = {skip_nodes}")
+        
     if edges_to_delete is None:
         if verbose: 
             print("\nAttempting the doubling back check (symmetrical so don't need to check from both sides)")
@@ -103,7 +130,8 @@ def get_best_cut_edge(curr_limb,
                                 path_to_check=cut_path,
                               double_back_threshold = double_back_threshold,
                              offset=offset,
-                            verbose = verbose)
+                            verbose = verbose,
+                            skip_nodes=skip_nodes)
 
 
         if len(err_edges) > 0:
@@ -127,12 +155,20 @@ def get_best_cut_edge(curr_limb,
         first_error_edges = []
         first_error_sizes = []
         for s_node in possible_starting_nodes:
+            
             curr_limb.set_concept_network_directional(starting_node = s_node,suppress_disconnected_errors=True)
+            
+            if cut_path[0] != s_node:
+                cut_path = np.flip(cut_path)
+                if cut_path[0] != s_node:
+                    raise Exception("Neither of cut path end nodes are starting node")
+                    
             err_edges,edges,edges_width_jump = ed.width_jump_edges_path(curr_limb,
                                                                         path_to_check=cut_path,
                                                                         width_jump_threshold=width_jump_threshold,
                                                                         offset=offset,
-                                                                        verbose=verbose
+                                                                        verbose=verbose,
+                                                                        skip_nodes=skip_nodes
                                     )
             
             if verbose:
@@ -166,18 +202,50 @@ def get_best_cut_edge(curr_limb,
             if verbose:
                 print(f"Did not find an error edge in either of the paths")
                 
-            
-    #apply the winning cut
-    if not edges_to_delete is None:
-        if verbose:
-            print(f"edges_to_delete = {edges_to_delete}")
-        curr_limb.concept_network.remove_edges_from(edges_to_delete)
+                
+    # need to resolve cross over at this point
+    if resolve_crossover_at_end and (not edges_to_delete is None):
+        cut_e = edges_to_delete[0]
+        suggested_cut_point = sk.shared_endpoint(curr_limb[cut_e[0]].skeleton,
+                                                curr_limb[cut_e[1]].skeleton)
+                                             
+        edges_to_delete_new,edges_to_create_new = ed.resolving_crossovers(curr_limb,
+                       coordinate=suggested_cut_point,
+                       return_subgraph=False)
         
-    if not edges_to_create is None:
-        if verbose:
-            print(f"edges_to_create = {edges_to_create}")
-        curr_limb.concept_network.add_edges_from(edges_to_create)
+        if len(edges_to_delete_new) > 0:
+            edges_to_delete += edges_to_delete_new
+            edges_to_delete = list(np.unique(np.sort(np.array(edges_to_delete),axis=1),axis=0))
+            
+
+        if not edges_to_create is None:
+            edges_to_create += edges_to_create_new
+            edges_to_create = list(np.unique(np.sort(np.array(edges_to_create),axis=1),axis=0))
+        else:
+            edges_to_create = edges_to_create_new
+        
+        # want to limit the edges to only those with one of the disconnected edges in it
+        edges_to_create_final = []
+        for e_c1 in edges_to_create:
+            if len(np.intersect1d(e_c1,cut_e)) == 1:
+                edges_to_create_final.append(e_c1)
+            else:
+                if verbose:
+                    print(f"Rejecting creating edge {e_c1} becuase did not involve only 1 node in the deleted edge")
+        edges_to_create = edges_to_create_final
+                
+
+        
+    curr_limb,edges_to_create_final = pru.cut_limb_network_by_edges(curr_limb,
+                                                    edges_to_delete,
+                                                    edges_to_create,
+                                                    return_accepted_edges_to_create=True,
+                                                    verbose=verbose)
     
+    edges_to_create=edges_to_create_final
+    
+        
+
     if verbose:
         conn_comp = list(nx.connected_components(curr_limb.concept_network))
         print(f"Number of connected components = {len(conn_comp)}")
@@ -186,10 +254,92 @@ def get_best_cut_edge(curr_limb,
     
     return edges_to_delete,edges_to_create,curr_limb
 
+def get_attribute_from_suggestion(suggestions,curr_limb_idx=None,
+                                 attribute_name="edges_to_delete"):
+    if type(suggestions) == dict:
+        if curr_limb_idx is None:
+            raise Exception("No specified limb idx when passed all the suggestions")
+        suggestions = suggestions[curr_limb_idx]
+        
+    total_attribute = []
+    for cut_s in suggestions:
+        total_attribute += cut_s[attribute_name]
+        
+    return total_attribute
+
+def get_edges_to_delete_from_suggestion(suggestions,curr_limb_idx=None):
+    return get_attribute_from_suggestion(suggestions,curr_limb_idx,
+                                 attribute_name="edges_to_delete")
+def get_edges_to_create_from_suggestion(suggestions,curr_limb_idx=None):
+    return get_attribute_from_suggestion(suggestions,curr_limb_idx,
+                                 attribute_name="edges_to_create")
+    
+
+def cut_limb_network_by_suggestions(curr_limb,
+                                   suggestions,
+                                   curr_limb_idx=None,
+                                    return_copy=True,
+                                   verbose=False):
+    if type(suggestions) == dict:
+        if curr_limb_idx is None:
+            raise Exception("No specified limb idx when passed all the suggestions")
+        suggestions = suggestions[curr_limb_idx]
+    
+    return cut_limb_network_by_edges(curr_limb,
+                                    edges_to_delete=pru.get_edges_to_delete_from_suggestion(suggestions),
+                                    edges_to_create=pru.get_edges_to_create_from_suggestion(suggestions),
+                                    verbose=verbose,
+                                     return_copy=return_copy
+                                    )
+    
+def cut_limb_network_by_edges(curr_limb,
+                                    edges_to_delete=None,
+                                    edges_to_create=None,
+                                    return_accepted_edges_to_create=False,
+                                    return_copy=True,
+                                    verbose=False):
+    if return_copy:
+        curr_limb = copy.copy(curr_limb)
+        
+    if not edges_to_delete is None:
+        if verbose:
+            print(f"edges_to_delete = {edges_to_delete}")
+        curr_limb.concept_network.remove_edges_from(edges_to_delete)
+        
+    #apply the winning cut
+    accepted_edges_to_create = []
+    if not edges_to_create is None:
+        if verbose:
+            print(f"edges_to_create = {edges_to_create}")
+        for n1,n2 in edges_to_create:
+            curr_limb.concept_network.add_edge(n1,n2)
+            counter = 0
+            for d1,d2 in edges_to_delete:
+                try:
+                    ex_path = np.array(nx.shortest_path(curr_limb.concept_network,d1,d2))
+                except:
+                    pass
+                else:
+                    counter += 1
+                    break
+            if counter > 0:
+                curr_limb.concept_network.remove_edge(n1,n2)
+                if verbose:
+                    print(f"Rejected edge ({n1,n2})")
+            else:
+                if verbose:
+                    print(f"Accepted edge ({n1,n2})")
+                accepted_edges_to_create.append([n1,n2])
+    if return_accepted_edges_to_create:
+        return curr_limb,accepted_edges_to_create
+    
+    return curr_limb
 
 def multi_soma_split_suggestions(neuron_obj,
                                 verbose=True,
                                 max_iterations=100,
+                                 plot_suggestions=False,
+                                 plot_suggestions_scatter_size=0.4,
                                 **kwargs):
     """
     Purpose: To come up with suggestions for splitting a multi-soma
@@ -270,12 +420,15 @@ def multi_soma_split_suggestions(neuron_obj,
                     break
 
                 if verbose:
-                    print(f"Shortest path = {soma_to_soma_path}")
+                    print(f"Shortest path = {list(soma_to_soma_path)}")
 
                 # say we found the cut node to make
                 cut_edges, added_edges, curr_limb_copy = pru.get_best_cut_edge(curr_limb_copy,soma_to_soma_path,
                                                                                verbose=verbose,
                                                                               **kwargs)
+                if verbose:
+                    print(f"After get best cut: cut_edges = {cut_edges}, added_edges = {added_edges}")
+                
                 if cut_edges is None:
                     print("***** there was no suggested cut for this limb even though it is still connnected***")
 
@@ -293,8 +446,8 @@ def multi_soma_split_suggestions(neuron_obj,
                 if counter > max_iterations:
                     print(f"Breaking because hit max iterations {max_iterations}")
 
-            local_results["edges_to_cut"] = total_soma_paths_to_cut
-            local_results["edges_to_add"] = total_soma_paths_to_add
+            local_results["edges_to_delete"] = total_soma_paths_to_cut
+            local_results["edges_to_create"] = total_soma_paths_to_add
 
             suggested_cut_points = [sk.shared_endpoint(curr_limb_copy[cut_e[0]].skeleton,
                                                 curr_limb_copy[cut_e[1]].skeleton)
@@ -310,6 +463,11 @@ def multi_soma_split_suggestions(neuron_obj,
 
         limb_results[curr_limb_idx] = results
         
+    if plot_suggestions:
+        nviz.plot_split_suggestions_per_limb(neuron_obj,
+                                    limb_results,
+                                    scatter_size = plot_suggestions_scatter_size)
+        
     return limb_results
 
 def split_suggestions_to_concept_networks(neuron_obj,limb_results):
@@ -323,8 +481,8 @@ def split_suggestions_to_concept_networks(neuron_obj,limb_results):
     for curr_limb_idx,path_cut_info in limb_results.items():
         limb_nx = nx.Graph(neuron_obj[curr_limb_idx].concept_network)
         for cut in path_cut_info:
-            limb_nx.remove_edges_from(cut["edges_to_cut"])
-            limb_nx.add_edges_from(cut["edges_to_add"])
+            limb_nx.remove_edges_from(cut["edges_to_delete"])
+            limb_nx.add_edges_from(cut["edges_to_create"])
         new_concept_networks[curr_limb_idx] = limb_nx
     return new_concept_networks
 

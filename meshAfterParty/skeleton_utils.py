@@ -1653,7 +1653,8 @@ def clean_skeleton(G,
                   min_distance_to_junction = 3,
                   return_skeleton=True,
                    endpoints_must_keep = None, #must be the same size as soma_border_vertices
-                  print_flag=False):
+                  print_flag=False,
+                  return_removed_skeletons=False):
     """
     Example of how to use: 
     
@@ -1793,6 +1794,7 @@ def clean_skeleton(G,
     end_nodes = end_nodes[end_nodes_dist_to_j<min_distance_to_junction]
     end_nodes_dist_to_j = end_nodes_dist_to_j[end_nodes_dist_to_j<min_distance_to_junction]
     
+    skeletons_removed = []
     if len(end_nodes) == 0 or len(end_nodes_dist_to_j) == 0:
         #no end nodes so need to return 
         print("no small end nodes to get rid of so returning whole skeleton")
@@ -1819,6 +1821,10 @@ def clean_skeleton(G,
                 if print_flag:
                     print(f"the current distance that was below was {distance_func(current_path_to_junction,G,**kwargs)}")
                 #remove the nodes
+                
+                path_to_rem = current_path_to_junction[:-1]
+                skeletons_removed.append(convert_graph_to_skeleton( G.subgraph(path_to_rem)))
+                
                 paths_removed += 1
                 G.remove_nodes_from(current_path_to_junction[:-1])
                 end_nodes = end_nodes[end_nodes != current_end_node]
@@ -1842,9 +1848,15 @@ def clean_skeleton(G,
     if print_flag:
         print(f"Done cleaning networkx graph with {paths_removed} paths removed")
     if return_skeleton:
-        return convert_graph_to_skeleton(G)
+        if return_removed_skeletons:
+            return convert_graph_to_skeleton(G),skeletons_removed
+        else:
+            return convert_graph_to_skeleton(G)
     else:
-        return G
+        if return_removed_skeletons:
+            return G,skeletons_removed
+        else:
+            return G
     
 
 
@@ -2656,6 +2668,7 @@ def skeletonize_connected_branch(current_mesh,
                         name="None",
                         surface_reconstruction_size=50,
                         surface_reconstruction_width = 250,
+                        poisson_stitch_size = 2000,
                         n_surface_downsampling = 1,
                         n_surface_samples=1000,
                         skeleton_print=False,
@@ -2739,8 +2752,12 @@ def skeletonize_connected_branch(current_mesh,
         
         
         #2) Filter away for largest_poisson_piece:
+        if use_surface_after_CGAL:
+            restriction_threshold = surface_reconstruction_size
+        else:
+            restriction_threshold = poisson_stitch_size
         mesh_pieces = split_significant_pieces(new_mesh,
-                                            significance_threshold=surface_reconstruction_size,
+                                            significance_threshold=restriction_threshold,
                                               connectivity=connectivity)
         
         if skeleton_print:
@@ -2771,8 +2788,8 @@ def skeletonize_connected_branch(current_mesh,
         else: #if there are parts that can do the cgal skeletonization
             skeleton_start = time.time()
             print(f"mesh_pieces = {mesh_pieces}")
-            print("     Starting Calcification (12/2 Change only going to do the largest piece)")
-            for zz,piece in enumerate([mesh_pieces[0]]):
+            print("     Starting Calcification (Changed back where stitches large poissons)")
+            for zz,piece in enumerate(mesh_pieces):
                 current_mesh_path = output_folder / f"{name}_{zz}"
                 if skeleton_print:
                     print(f"current_mesh_path = {current_mesh_path}")
@@ -2892,15 +2909,16 @@ def skeletonize_connected_branch(current_mesh,
             print(f"After cgal process the un-stitched skeleton has shape {skeleton_ready_for_stitching.shape}")
             #su.compressed_pickle(skeleton_ready_for_stitching,"sk_before_stitiching")
         
-        if use_surface_after_CGAL:
-            stitched_skeletons_full = stitch_skeleton(
-                                                      skeleton_ready_for_stitching,
-                                                      max_stitch_distance=max_stitch_distance,
-                                                      stitch_print = False,
-                                                      main_mesh = []
-                                                    )
-        else:
-            stitched_skeletons_full = skeleton_ready_for_stitching
+        # Now want to always do the skeleton stitching
+        #if use_surface_after_CGAL:
+        stitched_skeletons_full = stitch_skeleton(
+                                                  skeleton_ready_for_stitching,
+                                                  max_stitch_distance=max_stitch_distance,
+                                                  stitch_print = False,
+                                                  main_mesh = []
+                                                )
+#         else:
+#             stitched_skeletons_full = skeleton_ready_for_stitching
             
         #stitched_skeletons_full_cleaned = clean_skeleton(stitched_skeletons_full)
         
@@ -5578,3 +5596,45 @@ def parent_child_skeletal_angle(parent_skeleton,child_skeleton):
     parent_child_angle = np.round(nu.angle_between_vectors(up_vec,d_vec_child),2)
     return parent_child_angle
 
+
+from tqdm_utils import tqdm
+from pykdtree.kdtree import KDTree
+
+def map_between_branches_lists(branches_1,branches_2,check_all_matched=True,
+                              min_to_match = 2):
+    """
+    Purpose: 
+    Will create a unique mapping of a branch
+    in the first list to the best fitting branch in the second
+    in terms of the most matching coordinates with a distance of 0
+    
+    min_to_match is the number of vertices that must match in order to
+    be considered for the matching 
+    Ex:
+    cleaned_branches = sk.decompose_skeleton_to_branches(curr_limb_sk_cleaned)
+    original_branches = [k.skeleton for k in curr_limb]
+    map_between_branches_lists(original_branches,cleaned_branches)
+    """
+    original_branches = branches_1
+    cleaned_branches = branches_2
+    
+    old_to_new_branch_mapping = []
+
+    for o_br in tqdm(original_branches):
+        o_br_kd = KDTree(o_br.reshape(-1,3))
+
+        n_matches = [len(np.where(o_br_kd.query(c_br.reshape(-1,3))[0]==0)[0]) for c_br in cleaned_branches]
+        
+        max_matched_index = np.argmax(n_matches)
+        max_matched_index_number = n_matches[max_matched_index]
+        
+        if max_matched_index_number >= min_to_match:
+            old_to_new_branch_mapping.append(max_matched_index)
+        else:
+            old_to_new_branch_mapping.append(-1)
+        
+    old_to_new_branch_mapping = np.array(old_to_new_branch_mapping)
+    if check_all_matched:
+        if len(np.unique(old_to_new_branch_mapping[old_to_new_branch_mapping!=-1])) < len(branches_2):
+            raise Exception("Not all of the new branches had at least one mapping")
+    return old_to_new_branch_mapping
