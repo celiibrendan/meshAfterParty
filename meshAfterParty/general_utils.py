@@ -98,6 +98,10 @@ def flip_key_orders_for_dict(curr_dict):
                 flipped_dict[l_idx].update({sm_idx:sm_dict[l_idx]})
     return flipped_dict
 
+import itertools
+def combine_list_of_lists(list_of_lists):
+    return list(itertools.chain.from_iterable(list_of_lists))
+
 
 #have to reorder the keys
 def order_dict_by_keys(current_dict):

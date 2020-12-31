@@ -1759,7 +1759,7 @@ def clean_skeleton(G,
     end_nodes = np.array([k for k,n in dict(G.degree()).items() if n == 1])
     
     
-    if not endpoints_must_keep is None:
+    if (not endpoints_must_keep is None) and len(endpoints_must_keep)>0:
         print(f"endpoints_must_keep = {endpoints_must_keep}")
         all_single_nodes_to_eliminate = []
         endpoints_must_keep = np.array(endpoints_must_keep).reshape(-1,3)
@@ -4789,6 +4789,7 @@ def move_point_to_nearest_branch_end_point_within_threshold(
         verbose=False,
         consider_high_degree_nodes=True,
         possible_node_coordinates=None,
+        excluded_node_coordinates=None
         ):
     """
     Purpose: To pick a branch or endpoint node that
@@ -4819,6 +4820,12 @@ def move_point_to_nearest_branch_end_point_within_threshold(
         possible_node_loc = np.array(curr_MAP_end_nodes + curr_MAP_branch_nodes)
     else:
         possible_node_loc = np.array([xu.get_graph_node_by_coordinate(curr_skeleton_MAP_graph,zz) for zz in possible_node_coordinates])
+        
+    #removing the high degree coordinates that should not be there
+    if not (excluded_node_coordinates is None):
+        possible_node_loc_to_exclude = np.array([xu.get_graph_node_by_coordinate(curr_skeleton_MAP_graph,zz,return_neg_one_if_not_find=True) for zz in excluded_node_coordinates])
+        possible_node_loc = np.setdiff1d(possible_node_loc,possible_node_loc_to_exclude)
+        
 
     #get the distance along the skeleton from the stitch point to all of the end or branch nodes
     curr_shortest_path,end_node_1,end_node_2 = xu.shortest_path_between_two_sets_of_nodes(curr_skeleton_MAP_graph,

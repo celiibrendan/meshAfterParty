@@ -1715,6 +1715,7 @@ other_scatter --> scatters
 """
 import skeleton_utils as sk
 
+import numpy_utils as nu
 def plot_objects(main_mesh=None,
                  main_skeleton=None,
                  main_mesh_color = [0.,1.,0.,0.2],
@@ -1755,7 +1756,10 @@ def plot_objects(main_mesh=None,
     
     def convert_to_list(curr_item):
         if type(curr_item) != list:
-            return [curr_item]
+            if nu.is_array_like(curr_item):
+                return list(curr_item)
+            else:
+                return [curr_item]
         else:
             return curr_item
     
@@ -1913,13 +1917,31 @@ def visualize_neuron_path(neuron_obj,
                              scatter_size=scatter_size,
                              )
 
+def limb_correspondence_plottable(limb_correspondence):
+    """
+    Extracts the meshes and skeleton parts from limb correspondence so can be plotted
     
+    """
+    if list(limb_correspondence[0].keys())[0] == 0:
+        # then we have a limb correspondence with multiple objects
+        meshes=gu.combine_list_of_lists([[k["branch_mesh"] for k in ki.values()] for ki in limb_correspondence.values()])
+        skeletons=gu.combine_list_of_lists([[k["branch_skeleton"] for k in ki.values()] for ki in limb_correspondence.values()])
+    else:
+        meshes=[k["branch_mesh"] for k in limb_correspondence.values()]
+        skeletons=[k["branch_skeleton"] for k in limb_correspondence.values()]
+    
+    return meshes,skeletons
+
+import general_utils as gu
 def plot_limb_correspondence(limb_correspondence,
                             meshes_colors="random",
                             skeleton_colors="random"):
-    nviz.plot_objects(meshes=[k["branch_mesh"] for k in limb_correspondence.values()],
+    meshes,skeletons = limb_correspondence_plottable(limb_correspondence)
+        
+    nviz.plot_objects(
+                      meshes=meshes,
                      meshes_colors=meshes_colors,
-                     skeletons=[k["branch_skeleton"] for k in limb_correspondence.values()],
+                     skeletons=skeletons,
                      skeletons_colors=skeleton_colors
                      )
 import neuron_visualizations as nviz

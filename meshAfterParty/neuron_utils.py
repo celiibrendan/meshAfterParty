@@ -3101,6 +3101,35 @@ def limb_branch_dict_to_faces(neuron_obj,limb_branch_dict):
         
     return match_faces_idx
  
+    
+    
+def skeleton_touching_branches(limb_obj,branch_idx,
+                              return_endpoint_groupings=True):
+    """
+    Purpose: Can find all the branch numbers
+    that touch a certain branch object based on the skeleton endpoints
+    
+    """
+    curr_short_seg = branch_idx
+    curr_limb = limb_obj
+    branch_obj = limb_obj[branch_idx]
+
+    network_nodes = np.array(curr_limb.concept_network.nodes())
+    network_nodes = network_nodes[network_nodes!= curr_short_seg]
+
+    network_branches = [curr_limb[k].skeleton for k in network_nodes]
+    neighbor_branches_by_endpoint = [sk.find_branch_skeleton_with_specific_coordinate(network_branches,e) for e in branch_obj.endpoints]
+    
+    if return_endpoint_groupings:
+        return neighbor_branches_by_endpoint,branch_obj.endpoints
+    else:
+        return np.concatenate(neighbor_branches_by_endpoint)
+    
+    
+    
+
+    
+
 import neuron_utils as nru
 import neuron #package where can use the Branches class to help do branch skeleton analysis
 

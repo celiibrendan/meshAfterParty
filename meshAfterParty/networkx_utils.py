@@ -222,7 +222,8 @@ def get_graph_node_by_coordinate_old(G,coordinate):
     else:
         return match_nodes[0]
     
-def get_graph_node_by_coordinate(G,coordinate,return_single_value=True):
+def get_graph_node_by_coordinate(G,coordinate,return_single_value=True,
+                                return_neg_one_if_not_find=False):
     """
     Much faster way of searching for nodes by coordinates
     
@@ -232,7 +233,10 @@ def get_graph_node_by_coordinate(G,coordinate,return_single_value=True):
     match_nodes = nu.matching_rows(node_coordinates,coordinate)
     if return_single_value:
         if len(match_nodes) != 1:
-            raise Exception(f"Not just one node in graph with coordinate {coordinate}: {match_nodes}")
+            if return_neg_one_if_not_find:
+                return -1
+            else:
+                raise Exception(f"Not just one node in graph with coordinate {coordinate}: {match_nodes}")
         else:
             return graph_nodes[match_nodes[0]]
     else:

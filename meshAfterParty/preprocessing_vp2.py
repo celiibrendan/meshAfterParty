@@ -794,6 +794,9 @@ def filter_limb_correspondence_for_end_nodes(limb_correspondence,
         for soma_idx,soma_v in network_starting_info_revised_cleaned.items():
             for soma_group_idx,soma_group_v in soma_v.items():
                 all_starting_coords.append(soma_group_v["endpoint"])
+                
+    if len(all_starting_coords) == 0:
+        raise Exception(f"No starting coordinates found: network_starting_info_revised_cleaned = {network_starting_info_revised_cleaned} ")
 
 
 
@@ -1536,6 +1539,8 @@ def preprocess_limb(mesh,
     if check_correspondence_branches:
         sk.check_correspondence_branches_have_2_endpoints(limb_correspondence_MAP)
         sk.check_correspondence_branches_have_2_endpoints(limb_correspondence_MP)
+        
+    total_keep_endpoints = np.concatenate([np.array(list(v.values())).reshape(-1,3) for v in limb_to_endpoints_must_keep_list])
     
     # Only want to perform this step if both MP and MAP pieces
     if len(limb_correspondence_MAP)>0 and len(limb_correspondence_MP)>0:
@@ -1799,6 +1804,7 @@ def preprocess_limb(mesh,
                                                         distance_to_move_point_threshold = distance_to_move_point_threshold,
                                                         verbose=True,
                                                         possible_node_coordinates=curr_br_endpts_unique,
+                                                        excluded_node_coordinates=total_keep_endpoints,
                                                         )
                 MAP_stitch_point=MAP_stitch_point_new
 
@@ -3018,4 +3024,4 @@ def preprocess_neuron(
     
     return preprocessed_data
     
-
+import preprocessing_vp2 as pre
