@@ -201,7 +201,8 @@ def get_nodes_with_attributes_dict(G,attribute_dict):
                 #print(f"y[search_key] = {y[search_key]}")
                 #print(f"attribute_dict[search_key] = {attribute_dict[search_key]}")
                 curr_search_val= y[search_key]
-                if type(curr_search_val) in [type(np.array([])),type(np.ndarray([])),list]:
+                #if type(curr_search_val) in [type(np.array([])),type(np.ndarray([])),list,trimesh.caching.TrackedArray]:
+                if nu.is_array_like(curr_search_val):
                     if not nu.compare_threshold(np.array(curr_search_val),attribute_dict[search_key]):
                         add_flag=False
                         break

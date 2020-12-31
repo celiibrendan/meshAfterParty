@@ -158,7 +158,7 @@ class Branch:
         self.mesh_face_idx = mesh_face_idx
         
         #calculate the end coordinates of skeleton branch
-        self.endpoints = sk.find_branch_endpoints(skeleton)
+        self.calculate_endpoints()
         self.mesh_center = None
         if not self.mesh is None:
             self.mesh_center = tu.mesh_center_vertex_average(self.mesh)
@@ -186,6 +186,9 @@ class Branch:
     --> define function that makes edges equal if have same distance
     'width'
     """
+    
+    def calculate_endpoints(self):
+        self.endpoints = sk.find_branch_endpoints(self.skeleton)
     
     @property
     def skeletal_length(self):
@@ -319,6 +322,54 @@ class Limb:
     c. Put the branches as "data" in the network
     d. Get all of the starting coordinates and starting edges and put as member attributes in the limb
     """
+    @property
+    def branch_objects(self):
+        """
+        dictionary mapping the index to the 
+        """
+        return dict([(i,k) for i,k in enumerate(self)])
+    
+    
+    @property
+    def network_starting_info(self):
+        """
+        Purpose: will generate the dictionary that is organized
+        soma_idx --> soma_group_idx --> dict(touching_verts,endpoint)
+        
+        that can be used to generate a concept network from 
+        
+        """
+        st_dict = dict()
+        for st in self.all_concept_network_data:
+            soma_idx = st["starting_soma"] 
+            soma_group_idx = st["soma_group_idx"] 
+            if st["starting_soma"] not in st_dict.keys():
+                st_dict[soma_idx] = dict()
+
+            st_dict[soma_idx] = {soma_group_idx:dict(touching_verts=st["touching_soma_vertices"],
+                                                    endpoint=st["starting_coordinate"])}
+        return st_dict
+    
+    @property
+    def limb_correspondence(self):
+        self._index = -1
+        limb_corr = dict()
+        for idx,b in enumerate(self):
+            curr_width = b.width    
+            try:
+                curr_width = b.width_new["median_mesh_center"]
+            except:
+                pass
+
+            limb_corr[idx] = dict(branch_skeleton=b.skeleton,
+                                  width_from_skeleton = curr_width,
+                                 branch_mesh = b.mesh,
+                                 branch_face_idx = b.mesh_face_idx,
+                                 )
+        
+            
+        return limb_corr
+    
     @property
     def spines(self):
         self._index = -1
@@ -915,11 +966,12 @@ class Limb:
     def __next__(self):
         self._index += 1
         #print(f"Limb self._index = {self._index}")
+        sorted_node_indexes = np.sort(list(self.concept_network.nodes()))
         if self._index >= len(self):
             self._index = -1
             raise StopIteration
         else:
-            return self[self._index]
+            return self[sorted_node_indexes[self._index]]
     
     def __eq__(self,other):
         """
@@ -2702,6 +2754,8 @@ class Neuron:
 
                         skeletal_length_eligible=self.skeletal_length_eligible, # the skeletal length for all branches searched for spines
                         n_spine_eligible_branches=self.n_spine_eligible_branches,
+                        spine_density_eligible = self.spine_density_eligible,
+                        spines_per_branch_eligible = self.spines_per_branch_eligible,
 
                         total_spine_volume=self.total_spine_volume, # the sum of all spine volume
                         spine_volume_median = self.spine_volume_median,

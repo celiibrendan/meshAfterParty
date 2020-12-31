@@ -1821,7 +1821,6 @@ import copy
 import proofreading_utils as pru
 def plot_split_suggestions_per_limb(neuron_obj,
                                     limb_results,
-                                    limb_obj=None,
                                    scatter_color = "red",
                                     scatter_alpha = 0.3,
                                    scatter_size=0.3,

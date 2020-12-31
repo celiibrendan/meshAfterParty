@@ -27,6 +27,7 @@ How to clear the external
 schema.external['decomposition'].delete(delete_external_files=False)
 
 """
+decomposition_folder = "decomposition"
 
 attributes_need_resetting = ["external_segmentation_path",
                              "external_mesh_path",
@@ -227,7 +228,7 @@ def get_adapter_object():
 import datajoint as dj
 import minfig
 def get_decomposition_path():
-    return minfig.minnie65_config.external_segmentation_path / Path("decomposition/")
+    return minfig.minnie65_config.external_segmentation_path / Path(f"{decomposition_folder}/")
 def get_somas_path():
     return minfig.minnie65_config.external_segmentation_path / Path("somas/")
 

@@ -1003,6 +1003,8 @@ def split_neuron(neuron_obj,
 
     """
     
+    neuron_obj = copy.deepcopy(neuron_obj)
+    
     #1) Get all of the split suggestions
     limb_results = pru.multi_soma_split_suggestions(neuron_obj,plot_intermediates=False,
                                                verbose = verbose)
@@ -1025,6 +1027,154 @@ def split_neuron(neuron_obj,
                          verbose =verbose)
         
     return neuron_list
+
+
+import numpy_utils as nu
+def remove_branches_from_limb(limb_obj,branch_list,
+                             plot_new_limb=False,
+                              reassign_mesh=True,
+                             verbose=False):
+    """
+    Purpose: To remove 1 or more branches from the concept network
+    of a limb and to adjust the underlying skeleton
+    
+    Application: To be used in when trying to split 
+    a neuron and want to combine nodes that are really close
+    
+    
+    *** currently does not does not reallocate the mesh part of the nodes that were deleted
+    
+    
+    Pseudocode: 
+    
+    For each branch to remove
+    0) Find the branches that were touching the soon to be deleted branch
+    1) Alter the skeletons of those that were touching that branch
+    
+    After revised all nodes
+    2) Remove the current node
+    3) Generate the limb correspondence, network starting info to generate soma concept networks
+    4) Create a new limb object and return it
+
+
+    Ex: new_limb_obj = nru.remove_branches_from_limb(curr_limb,[30,31],plot_new_limb=True,verbose=True)
+    """
+    curr_limb_cp = copy.deepcopy(limb_obj)
+    
+    if not nu.is_array_like(branch_list ):
+        branch_list = [branch_list]
+        
+    seg_id_lookup = np.arange(0,len(curr_limb_cp))
+    
+    for curr_short_seg in branch_list:
+        #need to look up the new seg id if there is one now based on previous deletions
+        
+        curr_short_seg_revised = seg_id_lookup[curr_short_seg]
+        if verbose:
+            print(f"curr_short_seg_revised = {curr_short_seg_revised}")
+        
+        
+        branch_obj = curr_limb_cp[curr_short_seg_revised]
+        
+        touching_branches,touching_endpoints = nru.skeleton_touching_branches(curr_limb_cp,branch_idx=curr_short_seg_revised)
+        
+        
+        #deciding whether to take the average or just an endpoint as the new stitch point depending on if nodes on both ends
+        touch_len = np.array([len(k) for k in touching_branches])
+        
+        if verbose:
+            print(f"np.sum(touch_len>0) = {np.sum(touch_len>0)}")
+            
+        if np.sum(touch_len>0)==2:
+            if verbose:
+                print("Using average stitch point")
+            new_stitch_point = np.mean(touching_endpoints,axis=0)
+            middle_node = True
+        else:
+            if verbose:
+                print("Using ONE stitch point")
+            new_stitch_point = touching_endpoints[np.argmax(touch_len)]
+            middle_node = False
+        
+        if verbose:
+            print(f"touching_endpoints = {touching_endpoints}")
+            print(f"new_stitch_point = {new_stitch_point}")
+        
+        #1a) Decide which branch to give the mesh to
+        if middle_node and reassign_mesh:
+            """
+            Pseudocode:
+            1) Get the skeletal angles between all the touching branches and the branch to be deleted
+            2) Find the branch with the smallest skeletal angle
+            3) Things that need to be updated for the winning branch:
+            - mesh
+            -mesh_face_idx
+            - n_spines
+            - spines
+            - spines_volume
+            
+            
+            """
+            all_touching_branches = np.concatenate(touching_branches)
+            all_touching_branches_angles = [sk.offset_skeletons_aligned_parent_child_skeletal_angle(
+                            curr_limb_cp[br].skeleton,
+                            curr_limb_cp[curr_short_seg_revised].skeleton) for br in all_touching_branches]
+            winning_branch =all_touching_branches[np.argmin(all_touching_branches_angles)]
+            
+            if verbose:
+                print(f"Angles for {all_touching_branches} are {all_touching_branches_angles}")
+                print(f"Branch that will absorb mesh of {curr_short_seg} is {winning_branch} ")
+            
+            curr_limb_cp[winning_branch].mesh_face_idx = np.concatenate([curr_limb_cp[winning_branch].mesh_face_idx,
+                                                                    curr_limb_cp[curr_short_seg_revised].mesh_face_idx])
+            curr_limb_cp[winning_branch].mesh = tu.combine_meshes([curr_limb_cp[winning_branch].mesh,
+                                                                    curr_limb_cp[curr_short_seg_revised].mesh])
+            if not curr_limb_cp[curr_short_seg_revised].spines is None:
+                curr_limb_cp[winning_branch].spines += curr_limb_cp[curr_short_seg_revised].spines
+                curr_limb_cp[winning_branch].spines_volume += curr_limb_cp[curr_short_seg_revised].spines_volume
+            
+
+        #1b) Alter the skeletons of those that were touching
+        for t_branches,t_endpoints in zip(touching_branches,touching_endpoints):
+            for br in t_branches:
+                curr_limb_cp[br].skeleton = sk.add_and_smooth_segment_to_branch(curr_limb_cp[br].skeleton,
+                                                                                new_stitch_point=new_stitch_point,
+                                                                            skeleton_stitch_point=t_endpoints)
+                curr_limb_cp[br].calculate_endpoints()
+                
+        
+        """
+        
+        
+        
+        """
+        
+            
+        #2) Remove the current node
+        curr_limb_cp.concept_network.remove_node(curr_short_seg_revised)
+
+        limb_to_soma_concept_networks = pre.calculate_limb_concept_networks(curr_limb_cp.limb_correspondence,
+                                                                                    curr_limb_cp.network_starting_info,
+                                                                                    run_concept_network_checks=True,
+                                                                                   )  
+
+        curr_limb_cp = neuron.Limb(curr_limb_cp.mesh,
+                                 curr_limb_cp.limb_correspondence,
+                                 concept_network_dict=limb_to_soma_concept_networks,
+                                 mesh_face_idx = curr_limb_cp.mesh_face_idx,
+                                 labels=curr_limb_cp.labels,
+                                 branch_objects=curr_limb_cp.branch_objects)
+        
+        #update the seg_id_lookup
+        seg_id_lookup = np.insert(seg_id_lookup,curr_short_seg,-1)[:-1]
+        
+        
+    
+    if plot_new_limb:
+        nviz.plot_limb_correspondence(curr_limb_cp.limb_correspondence)
+    
+    return curr_limb_cp
+
 
 
 

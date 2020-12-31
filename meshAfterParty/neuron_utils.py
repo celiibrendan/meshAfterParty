@@ -3118,7 +3118,9 @@ def skeleton_touching_branches(limb_obj,branch_idx,
     network_nodes = network_nodes[network_nodes!= curr_short_seg]
 
     network_branches = [curr_limb[k].skeleton for k in network_nodes]
-    neighbor_branches_by_endpoint = [sk.find_branch_skeleton_with_specific_coordinate(network_branches,e) for e in branch_obj.endpoints]
+    neighbor_branches_by_endpoint = [network_nodes[sk.find_branch_skeleton_with_specific_coordinate(network_branches,e)] for e in branch_obj.endpoints]
+    
+    
     
     if return_endpoint_groupings:
         return neighbor_branches_by_endpoint,branch_obj.endpoints
@@ -3126,7 +3128,7 @@ def skeleton_touching_branches(limb_obj,branch_idx,
         return np.concatenate(neighbor_branches_by_endpoint)
     
     
-    
+import copy
 
     
 

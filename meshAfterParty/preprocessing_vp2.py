@@ -418,6 +418,7 @@ def attach_floating_pieces_to_limb_correspondence(
         floating_limbs_correspondence = [ preprocess_limb(mesh=k,
                            soma_touching_vertices_dict = None,
                            return_concept_network = False, 
+                            error_on_no_starting_coordinates=False,
                            )  for k in floating_limbs_above_threshold]
 
     #2) Get all full skeleton endpoints (degree 1) for all floating pieces
@@ -761,6 +762,7 @@ def filter_limb_correspondence_for_end_nodes(limb_correspondence,
                                              mesh,
                                              starting_info=None,
                                              filter_end_node_length=4500,
+                                             error_on_no_starting_coordinates = True,
                                              plot_new_correspondence = False,
                                             verbose = True
                                              
@@ -794,9 +796,10 @@ def filter_limb_correspondence_for_end_nodes(limb_correspondence,
         for soma_idx,soma_v in network_starting_info_revised_cleaned.items():
             for soma_group_idx,soma_group_v in soma_v.items():
                 all_starting_coords.append(soma_group_v["endpoint"])
-                
-    if len(all_starting_coords) == 0:
-        raise Exception(f"No starting coordinates found: network_starting_info_revised_cleaned = {network_starting_info_revised_cleaned} ")
+    
+    if error_on_no_starting_coordinates:
+        if len(all_starting_coords) == 0:
+            raise Exception(f"No starting coordinates found: network_starting_info_revised_cleaned = {network_starting_info_revised_cleaned} ")
 
 
 
@@ -814,6 +817,11 @@ def filter_limb_correspondence_for_end_nodes(limb_correspondence,
 
     #3) Decompose skeleton into branches and find out mappin gof old branches to new ones
     cleaned_branches = sk.decompose_skeleton_to_branches(curr_limb_sk_cleaned)
+    
+    if len(cleaned_branches) == 0:
+        print("There were no branches after cleaning limb correspondence")
+        return limb_correspondence
+    
     original_br_mapping = sk.map_between_branches_lists(lc_skeletons,cleaned_branches)
 
     # 4) Assemble the new width and mesh face idx for all new branches
@@ -930,8 +938,10 @@ def preprocess_limb(mesh,
                     
                     check_correspondence_branches = True,
                     filter_end_nodes_from_correspondence=True,
+                    error_on_no_starting_coordinates=True
                     
                    ):
+    #print(f"error_on_no_starting_coordinates = {error_on_no_starting_coordinates}")
     curr_limb_time = time.time()
 
     limb_mesh_mparty = mesh
@@ -1348,14 +1358,30 @@ def preprocess_limb(mesh,
                                           return_endpoints_must_keep=True,
                                           return_created_branch_info=True,
                                           check_connected_skeleton=False)
+                    
+                    # ---- 12/30 Addition Check if the endpoint found is an endnode or not and if not then manually add branch ---
+                    curr_endnode = endpts[sm_idx][0]
+                    match_sk_branches = sk.find_branch_skeleton_with_specific_coordinate(segment_branches,
+                        current_coordinate=curr_endnode)
+
+                    print(f"match_sk_branches = {match_sk_branches}")
+                    if len(match_sk_branches) > 1:
+                        border_average_coordinate = np.mean(sm_bord_verts,axis=0)
+                        new_branch_sk = np.vstack([curr_endnode,border_average_coordinate]).reshape(-1,2,3)
+                        br_info = dict(new_branch = new_branch_sk,border_verts=sm_bord_verts)
+                        endpts_total[sm_idx].append(border_average_coordinate)
+                    else:
+                        
+                        br_info = new_branch_info[sm_idx][0]
+                        endpts_total[sm_idx].append(endpts[sm_idx][0])
+                    # -------------------- End of 12/30 Addition ------------------
 
                     #3) Add the info to the new running lists
-                    endpts_total[sm_idx].append(endpts[sm_idx][0])
+                    
                     curr_soma_to_piece_touching_vertices_total[sm_idx].append(sm_bord_verts)
 
 
                     #4) Skip if no new branch was added
-                    br_info = new_branch_info[sm_idx][0]
                     if br_info is None:
                         print("The new branch info was none so skipping \n")
                         continue
@@ -1502,6 +1528,9 @@ def preprocess_limb(mesh,
 
             limb_to_endpoints_must_keep_list.append(endpts_total)
             limb_to_soma_touching_vertices_list.append(curr_soma_to_piece_touching_vertices_total)
+            
+            #print(f"limb_to_endpoints_must_keep_list = {limb_to_endpoints_must_keep_list}")
+            #print(f"limb_to_soma_touching_vertices_list = {limb_to_soma_touching_vertices_list}")
 
             # ------------------- 11/9 addition ------------------- #
 
@@ -1540,7 +1569,14 @@ def preprocess_limb(mesh,
         sk.check_correspondence_branches_have_2_endpoints(limb_correspondence_MAP)
         sk.check_correspondence_branches_have_2_endpoints(limb_correspondence_MP)
         
-    total_keep_endpoints = np.concatenate([np.array(list(v.values())).reshape(-1,3) for v in limb_to_endpoints_must_keep_list])
+    #total_keep_endpoints = np.concatenate([np.array(list(v.values())).reshape(-1,3) for v in limb_to_endpoints_must_keep_list])
+    total_keep_endpoints = []
+    for entry in limb_to_endpoints_must_keep_list:
+        for k,v in entry.items():
+            total_keep_endpoints.append(v)
+            
+    if len(total_keep_endpoints)>0:
+        total_keep_endpoints = np.vstack(total_keep_endpoints)
     
     # Only want to perform this step if both MP and MAP pieces
     if len(limb_correspondence_MAP)>0 and len(limb_correspondence_MP)>0:
@@ -2476,7 +2512,8 @@ def preprocess_limb(mesh,
         limb_correspondence_individual = pre.filter_limb_correspondence_for_end_nodes(limb_correspondence=limb_correspondence_individual,
                                                      mesh=limb_mesh_mparty,
                                                      starting_info=network_starting_info_revised_cleaned,
-                                                    filter_end_node_length=filter_end_node_length
+                                                    filter_end_node_length=filter_end_node_length,
+                                                    error_on_no_starting_coordinates=error_on_no_starting_coordinates
 
                                                     )
 
@@ -2941,6 +2978,7 @@ def preprocess_neuron(
                        meshparty_n_surface_downsampling = meshparty_n_surface_downsampling,
                                                                                
                         use_meshafterparty=use_meshafterparty,
+                        error_on_no_starting_coordinates=True
 
                        )
         #Storing all of the data to be sent to 

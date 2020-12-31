@@ -1771,7 +1771,13 @@ def clean_skeleton(G,
             end_node_idx = xu.get_nodes_with_attributes_dict(G,dict(coordinates=end_k))
             if len(end_node_idx)>0:
                 end_node_idx = end_node_idx[0]
-                end_node_must_keep_idx = np.where(end_nodes==end_node_idx)[0][0]
+                try:
+                    end_node_must_keep_idx = np.where(end_nodes==end_node_idx)[0][0]
+                    
+                except:
+                    print(f"end_nodes = {end_nodes}")
+                    print(f"end_node_idx = {end_node_idx}")
+                    raise Exception("Something went wrong when trying to find end nodes")
                 all_single_nodes_to_eliminate.append(end_node_must_keep_idx)
             else:
                 raise Exception("Passed end node to keep that wasn't in the graph")
@@ -5053,11 +5059,12 @@ def add_and_smooth_segment_to_branch(skeleton,
                            new_seg = np.array([stitch_point_MAP,stitch_point_MP]).reshape(-1,2,3))
     """
     # 12/21 Addition: If the point you are trying to stitch to is already there then just return the skeleton
-    sk_graph_at_beginning = sk.convert_skeleton_to_graph(skeleton)
-    match_nodes_to_new_stitch_point = xu.get_nodes_with_attributes_dict(sk_graph_at_beginning,dict(coordinates=new_stitch_point))
-    if len(match_nodes_to_new_stitch_point)>0:
-        print("New stitch point was already on the skeleton so don't need to add it")
-        return skeleton
+    if not new_stitch_point is None:
+        sk_graph_at_beginning = sk.convert_skeleton_to_graph(skeleton)
+        match_nodes_to_new_stitch_point = xu.get_nodes_with_attributes_dict(sk_graph_at_beginning,dict(coordinates=new_stitch_point))
+        if len(match_nodes_to_new_stitch_point)>0:
+            print("New stitch point was already on the skeleton so don't need to add it")
+            return skeleton
     
     
     if len(skeleton) == 0:
@@ -5602,6 +5609,29 @@ def parent_child_skeletal_angle(parent_skeleton,child_skeleton):
 
     parent_child_angle = np.round(nu.angle_between_vectors(up_vec,d_vec_child),2)
     return parent_child_angle
+
+
+def offset_skeletons_aligned_parent_child_skeletal_angle(skeleton_1,skeleton_2,
+                                                        offset=1000,
+                                                        comparison_distance=2000,
+                                                        min_comparison_distance=1000):
+    """
+    Purpose: To determine the parent child skeletal angle
+    of 2 skeletons while using the offset and comparison distance
+    
+    
+    
+    """
+    
+    edge_skeletons = [skeleton_1,skeleton_2]
+    aligned_sk_parts = sk.offset_skeletons_aligned_at_shared_endpoint(edge_skeletons,
+                                                                     offset=offset,
+                                                        comparison_distance=comparison_distance,
+                                                        min_comparison_distance=min_comparison_distance)
+
+
+    curr_angle = sk.parent_child_skeletal_angle(aligned_sk_parts[0],aligned_sk_parts[1])
+    return curr_angle
 
 
 from tqdm_utils import tqdm
