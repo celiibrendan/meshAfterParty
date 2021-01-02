@@ -495,6 +495,7 @@ class Poisson(Meshlab):
                 'scale': dict(value='1.1'),
                 'visibleLayer': dict(value='false'), 
             },
+            'Remove Duplicate Vertices': {},
             'Delete Current Mesh': {},
         }
         return default_filters

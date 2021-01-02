@@ -1952,11 +1952,16 @@ import meshlab
 
 def fill_holes(mesh,
               max_hole_size=2000,
-              self_itersect_faces=False):
+              self_itersect_faces=False,
+              ):
     
-    if len(tu.find_border_face_groups(mesh))==0:
-        print("No holes needed to fill so returning original mesh")
-        return mesh
+    mesh.merge_vertices()
+    
+    if tu.is_manifold(mesh):
+        print("Mesh was manifold")
+        if len(tu.find_border_face_groups(mesh))==0 and tu.is_manifold(mesh):
+            print("No holes needed to fill and mesh was manifold so returning original mesh")
+            return mesh
         
     lrg_mesh = mesh
     with meshlab.FillHoles(max_hole_size=max_hole_size,self_itersect_faces=self_itersect_faces) as fill_hole_obj:

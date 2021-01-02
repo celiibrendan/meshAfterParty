@@ -282,6 +282,25 @@ def get_best_cut_edge(curr_limb,
         removed_branches = list(removed_branches)
     return edges_to_delete,edges_to_create,curr_limb,removed_branches
 
+def get_all_coordinate_suggestions(suggestions,concatenate=True,
+                                  voxel_adjustment=True):
+    all_coord = []
+    for limb_idx,sugg_v in suggestions.items():
+        curr_coords = np.array(get_attribute_from_suggestion(suggestions,curr_limb_idx=limb_idx,
+                                 attribute_name="coordinate_suggestions"))
+        if voxel_adjustment:
+            curr_coords = curr_coords/np.array([4,4,40])
+                
+        
+        all_coord.append(curr_coords)
+    
+    if voxel_adjustment:
+        all_coord
+    if concatenate:
+        return list(np.unique(np.vstack(all_coord),axis=0))
+    else:
+        return list(all_coord)
+    
 def get_attribute_from_suggestion(suggestions,curr_limb_idx=None,
                                  attribute_name="edges_to_delete"):
     if type(suggestions) == dict:
