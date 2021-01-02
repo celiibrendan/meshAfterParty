@@ -659,7 +659,7 @@ class GraphOrderedEdges(nx.Graph):
         
     #functions that will do the deleting of edges and then reordering
     def remove_edge(self,u,v):
-        print("in remove edge")
+        #print("in remove edge")
         super().remove_edge(u,v)
         self.reorder_edges()
     

@@ -29,6 +29,8 @@ import skeleton_utils as sk
 def get_best_cut_edge(curr_limb,
                       cut_path,
                       
+                      remove_segment_threshold=1500,#the segments along path that should be combined
+                      
                       #paraeters for high degree nodes
                       high_degree_offset = 1500,
                       comparison_distance = 2000,
@@ -57,6 +59,7 @@ def get_best_cut_edge(curr_limb,
     3) Width Jump
     
     Pseudocode: 
+    0) Combine close nodes if requested
     1) Get any high degree cordinates on path
     --> if there are then pick the first one and perform the cuts
     
@@ -65,6 +68,26 @@ def get_best_cut_edge(curr_limb,
     4) Record the cuts that will be made
     5) Make the alterations to the graph (can be adding and creating edges)
     """
+    removed_branches=[]
+    
+    if (not remove_segment_threshold is None) and (remove_segment_threshold > 0):
+        path_without_ends = cut_path[1:-1]
+        sk_lens = np.array([sk.calculate_skeleton_distance(curr_limb[k].skeleton) for k in path_without_ends ])
+        short_segments = path_without_ends[np.where(sk_lens<remove_segment_threshold)[0]]
+        if verbose:
+            print(f"Short segments to combine = {short_segments}")
+        if len(short_segments)>0:
+            if verbose:
+                print("\n\n-------- Removing Segments -------------")
+            curr_limb = pru.remove_branches_from_limb(curr_limb,
+                                                 branch_list=short_segments,
+                                                 plot_new_limb=False,
+                                                verbose=verbose)
+            if verbose:
+                print("\n-------- Done Removing Segments -------------\n\n")
+            removed_branches = list(short_segments)
+        
+    
     high_degree_endpoint_coordinates = find_high_degree_coordinates_on_path(curr_limb,cut_path)
     
     edges_to_create = None
@@ -251,8 +274,13 @@ def get_best_cut_edge(curr_limb,
         print(f"Number of connected components = {len(conn_comp)}")
         for j,k in enumerate(conn_comp):
             print(f"Comp {j} = {k}")
-    
-    return edges_to_delete,edges_to_create,curr_limb
+    if nu.is_array_like(edges_to_delete):
+        edges_to_delete = list(edges_to_delete)
+    if nu.is_array_like(edges_to_create):
+        edges_to_create = list(edges_to_create)
+    if nu.is_array_like(removed_branches):
+        removed_branches = list(removed_branches)
+    return edges_to_delete,edges_to_create,curr_limb,removed_branches
 
 def get_attribute_from_suggestion(suggestions,curr_limb_idx=None,
                                  attribute_name="edges_to_delete"):
@@ -273,6 +301,9 @@ def get_edges_to_delete_from_suggestion(suggestions,curr_limb_idx=None):
 def get_edges_to_create_from_suggestion(suggestions,curr_limb_idx=None):
     return get_attribute_from_suggestion(suggestions,curr_limb_idx,
                                  attribute_name="edges_to_create")
+def get_removed_branches_from_suggestion(suggestions,curr_limb_idx=None):
+    return get_attribute_from_suggestion(suggestions,curr_limb_idx,
+                                 attribute_name="removed_branches")
     
 
 def cut_limb_network_by_suggestions(curr_limb,
@@ -288,6 +319,7 @@ def cut_limb_network_by_suggestions(curr_limb,
     return cut_limb_network_by_edges(curr_limb,
                                     edges_to_delete=pru.get_edges_to_delete_from_suggestion(suggestions),
                                     edges_to_create=pru.get_edges_to_create_from_suggestion(suggestions),
+                                     removed_branches=pru.get_removed_branches_from_suggestion(suggestions),
                                     verbose=verbose,
                                      return_copy=return_copy
                                     )
@@ -295,12 +327,16 @@ def cut_limb_network_by_suggestions(curr_limb,
 def cut_limb_network_by_edges(curr_limb,
                                     edges_to_delete=None,
                                     edges_to_create=None,
+                                    removed_branches=[],
                                     return_accepted_edges_to_create=False,
                                     return_copy=True,
                                     verbose=False):
     if return_copy:
         curr_limb = copy.copy(curr_limb)
-        
+    if (not removed_branches is None) and len(removed_branches)>0:
+        curr_limb = pru.remove_branches_from_limb(curr_limb,
+                                                 branch_list=removed_branches)
+    
     if not edges_to_delete is None:
         if verbose:
             print(f"edges_to_delete = {edges_to_delete}")
@@ -340,6 +376,7 @@ def multi_soma_split_suggestions(neuron_obj,
                                 max_iterations=100,
                                  plot_suggestions=False,
                                  plot_suggestions_scatter_size=0.4,
+                                 remove_segment_threshold = 1500,
                                 **kwargs):
     """
     Purpose: To come up with suggestions for splitting a multi-soma
@@ -400,6 +437,7 @@ def multi_soma_split_suggestions(neuron_obj,
 
             total_soma_paths_to_cut = []
             total_soma_paths_to_add = []
+            total_removed_branches = []
             # need to keep cutting until no path for them
             if verbose:
                 print(f"\n\n---- working on disconnecting {st_n_1} and {st_n_2}")
@@ -423,7 +461,8 @@ def multi_soma_split_suggestions(neuron_obj,
                     print(f"Shortest path = {list(soma_to_soma_path)}")
 
                 # say we found the cut node to make
-                cut_edges, added_edges, curr_limb_copy = pru.get_best_cut_edge(curr_limb_copy,soma_to_soma_path,
+                cut_edges, added_edges, curr_limb_copy,removed_branches = pru.get_best_cut_edge(curr_limb_copy,soma_to_soma_path,
+                                                                remove_segment_threshold=remove_segment_threshold,
                                                                                verbose=verbose,
                                                                               **kwargs)
                 if verbose:
@@ -438,7 +477,8 @@ def multi_soma_split_suggestions(neuron_obj,
                     total_soma_paths_to_cut += cut_edges
                 if not added_edges is None:
                     total_soma_paths_to_add += added_edges
-                
+                if len(removed_branches)>0:
+                    total_removed_branches += removed_branches
                 
                 
                 counter += 1
@@ -448,6 +488,7 @@ def multi_soma_split_suggestions(neuron_obj,
 
             local_results["edges_to_delete"] = total_soma_paths_to_cut
             local_results["edges_to_create"] = total_soma_paths_to_add
+            local_results["removed_branches"] = total_removed_branches
 
             suggested_cut_points = [sk.shared_endpoint(curr_limb_copy[cut_e[0]].skeleton,
                                                 curr_limb_copy[cut_e[1]].skeleton)
@@ -470,7 +511,8 @@ def multi_soma_split_suggestions(neuron_obj,
         
     return limb_results
 
-def split_suggestions_to_concept_networks(neuron_obj,limb_results):
+def split_suggestions_to_concept_networks(neuron_obj,limb_results,
+                                         apply_changes_to_limbs=False):
     """
     Will take the output of the multi_soma_split suggestions and 
     return the concept network with all fo the cuts applied
@@ -479,11 +521,16 @@ def split_suggestions_to_concept_networks(neuron_obj,limb_results):
     
     new_concept_networks = dict()
     for curr_limb_idx,path_cut_info in limb_results.items():
-        limb_nx = nx.Graph(neuron_obj[curr_limb_idx].concept_network)
+        if not apply_changes_to_limbs:
+            limb_cp = copy.deepcopy(neuron_obj[curr_limb_idx])
+        else:
+            limb_cp = neuron_obj[curr_limb_idx]
+        #limb_nx = nx.Graph(neuron_obj[curr_limb_idx].concept_network)
         for cut in path_cut_info:
-            limb_nx.remove_edges_from(cut["edges_to_delete"])
-            limb_nx.add_edges_from(cut["edges_to_create"])
-        new_concept_networks[curr_limb_idx] = limb_nx
+            limb_cp=pru.remove_branches_from_limb(limb_cp,branch_list=cut["removed_branches"])
+            limb_cp.concept_network.remove_edges_from(cut["edges_to_delete"])
+            limb_cp.concept_network.add_edges_from(cut["edges_to_create"])
+        new_concept_networks[curr_limb_idx] = limb_cp.concept_network
     return new_concept_networks
 
 
@@ -498,8 +545,8 @@ import neuron
 import copy
 import networkx as nx
 
-def split_neuron_limb(neuron_obj,
-                     seperated_graphs,
+def split_neuron_limb_by_seperated_network(neuron_obj,
+                     seperate_networks,
                      curr_limb_idx,
                      verbose = True):
     """
@@ -523,6 +570,7 @@ def split_neuron_limb(neuron_obj,
     2) Use the concatenated faces idx to obtain the new limb mesh
     3) index the concatenated faces idx into the limb.mesh_face_idx to get the neew limb.mesh_face_idx
     """
+    seperated_graphs = seperate_networks
     new_limb_data = []
     curr_limb = neuron_obj[curr_limb_idx]
 
@@ -602,7 +650,7 @@ def split_neuron_limb(neuron_obj,
 
         limb_to_soma_concept_networks = pre.calculate_limb_concept_networks(limb_corresp_for_networks,
                                                                                         curr_limb_network_stating_info,
-                                                                                        run_concept_network_checks=True,
+                                                                                        run_concept_network_checks=False,
                                                                             verbose=verbose
                                                                                        )   
 
@@ -702,6 +750,7 @@ import networkx_utils as xu
 import trimesh_utils as tu
 import preprocessing_vp2 as pre
 import neuron_visualizations as nviz
+import system_utils as su
 
 def split_neuron_limbs_by_suggestions(neuron_obj,
                                 split_suggestions,
@@ -719,17 +768,25 @@ def split_neuron_limbs_by_suggestions(neuron_obj,
     split_neuron_obj = neuron_obj
     limb_results = split_suggestions
     
-    new_concept_networks = pru.split_suggestions_to_concept_networks(neuron_obj,limb_results)
-
+    #this step is where applies the actual changes to the neuron obj
+    new_concept_networks = pru.split_suggestions_to_concept_networks(neuron_obj,limb_results,
+                                                                    apply_changes_to_limbs=True)
+   
     for curr_limb_idx,curr_limb_nx in new_concept_networks.items():
         curr_limb_idx = int(curr_limb_idx)
+        
+        #delete the node sthat should be deleted
+        removed_branches_list  = pru.get_removed_branches_from_suggestion(limb_results,curr_limb_idx)
+        split_neuron_obj[curr_limb_idx] = pru.remove_branches_from_limb(split_neuron_obj[curr_limb_idx],removed_branches_list)
+        
+        
 
         conn_comp = list(nx.connected_components(curr_limb_nx))
 
         if verbose:
             print(f"\n\n---Working on Splitting Limb {curr_limb_idx} with {len(conn_comp)} components----")
 
-        split_neuron_obj = pru.split_neuron_limb(split_neuron_obj,conn_comp,
+        split_neuron_obj = pru.split_neuron_limb_by_seperated_network(split_neuron_obj,conn_comp,
                              curr_limb_idx = curr_limb_idx,
                                                 verbose=verbose)
         
@@ -842,11 +899,8 @@ def split_disconnected_neuron(neuron_obj,
 
 
         # generating the new limb correspondence:
-        curr_limb_correspondence = dict([(i,neuron_cp.preprocessed_data["limb_correspondence"][k]) for i,k in enumerate(limb_neighbors)])
-
-
-
-
+        #curr_limb_correspondence = dict([(i,neuron_cp.preprocessed_data["limb_correspondence"][k]) for i,k in enumerate(limb_neighbors)])
+        curr_limb_correspondence = dict([(i,neuron_cp[k].limb_correspondence) for i,k in enumerate(limb_neighbors)])
 
 
 
@@ -1014,7 +1068,8 @@ def split_neuron(neuron_obj,
                                 split_suggestions=limb_results,
                                 plot_soma_limb_network=plot_soma_limb_network,
                                 verbose=verbose)
-        
+    
+    
     #2b) Check that all the splits occured
     curr_error_limbs = nru.error_limbs(split_neuron_obj)
 
@@ -1033,6 +1088,7 @@ import numpy_utils as nu
 def remove_branches_from_limb(limb_obj,branch_list,
                              plot_new_limb=False,
                               reassign_mesh=True,
+                              store_placeholder_for_removed_nodes=True,
                              verbose=False):
     """
     Purpose: To remove 1 or more branches from the concept network
@@ -1151,11 +1207,22 @@ def remove_branches_from_limb(limb_obj,branch_list,
         
             
         #2) Remove the current node
-        curr_limb_cp.concept_network.remove_node(curr_short_seg_revised)
+        if not store_placeholder_for_removed_nodes:
+            curr_limb_cp.concept_network.remove_node(curr_short_seg_revised)
+            #update the seg_id_lookup
+            seg_id_lookup = np.insert(seg_id_lookup,curr_short_seg,-1)[:-1]
+            run_concept_network_checks=True
+        else:
+            curr_mesh_center = curr_limb_cp[curr_short_seg_revised].mesh_center
+            center_deviation = 5.2345
+            curr_limb_cp[curr_short_seg_revised].skeleton = np.array([curr_mesh_center,curr_mesh_center+center_deviation]).reshape(-1,2,3)
+            curr_limb_cp[curr_short_seg_revised].calculate_endpoints()
+            run_concept_network_checks = False
+            
 
         limb_to_soma_concept_networks = pre.calculate_limb_concept_networks(curr_limb_cp.limb_correspondence,
                                                                                     curr_limb_cp.network_starting_info,
-                                                                                    run_concept_network_checks=True,
+                                                                                    run_concept_network_checks=False,
                                                                                    )  
 
         curr_limb_cp = neuron.Limb(curr_limb_cp.mesh,
@@ -1165,8 +1232,7 @@ def remove_branches_from_limb(limb_obj,branch_list,
                                  labels=curr_limb_cp.labels,
                                  branch_objects=curr_limb_cp.branch_objects)
         
-        #update the seg_id_lookup
-        seg_id_lookup = np.insert(seg_id_lookup,curr_short_seg,-1)[:-1]
+        
         
         
     

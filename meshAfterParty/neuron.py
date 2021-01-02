@@ -20,6 +20,7 @@ import neuron_searching as ns
 from pykdtree.kdtree import KDTree #to be used for the soma_vertex nullification
 
 import width_utils as wu
+import meshlab
 
 import copy 
 
@@ -218,11 +219,15 @@ class Branch:
     def skeletal_length_eligible(self):
         return sk.calculate_skeleton_distance(self.skeleton) 
     
-    def compute_spines_volume(self):
+    def compute_spines_volume(self,
+              max_hole_size=2000,
+              self_itersect_faces=False):
         if self.spines is None:
             self.spines_volume = None
         else:
-            self.spines_volume = [tu.mesh_volume(sp,verbose=False) for sp in self.spines]
+            with meshlab.FillHoles(max_hole_size=max_hole_size,self_itersect_faces=self_itersect_faces) as fill_hole_obj:
+                self.spines_volume = [tu.mesh_volume(sp,verbose=False,
+                                                     fill_hole_obj=fill_hole_obj) for sp in self.spines]
     
     def __eq__(self,other):
         #print("inside equality function")
@@ -346,8 +351,8 @@ class Limb:
             if st["starting_soma"] not in st_dict.keys():
                 st_dict[soma_idx] = dict()
 
-            st_dict[soma_idx] = {soma_group_idx:dict(touching_verts=st["touching_soma_vertices"],
-                                                    endpoint=st["starting_coordinate"])}
+            st_dict[soma_idx][soma_group_idx] = dict(touching_verts=st["touching_soma_vertices"],
+                                                    endpoint=st["starting_coordinate"])
         return st_dict
     
     @property
@@ -394,7 +399,7 @@ class Limb:
             b.compute_spines_volume()
     
     def get_branch_names(self,ordered=True,return_int=True):
-        node_names = np.sort(self.concept_network.nodes())
+        node_names = np.sort(list(self.concept_network.nodes()))
         if return_int:
             return node_names.astype("int")
         else:
@@ -893,7 +898,7 @@ class Limb:
         b. Pick the top concept graph (will use to store the nodes)
         c. Put the branches as "data" in the network
         """
-        
+        suppress_disconnected_errors=False
         for j,branch_data in curr_limb_correspondence.items():
             if (not branch_objects is None) and j in branch_objects:
                 #print(f"using existing branch object for node {j}")
@@ -912,6 +917,11 @@ class Limb:
                                     labels=[],
                 )
             
+            if j not in self.concept_network:
+                self.concept_network.add_node(j)
+                suppress_disconnected_errors=True
+            
+            
             #Set all  of the branches as data in the nodes
             xu.set_node_data(self.concept_network,
                             node_name=j,
@@ -919,7 +929,8 @@ class Limb:
                              curr_data_label="data"
                             )
             
-        self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True)
+        self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True,
+                                                                            suppress_disconnected_errors=suppress_disconnected_errors)
         
         
         
@@ -952,7 +963,7 @@ class Limb:
             else:
                 print(f"Skipping attributes for Branch {branch_idx} because not in dictionary")
                 
-        
+    
     # Defining some useful built in functions
     def __getitem__(self,key):
         return self.concept_network.nodes[key]["data"]
@@ -1961,6 +1972,8 @@ class Neuron:
             key = f"L{key}"
         return self.concept_network.nodes[key]["data"]
     def __setitem__(self,key,newvalue):
+        if type(key) == int:
+            key = f"L{key}"
         self.concept_network.nodes[key]["data"] = newvalue
     def __len__(self):
         return len(list(self.get_limb_node_names()))

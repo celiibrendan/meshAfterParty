@@ -2667,6 +2667,34 @@ def load_somas(segment_id,main_mesh_total,
     else:
         return []
 
+import meshparty_skeletonize as m_sk
+import time
+def skeletonize_connected_branch_meshparty(mesh,
+                                           segment_size = 100,
+                                           verbose=False,
+                                          ):
+
+    fusion_time = time.time()
+
+    # --------------- Part 3: Meshparty skeletonization and Decomposition ------------- #
+    sk_meshparty_obj = m_sk.skeletonize_mesh_largest_component(mesh,
+                                                            root=None,
+                                                              filter_mesh=False)
+
+    if verbose:
+        print(f"meshparty_segment_size = {meshparty_segment_size}")
+
+
+
+    new_skeleton = m_sk.skeleton_obj_to_branches(sk_meshparty_obj,
+                                                          mesh = mesh,
+                                                          meshparty_segment_size=segment_size,
+                                                          return_skeleton_only=True)
+
+    if verbose:
+        print(f"Time meshparty skeletonization: {time.time() - fusion_time }")
+
+    return new_skeleton
 
 def skeletonize_connected_branch(current_mesh,
                         output_folder="./temp",
@@ -2674,7 +2702,7 @@ def skeletonize_connected_branch(current_mesh,
                         name="None",
                         surface_reconstruction_size=50,
                         surface_reconstruction_width = 250,
-                        poisson_stitch_size = 2000,
+                        poisson_stitch_size = 4000,
                         n_surface_downsampling = 1,
                         n_surface_samples=1000,
                         skeleton_print=False,
@@ -2686,7 +2714,8 @@ def skeletonize_connected_branch(current_mesh,
                         limb_name=None,
                         use_surface_after_CGAL = True,
                         remove_cycles=True,
-                                 connectivity="edges",
+                        connectivity="edges",
+                        verbose=False,
                                  
                         ):
     """
@@ -2702,6 +2731,9 @@ def skeletonize_connected_branch(current_mesh,
     - with some downsampling
     5) Stitch the skeleton 
     """
+    debug = True
+    
+    
     print(f"inside skeletonize_connected_branch and use_surface_after_CGAL={use_surface_after_CGAL}, surface_reconstruction_size={surface_reconstruction_size}")
     #check that the mesh is all one piece
     current_mesh_splits = split_significant_pieces(current_mesh,
@@ -2743,8 +2775,14 @@ def skeletonize_connected_branch(current_mesh,
                                      return_mesh=True,
                                      delete_temp_files=delete_temp_files,
                                     )
+        
         if close_holes: 
             print("Using the close holes feature")
+            
+            new_mesh = tu.fill_holes(new_mesh)
+            """
+            Old Way 
+            
             FillHoles_obj = meshlab.FillHoles(output_folder,overwrite=True)
 
             new_mesh,output_subprocess_obj = FillHoles_obj(   
@@ -2753,6 +2791,8 @@ def skeletonize_connected_branch(current_mesh,
                                                  return_mesh=True,
                                                  delete_temp_files=delete_temp_files,
                                                 )
+            """
+        
         
         print(f"-----Time for Screened Poisson= {time.time()-skeleton_start}")
         
@@ -2761,7 +2801,11 @@ def skeletonize_connected_branch(current_mesh,
         if use_surface_after_CGAL:
             restriction_threshold = surface_reconstruction_size
         else:
+            
             restriction_threshold = poisson_stitch_size
+        if verbose:
+            print(f"restriction_threshold = {restriction_threshold}")
+            
         mesh_pieces = split_significant_pieces(new_mesh,
                                             significance_threshold=restriction_threshold,
                                               connectivity=connectivity)
@@ -2879,8 +2923,6 @@ def skeletonize_connected_branch(current_mesh,
                     
                 leftover_meshes = combine_meshes(leftover_meshes_sig)
             else:
-                print("No recorded skeleton so skipping"
-                     " to surface skeletonization")
 #                 if not use_surface_after_CGAL:
 #                     surf_sk = generate_surface_skeleton(m.vertices,
 #                                                m.faces,
@@ -2888,10 +2930,17 @@ def skeletonize_connected_branch(current_mesh,
 #                                     n_surface_downsampling=n_surface_downsampling )
 #                     return surf_sk
 #                     raise gu.CGAL_skel_error(f"No CGAL skeleton was generated when the {use_surface_after_CGAL} flag was set")
-                    
+                
+                """------------------ 1 / 2 /2021 Addition ------------------------"""
+    
                 print("No recorded skeleton so skipping"
-                     " to surface skeletonization")
-                leftover_meshes_sig = [current_mesh]
+                     " to meshparty skeletonization")
+                
+                return sk.skeletonize_connected_branch_meshparty(current_mesh)
+                
+                #leftover_meshes_sig = [current_mesh]
+            
+            
             if skeleton_print:
                 print(f"len(leftover_meshes_sig) = {leftover_meshes_sig}")
                 for zz,curr_m in enumerate(leftover_meshes_sig):
@@ -4880,7 +4929,8 @@ def move_point_to_nearest_branch_end_point_within_threshold(
 
 def cut_skeleton_at_coordinate(skeleton,
                         cut_coordinate,
-                              tolerance = 0.001 #if have to find cut point that is not already coordinate
+                              tolerance = 0.001, #if have to find cut point that is not already coordinate
+                               verbose=False
                         ):
     """
     Purpose: 
@@ -4925,7 +4975,8 @@ def cut_skeleton_at_coordinate(skeleton,
             if np.abs(AB - AC - CB) < tolerance:
                 winning_edge = [node_a,node_b]
                 winning_edge_coord = [node_a_coord,node_b_coord]
-                print(f"Found winning edge: {winning_edge}")
+                if verbose:
+                    print(f"Found winning edge: {winning_edge}")
                 break
         if winning_edge is None:
             raise Exception("Cut point was neither a matching node nor a coordinate between 2 nodes ")
@@ -5041,6 +5092,7 @@ def add_and_smooth_segment_to_branch(skeleton,
                                 n_resized_cutoff_to_smooth=None,
                                      smooth_width = 100,
                                 max_stitch_distance_for_smoothing=300,
+                                verbose=False,
                                **kwargs,
                               ):
     """
@@ -5063,7 +5115,8 @@ def add_and_smooth_segment_to_branch(skeleton,
         sk_graph_at_beginning = sk.convert_skeleton_to_graph(skeleton)
         match_nodes_to_new_stitch_point = xu.get_nodes_with_attributes_dict(sk_graph_at_beginning,dict(coordinates=new_stitch_point))
         if len(match_nodes_to_new_stitch_point)>0:
-            print("New stitch point was already on the skeleton so don't need to add it")
+            if verbose:
+                print("New stitch point was already on the skeleton so don't need to add it")
             return skeleton
     
     
@@ -5093,7 +5146,8 @@ def add_and_smooth_segment_to_branch(skeleton,
     #1) Get the distance of the stitch point = A
     stitch_distance = np.linalg.norm(stitch_point_MAP-stitch_point_MP)
     if stitch_distance > max_stitch_distance_for_smoothing:
-        print(f"Using max stitch distance ({max_stitch_distance_for_smoothing}) for smoothing because stitch_distance greater ({stitch_distance}) ")
+        if verbose:
+            print(f"Using max stitch distance ({max_stitch_distance_for_smoothing}) for smoothing because stitch_distance greater ({stitch_distance}) ")
         stitch_distance = max_stitch_distance_for_smoothing
     
         

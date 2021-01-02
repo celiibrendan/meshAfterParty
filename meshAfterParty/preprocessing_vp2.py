@@ -1822,8 +1822,34 @@ def preprocess_limb(mesh,
             #3) Find the closest skeletal point on MAP pairing (MAP stitch)
             MAP_skeleton_coords = np.unique(curr_skeleton_MAP_for_stitch.reshape(-1,3),axis=0)
 
-            #this does not guarentee that the MAP branch associated with the MAP stitch point is touching the border group
-            MAP_stitch_point = MAP_skeleton_coords[np.argmin(np.linalg.norm(MAP_skeleton_coords-av_vert,axis=1))]
+            """
+            #------- OLD WAY: this does not guarentee that the MAP branch associated with the MAP stitch point is touching the border group
+            #MAP_stitch_point = MAP_skeleton_coords[np.argmin(np.linalg.norm(MAP_skeleton_coords-av_vert,axis=1))]
+
+            # ------- 1/1/21 Change to make sure never stitches to soma connecting point ----
+            Pseudocode: 
+            1) Get all the closest coordinates and sort in order of distance
+            2) Iterate through the top coordinates:
+            - check if not in the endpoints
+            a. if not --> make that the winning MAP stitch point
+            b. if not --> continue to next
+
+            3) if get to end and dont have winning coordinate then error
+            """
+
+            closest_MAP_coords = MAP_skeleton_coords[np.argsort(np.linalg.norm(MAP_skeleton_coords-av_vert,axis=1))]
+
+            MAP_stitch_point = None
+            for c_map in closest_MAP_coords:
+
+                if len(nu.matching_rows(total_keep_endpoints,c_map))==0:
+                    MAP_stitch_point = c_map
+                    break
+
+
+            if MAP_stitch_point is None:
+                raise Exception('Could not find a MAP_stitch_point that was not a keep_endpoint that was touching the soma')
+
 
             # --------- 11/13: Making so could possibly stitch to another point that was already stitched to
             curr_br_endpts = np.array([sk.find_branch_endpoints(k) for k in MAP_branches_considered]).reshape(-1,3)

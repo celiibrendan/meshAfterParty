@@ -325,6 +325,7 @@ def resolving_crossovers(limb_obj,
                         plot_intermediates=False,
                          offset=1000,
                          comparison_distance = 1000,
+                         best_singular_match=True,
                         **kwargs):
     
     """
@@ -375,7 +376,10 @@ def resolving_crossovers(limb_obj,
     # - if within a threshold then add edge
 
     match_branches = []
+    match_branches_angle = []
+    
     all_aligned_skeletons = []
+    
     for br1_idx in coordinate_branches:
         for br2_idx in coordinate_branches:
             if br1_idx>=br2_idx:
@@ -398,6 +402,7 @@ def resolving_crossovers(limb_obj,
             # - if within a threshold then add edge
             if curr_angle <= match_threshold:
                 match_branches.append([br1_idx,br2_idx])
+                match_branches_angle.append(curr_angle)
                 
             if plot_intermediates:
                 #saving off the aligned skeletons to visualize later
@@ -407,6 +412,33 @@ def resolving_crossovers(limb_obj,
     if verbose: 
         print(f"Final Matches = {match_branches}")
         
+    # -------- 12 / 31 : Will attempt to only keep the best singular match between nodes ------- #
+    """
+    Pseudocode: 
+    0) Create an alredy_matched list
+    1) Get the sorting indexes by match angle
+    2) Iterate through match angle indexes in order:
+    a. if both nodes in edge have not been matched 
+        - add edge to final list
+        - add edge nodes to already_matched list
+    b. else:
+        - skip edge
+    """
+    if best_singular_match:
+        already_matched = []
+        matched_branches_revised = []
+        smallest_to_largest_angles = np.argsort(match_branches_angle)
+        for e_i in smallest_to_largest_angles:
+            curr_edge = match_branches[e_i]
+            
+            if len(np.intersect1d(already_matched,curr_edge))==0:
+                matched_branches_revised.append(curr_edge)
+                already_matched += list(curr_edge)
+        if verbose:
+            print(f"matched_branches_revised = {matched_branches_revised}")
+        match_branches = matched_branches_revised
+        
+    
     if plot_intermediates:
         print("Aligned Skeleton Parts")
         nviz.plot_objects(meshes=[limb_obj[k].mesh for k in coordinate_branches],

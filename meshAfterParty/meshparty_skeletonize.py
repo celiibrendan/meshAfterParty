@@ -879,6 +879,7 @@ def skeleton_obj_to_branches(sk_meshparty_obj,
                              filter_end_nodes = False,
                              filter_end_node_length=4500,
                              combine_close_skeleton_nodes_threshold = 700,
+                             return_skeleton_only=False,
                              
                             ):
     debug = False
@@ -976,30 +977,32 @@ def skeleton_obj_to_branches(sk_meshparty_obj,
 
 
     # -- Step 3: Creating the mesh correspondence --
-    if verbose:
-        print("\nStep 3: Mesh correspondence")
-    meshparty_time = time.time()
+    
+    if not return_skeleton_only:
+        if verbose:
+            print("\nStep 3: Mesh correspondence")
+        meshparty_time = time.time()
 
-    sk_vertices_to_mesh_vertices = gu.invert_mapping(sk_meshparty_obj.mesh_to_skel_map)
-    #getting a list of all the original vertices that belong to each segment
-    segment_mesh_vertices = [np.unique(np.concatenate([sk_vertices_to_mesh_vertices[k] for k in segment_list])) for segment_list in segments]
-    #getting a list of all the original vertices that belong to each segment
-    segment_mesh_faces = [np.unique(limb_mesh_mparty.vertex_faces[k]) for k in segment_mesh_vertices]
-    segment_mesh_faces = [k[k>=0] for k in segment_mesh_faces]
-    
-    # --------------- 10/29: Adding in the part that combines the branch points that are close ----------- #
-    
-    segment_branches_filtered,kept_branches_idx = sk.combine_close_branch_points(
-                                                            skeleton_branches=segment_branches,
-                                            combine_threshold=combine_close_skeleton_nodes_threshold)
-    
-    segment_branches_filtered = np.array(segment_branches_filtered)
-    #print(f"kept_branches_idx = {kept_branches_idx}")
-    print(f"After combining close endpoints max(kept_branches_idx) = {max(kept_branches_idx)}, len(kept_branches_idx) = {len(kept_branches_idx)}")
-    
-    segment_mesh_faces_filtered = [k for i,k in enumerate(segment_mesh_faces) if i in set(kept_branches_idx)]
-    
-    # -------------- 12/27 Do the filtering for end-nodes ---------------------- #
+        sk_vertices_to_mesh_vertices = gu.invert_mapping(sk_meshparty_obj.mesh_to_skel_map)
+        #getting a list of all the original vertices that belong to each segment
+        segment_mesh_vertices = [np.unique(np.concatenate([sk_vertices_to_mesh_vertices[k] for k in segment_list])) for segment_list in segments]
+        #getting a list of all the original vertices that belong to each segment
+        segment_mesh_faces = [np.unique(limb_mesh_mparty.vertex_faces[k]) for k in segment_mesh_vertices]
+        segment_mesh_faces = [k[k>=0] for k in segment_mesh_faces]
+
+        # --------------- 10/29: Adding in the part that combines the branch points that are close ----------- #
+
+        segment_branches_filtered,kept_branches_idx = sk.combine_close_branch_points(
+                                                                skeleton_branches=segment_branches,
+                                                combine_threshold=combine_close_skeleton_nodes_threshold)
+
+        segment_branches_filtered = np.array(segment_branches_filtered)
+        #print(f"kept_branches_idx = {kept_branches_idx}")
+        print(f"After combining close endpoints max(kept_branches_idx) = {max(kept_branches_idx)}, len(kept_branches_idx) = {len(kept_branches_idx)}")
+
+        segment_mesh_faces_filtered = [k for i,k in enumerate(segment_mesh_faces) if i in set(kept_branches_idx)]
+
+        # -------------- 12/27 Do the filtering for end-nodes ---------------------- #
     
     if filter_end_nodes:
         """
@@ -1024,68 +1027,69 @@ def skeleton_obj_to_branches(sk_meshparty_obj,
         #2) Get the mapping from original branches to the cleaned branches
         original_br_mapping = sk.map_between_branches_lists(segment_branches_filtered,cleaned_branches)
 
-        #3) For each of the new cleaned branch:
-        #- get the indexes fo the original branches that it matched to
-        #- build the face list by concatentating those
-        
-        cleaned_branches_faces_filtered = []
-        for j,cl_b in enumerate(cleaned_branches):
-            or_idx = np.where(original_br_mapping==j)[0]
-            cleaned_branches_faces_filtered.append(np.concatenate([segment_mesh_faces_filtered[k] for k in or_idx]))
-            
-        #4) Do the reassignment
-        segment_mesh_faces_filtered = cleaned_branches_faces_filtered
-        segment_branches_filtered = np.array(cleaned_branches)
+        if not return_skeleton_only:
+            #3) For each of the new cleaned branch:
+            #- get the indexes fo the original branches that it matched to
+            #- build the face list by concatentating those
+
+            cleaned_branches_faces_filtered = []
+            for j,cl_b in enumerate(cleaned_branches):
+                or_idx = np.where(original_br_mapping==j)[0]
+                cleaned_branches_faces_filtered.append(np.concatenate([segment_mesh_faces_filtered[k] for k in or_idx]))
+
+            #4) Do the reassignment
+            segment_mesh_faces_filtered = cleaned_branches_faces_filtered
+            segment_branches_filtered = np.array(cleaned_branches)
     
     
     # ------------------ End of filtering for end nodes
     
     
     
+    if not return_skeleton_only:
     
-    
 
-    #face_lookup = gu.invert_mapping(segment_mesh_faces)
-    face_lookup = gu.invert_mapping(segment_mesh_faces_filtered)
+        #face_lookup = gu.invert_mapping(segment_mesh_faces)
+        face_lookup = gu.invert_mapping(segment_mesh_faces_filtered)
 
-    curr_limb_mesh = limb_mesh_mparty
-
-
-    original_labels = set(list(itertools.chain.from_iterable(list(face_lookup.values()))))
-    if verbose:
-        print(f"max(original_labels),len(original_labels) = {(max(original_labels),len(original_labels))}")
-
-    face_coloring_copy = cu.resolve_empty_conflicting_face_labels(curr_limb_mesh = curr_limb_mesh,
-                                                                face_lookup=face_lookup,
-                                                                no_missing_labels = list(original_labels))
+        curr_limb_mesh = limb_mesh_mparty
 
 
-    # -- splitting the mesh pieces into individual pieces
-    divided_submeshes,divided_submeshes_idx = tu.split_mesh_into_face_groups(curr_limb_mesh,face_coloring_copy,
-                                                                            return_dict=False)
+        original_labels = set(list(itertools.chain.from_iterable(list(face_lookup.values()))))
+        if verbose:
+            print(f"max(original_labels),len(original_labels) = {(max(original_labels),len(original_labels))}")
+
+        face_coloring_copy = cu.resolve_empty_conflicting_face_labels(curr_limb_mesh = curr_limb_mesh,
+                                                                    face_lookup=face_lookup,
+                                                                    no_missing_labels = list(original_labels))
 
 
-    if verbose:
-        print(f"Total time for meshParty mesh correspondence = {time.time() - meshparty_time}")
+        # -- splitting the mesh pieces into individual pieces
+        divided_submeshes,divided_submeshes_idx = tu.split_mesh_into_face_groups(curr_limb_mesh,face_coloring_copy,
+                                                                                return_dict=False)
 
-    # -- Step 4: Getting the Widths ---
-    if verbose:
-        print("\nStep 4: Retrieving Widths")
-    meshparty_time = time.time()
 
-    #calculating the widths (need adjustment if did the filtering 12/28)
-    segment_width_measurements = [sk_meshparty_obj.vertex_properties["rs"][k] for k in segments]
-    segment_width_measurements_filterd = [k for i,k in enumerate(segment_width_measurements) if i in set(kept_branches_idx)]
-    
-    if filter_end_nodes:
-        segment_width_measurements_filterd_new = []
-        for j,cl_b in enumerate(cleaned_branches):
-            or_idx = np.where(original_br_mapping==j)[0]
-            segment_width_measurements_filterd_new.append(np.concatenate([segment_width_measurements_filterd[k] for k in or_idx]))
-        segment_width_measurements_filterd = segment_width_measurements_filterd_new
-    
-    
-    segment_widths_median_filtered = np.array([np.median(k) for k in segment_width_measurements_filterd])
+        if verbose:
+            print(f"Total time for meshParty mesh correspondence = {time.time() - meshparty_time}")
+
+        # -- Step 4: Getting the Widths ---
+        if verbose:
+            print("\nStep 4: Retrieving Widths")
+        meshparty_time = time.time()
+
+        #calculating the widths (need adjustment if did the filtering 12/28)
+        segment_width_measurements = [sk_meshparty_obj.vertex_properties["rs"][k] for k in segments]
+        segment_width_measurements_filterd = [k for i,k in enumerate(segment_width_measurements) if i in set(kept_branches_idx)]
+
+        if filter_end_nodes:
+            segment_width_measurements_filterd_new = []
+            for j,cl_b in enumerate(cleaned_branches):
+                or_idx = np.where(original_br_mapping==j)[0]
+                segment_width_measurements_filterd_new.append(np.concatenate([segment_width_measurements_filterd[k] for k in or_idx]))
+            segment_width_measurements_filterd = segment_width_measurements_filterd_new
+
+
+        segment_widths_median_filtered = np.array([np.median(k) for k in segment_width_measurements_filterd])
     
 
     if verbose:
@@ -1098,7 +1102,10 @@ def skeleton_obj_to_branches(sk_meshparty_obj,
 #             divided_submeshes, divided_submeshes_idx, #mesh correspondence (mesh and indices)
 #             segment_widths_median) #widths
 
-    return (segment_branches_filtered, #skeleton branches
-            divided_submeshes, divided_submeshes_idx, #mesh correspondence (mesh and indices)
-            segment_widths_median_filtered) #widths
+    if not return_skeleton_only:
+        return (segment_branches_filtered, #skeleton branches
+                divided_submeshes, divided_submeshes_idx, #mesh correspondence (mesh and indices)
+                segment_widths_median_filtered) #widths
+    else:
+        return sk.stack_skeletons(segment_branches)
     

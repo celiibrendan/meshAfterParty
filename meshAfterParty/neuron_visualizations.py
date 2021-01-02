@@ -1943,4 +1943,24 @@ def plot_limb_correspondence(limb_correspondence,
                      skeletons=skeletons,
                      skeletons_colors=skeleton_colors
                      )
+    
+    
+def plot_limb_path(limb_obj,path):
+    """
+    Purpose: To highlight the nodes on a path
+    with just given a limb object
+    
+    Pseudocode: 
+    1) Get the entire limb mesh will be the main mesh
+    2) Get the meshes corresponding to the path
+    3) Get all of the skeletons
+    4) plot
+    
+    """
+    
+    nviz.plot_objects(main_mesh = limb_obj.mesh,
+                        meshes=[limb_obj[k].mesh for k in path],
+                      meshes_colors="red",
+                     skeletons=[limb_obj[k].skeleton for k in path])
+    
 import neuron_visualizations as nviz
