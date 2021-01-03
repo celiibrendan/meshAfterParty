@@ -223,6 +223,22 @@ def get_graph_node_by_coordinate_old(G,coordinate):
     else:
         return match_nodes[0]
     
+def get_coordinate_by_graph_node(G,node):
+    """
+    Will get the coordinates of node or list of nodes
+    
+    """
+    scalar_flag = False
+    if not nu.is_array_like(node):
+        scalar_flag = True
+        node = [node]
+    coords = xu.get_node_attributes(G,node_list=node)
+    
+    if scalar_flag:
+        return coords[0]
+    else:
+        return coords
+    
 def get_graph_node_by_coordinate(G,coordinate,return_single_value=True,
                                 return_neg_one_if_not_find=False):
     """
@@ -1285,6 +1301,86 @@ def add_new_coordinate_node(G,
     else:
         return G
     
+
+def move_node_from_exclusion_list(G,
+                                  exclusion_list,
+                                 node=None,
+                                 node_coordinate=None,
+                                 return_coordinate=True,
+                                 verbose=False):
+
+    """
+    Purpose: To move a point off of an exclusion list to another node
+
+    Psuedocode: 
+    1) Check if current node is in exclusion, if not then return
+    2) Check if any of the neighbors are in exclusion, if not then return that
+    3) If still havent found, then find the shortest path from stitch node to all non-exclude nodes
+
+    Ex:
+    
+    move_node_from_exclusion_list(
+    G = sk.convert_skeleton_to_graph(ex_skeleton),
+    exclusion_list = np.array([[756852., 948046., 874045.],
+             [756851., 948250., 874012.]]),
+    node = None,
+    node_coordinate = np.array([756851., 948250., 874012.]),
+    return_coordinate = False,
+    verbose = True)
+
+    """
+    exclusion_list = np.array(exclusion_list)
+    if exclusion_list.ndim > 1:
+        exclusion_nodes = np.array([xu.get_graph_node_by_coordinate(G,k,return_neg_one_if_not_find=True) for k in exclusion_list])
+    else:
+        exclusion_nodes = exclusion_list
+
+    if node_coordinate is None and node is None:   
+        raise Exception("both node and node coordinate are none")
+    elif node_coordinate is None:
+        node_coordinate = xu.get_coordinate_by_graph_node(G,node)
+    elif node is None:
+        node = xu.get_graph_node_by_coordinate(G,node_coordinate)
+    else:
+        pass
+
+    #1) Check if current node is in exclusion, if not then return
+    if node not in exclusion_nodes:
+        if verbose:
+            print(f"Original node {node} was not in exlusion list so just returning that")
+        if return_coordinate:
+            return node_coordinate
+        else:
+            return node
+
+
+
+    #2) Check if any of the neighbors are in exclusion, if not then return that
+    node_neighbors = xu.get_neighbors(G,node)
+    viable_neighbors = np.setdiff1d(node_neighbors,exclusion_nodes)
+
+    if len(viable_neighbors) > 0:
+        if verbose:
+            print(f"Found coordinate to move to in viable neighbors: {viable_neighbors[0]}")
+        if return_coordinate:
+            return xu.get_coordinate_by_graph_node(ex_skeleton_graph,viable_neighbors[0])
+        else:
+            return viable_neighbors[0]
+
+    #3) If still havent found, then find the shortest path from stitch node to all non-exclude nodes
+    all_nodes = np.array(list(G.nodes()))
+    viable_nodes = np.setdiff1d(all_nodes,exclusion_nodes)
+
+    path,st_node,winning_node = xu.shortest_path_between_two_sets_of_nodes(G,node_list_1=[node],
+                                               node_list_2=viable_nodes)
+
+    if verbose:
+        print(f"Used the shortest path algorithm to find the winning node: {winning_node}")
+
+    if return_coordinate:
+        return xu.get_coordinate_by_graph_node(G,winning_node)
+    else:
+        return int(winning_node)
     
 import networkx_utils as xu
     

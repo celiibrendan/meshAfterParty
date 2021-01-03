@@ -2671,15 +2671,18 @@ import meshparty_skeletonize as m_sk
 import time
 def skeletonize_connected_branch_meshparty(mesh,
                                            segment_size = 100,
+                                           root = None,
                                            verbose=False,
+                                           **kwargs
                                           ):
 
     fusion_time = time.time()
 
     # --------------- Part 3: Meshparty skeletonization and Decomposition ------------- #
     sk_meshparty_obj = m_sk.skeletonize_mesh_largest_component(mesh,
-                                                            root=None,
-                                                              filter_mesh=False)
+                                                            root=root,
+                                                              filter_mesh=False,
+                                                              **kwargs)
 
     if verbose:
         print(f"meshparty_segment_size = {meshparty_segment_size}")
@@ -2689,7 +2692,8 @@ def skeletonize_connected_branch_meshparty(mesh,
     new_skeleton = m_sk.skeleton_obj_to_branches(sk_meshparty_obj,
                                                           mesh = mesh,
                                                           meshparty_segment_size=segment_size,
-                                                          return_skeleton_only=True)
+                                                          return_skeleton_only=True,
+                                                            **kwargs)
 
     if verbose:
         print(f"Time meshparty skeletonization: {time.time() - fusion_time }")
@@ -4856,6 +4860,10 @@ def move_point_to_nearest_branch_end_point_within_threshold(
     
     """
     
+    #check that an exlucde point is not already included
+    
+    
+    
     curr_skeleton_MAP = skeleton
     MAP_stitch_point = coordinate
 
@@ -4864,6 +4872,15 @@ def move_point_to_nearest_branch_end_point_within_threshold(
     #get the node where the stitching will take place
     node_for_stitch = xu.get_nodes_with_attributes_dict(curr_skeleton_MAP_graph,dict(coordinates=MAP_stitch_point))[0]
     #get all of the endnodes or high degree nodes
+    
+    # -------- 1/2 Make sure that stitch point is not part of the exclude node point, and if so then move it ---------#
+    if not (excluded_node_coordinates is None):
+        possible_node_loc_to_exclude = np.array([xu.get_graph_node_by_coordinate(curr_skeleton_MAP_graph,zz,return_neg_one_if_not_find=True) for zz in excluded_node_coordinates])
+        node_for_stitch=xu.move_node_from_exclusion_list(curr_skeleton_MAP_graph,
+                                        exclusion_list=possible_node_loc_to_exclude,
+                                        node=node_for_stitch,
+                                        return_coordinate=False,
+                                                        )
     
     # ----- 11/13 addition: Use the node locations sent or just use the high degree or end nodes from the graph
     if possible_node_coordinates is None:
@@ -4878,7 +4895,6 @@ def move_point_to_nearest_branch_end_point_within_threshold(
         
     #removing the high degree coordinates that should not be there
     if not (excluded_node_coordinates is None):
-        possible_node_loc_to_exclude = np.array([xu.get_graph_node_by_coordinate(curr_skeleton_MAP_graph,zz,return_neg_one_if_not_find=True) for zz in excluded_node_coordinates])
         possible_node_loc = np.setdiff1d(possible_node_loc,possible_node_loc_to_exclude)
         
 

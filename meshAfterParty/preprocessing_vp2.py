@@ -364,7 +364,8 @@ def attach_floating_pieces_to_limb_correspondence(
         floating_piece_face_threshold = 600,
         max_stitch_distance=8000,
         distance_to_move_point_threshold = 4000,
-        verbose = False):
+        verbose = False,
+        excluded_node_coordinates=[]):
 
     """
     Purpose: To take a limb correspondence and add on the floating pieces
@@ -500,8 +501,8 @@ def attach_floating_pieces_to_limb_correspondence(
                  " --> so ending the floating mesh stitch processs")
             return limb_correspondence_cp
         else:
-
-
+            
+            
             #e) Try and move closest coordinate to an endpoint or high degree node
 
             main_limb_stitch_point,change_status = sk.move_point_to_nearest_branch_end_point_within_threshold(
@@ -509,7 +510,8 @@ def attach_floating_pieces_to_limb_correspondence(
                                                                 coordinate=main_limb_stitch_point,
                                                                 distance_to_move_point_threshold = distance_to_move_point_threshold,
                                                                 verbose=verbose,
-                                                                consider_high_degree_nodes=True
+                                                                consider_high_degree_nodes=True,
+                                                                excluded_node_coordinates=excluded_node_coordinates
 
                                                                 )
             print(f"Status of Main limb stitch point moved = {change_status}")
@@ -1835,8 +1837,6 @@ def preprocess_limb(mesh,
             b. if not --> continue to next
 
             3) if get to end and dont have winning coordinate then error
-            """
-
             closest_MAP_coords = MAP_skeleton_coords[np.argsort(np.linalg.norm(MAP_skeleton_coords-av_vert,axis=1))]
 
             MAP_stitch_point = None
@@ -1850,6 +1850,12 @@ def preprocess_limb(mesh,
             if MAP_stitch_point is None:
                 raise Exception('Could not find a MAP_stitch_point that was not a keep_endpoint that was touching the soma')
 
+            
+            
+            # --------- 1/2/21: this functionality is now taken care of inside move point
+            """
+
+            MAP_stitch_point = MAP_skeleton_coords[np.argmin(np.linalg.norm(MAP_skeleton_coords-av_vert,axis=1))]
 
             # --------- 11/13: Making so could possibly stitch to another point that was already stitched to
             curr_br_endpts = np.array([sk.find_branch_endpoints(k) for k in MAP_branches_considered]).reshape(-1,3)
@@ -3018,6 +3024,17 @@ def preprocess_neuron(
         
     # ---------- Part B: Stitching on floating pieces --------- #
     print("\n\n ----- Working on Stitching ----------")
+    
+#     # --- Get the soma connecting points that don't want to stitch to ---- #
+#     excluded_node_coordinates = []
+#     for limb_idx,limb_start_v in limb_network_stating_info.items():
+#         for soma_idx,soma_v in limb_start_v.items():
+#             for soma_group_idx,group_v in soma_v.items():
+#                 excluded_node_coordinates.append(group_v["endpoint"])
+
+    excluded_node_coordinates = nru.all_soma_connnecting_endpionts_from_starting_info(limb_network_stating_info)
+    
+    
 
     floating_stitching_time = time.time()
     
@@ -3031,7 +3048,8 @@ def preprocess_neuron(
                 floating_piece_face_threshold = 600,
                 max_stitch_distance=8000,
                 distance_to_move_point_threshold = 4000,
-                verbose = False)
+                verbose = False,
+                excluded_node_coordinates = excluded_node_coordinates)
     else:
         limb_correspondence_with_floating_pieces = limb_correspondence
         

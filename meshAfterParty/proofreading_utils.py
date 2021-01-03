@@ -784,7 +784,7 @@ def split_neuron_limbs_by_suggestions(neuron_obj,
     
     """
     
-    split_neuron_obj = neuron_obj
+    split_neuron_obj = copy.deepcopy(neuron_obj)
     limb_results = split_suggestions
     
     #this step is where applies the actual changes to the neuron obj
@@ -983,10 +983,18 @@ def split_disconnected_neuron(neuron_obj,
 
 
 
+        whole_branch_mesh = tu.combine_meshes(np.concatenate([[kv["branch_mesh"] for k,kv in jv.items()] for j,jv in curr_limb_correspondence.items()]))
 
-
-
-
+        
+        floating_indexes = tu.mesh_pieces_connectivity(neuron_obj.mesh,
+                         whole_branch_mesh,
+                        periphery_pieces=neuron_obj.non_soma_touching_meshes,
+                           print_flag=False)
+        
+        local_floating_meshes = list(np.array(neuron_obj.non_soma_touching_meshes)[floating_indexes])
+        
+        print(f"local_floating_meshes = {local_floating_meshes}")
+        whole_mesh  = whole_mesh + local_floating_meshes
 
         #using all of the data to create new preprocessing info
         new_preprocessed_data = preprocessed_data= dict(
@@ -1010,10 +1018,10 @@ def split_disconnected_neuron(neuron_obj,
 
 
                 # the other mesh pieces that will not be included
-                insignificant_limbs=None,
-                not_processed_soma_containing_meshes=None,
-                non_soma_touching_meshes=None,
-                inside_pieces=None,
+                insignificant_limbs=[],
+                not_processed_soma_containing_meshes=[],
+                non_soma_touching_meshes=local_floating_meshes,
+                inside_pieces=[],
 
 
                 )

@@ -2303,6 +2303,7 @@ def mesh_volume_o3d(mesh):
 def is_manifold(mesh):
     mesh_o3d = convert_trimesh_to_o3d(mesh)  
     return mesh_o3d.is_vertex_manifold()
+
 def is_watertight(mesh):
     return mesh.is_watertight
 

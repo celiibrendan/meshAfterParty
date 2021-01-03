@@ -818,7 +818,8 @@ def skeletonize_mesh_largest_component(mesh,
                                     root=None,
                                       verbose=False,
                                       filter_mesh=True, #will filter the mesh for just one connected piece
-                                      invalidation_d=12000,):#was 12000
+                                      invalidation_d=12000,
+                                      **kwargs):#was 12000
     """
     To run the skeletonization on the 
     largest connected component of one mesh
@@ -880,6 +881,7 @@ def skeleton_obj_to_branches(sk_meshparty_obj,
                              filter_end_node_length=4500,
                              combine_close_skeleton_nodes_threshold = 700,
                              return_skeleton_only=False,
+                             **kwargs
                              
                             ):
     debug = False
@@ -992,15 +994,20 @@ def skeleton_obj_to_branches(sk_meshparty_obj,
 
         # --------------- 10/29: Adding in the part that combines the branch points that are close ----------- #
 
-        segment_branches_filtered,kept_branches_idx = sk.combine_close_branch_points(
-                                                                skeleton_branches=segment_branches,
-                                                combine_threshold=combine_close_skeleton_nodes_threshold)
+        if combine_close_skeleton_nodes_threshold > 0:
+            segment_branches_filtered,kept_branches_idx = sk.combine_close_branch_points(
+                                                                    skeleton_branches=segment_branches,
+                                                    combine_threshold=combine_close_skeleton_nodes_threshold)
 
-        segment_branches_filtered = np.array(segment_branches_filtered)
-        #print(f"kept_branches_idx = {kept_branches_idx}")
-        print(f"After combining close endpoints max(kept_branches_idx) = {max(kept_branches_idx)}, len(kept_branches_idx) = {len(kept_branches_idx)}")
+            segment_branches_filtered = np.array(segment_branches_filtered)
+            #print(f"kept_branches_idx = {kept_branches_idx}")
+            print(f"After combining close endpoints max(kept_branches_idx) = {max(kept_branches_idx)}, len(kept_branches_idx) = {len(kept_branches_idx)}")
 
-        segment_mesh_faces_filtered = [k for i,k in enumerate(segment_mesh_faces) if i in set(kept_branches_idx)]
+            segment_mesh_faces_filtered = [k for i,k in enumerate(segment_mesh_faces) if i in set(kept_branches_idx)]
+        else:
+            segment_mesh_faces_filtered = segment_mesh_faces
+            segment_branches_filtered = segment_branches
+            kept_branches_idx = np.arange(len(segment_mesh_faces_filtered))
 
         # -------------- 12/27 Do the filtering for end-nodes ---------------------- #
     

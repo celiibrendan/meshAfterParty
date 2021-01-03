@@ -3128,6 +3128,18 @@ def skeleton_touching_branches(limb_obj,branch_idx,
         return np.concatenate(neighbor_branches_by_endpoint)
     
     
+def all_soma_connnecting_endpionts_from_starting_info(starting_info):
+    all_endpoints = []
+
+    for limb_idx,limb_start_v in starting_info.items():
+        for soma_idx,soma_v in limb_start_v.items():
+            for soma_group_idx,group_v in soma_v.items():
+                all_endpoints.append(group_v["endpoint"])
+
+    all_endpoints = np.unique(np.vstack(all_endpoints).reshape(-1,3),axis=1)
+    return all_endpoints
+    
+    
 import copy
 
     

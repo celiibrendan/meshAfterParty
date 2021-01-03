@@ -225,9 +225,10 @@ class Branch:
         if self.spines is None:
             self.spines_volume = None
         else:
-            with meshlab.FillHoles(max_hole_size=max_hole_size,self_itersect_faces=self_itersect_faces) as fill_hole_obj:
-                self.spines_volume = [tu.mesh_volume(sp,verbose=False,
-                                                     fill_holes_obj=fill_hole_obj) for sp in self.spines]
+            #with meshlab.FillHoles(max_hole_size=max_hole_size,self_itersect_faces=self_itersect_faces) as fill_hole_obj:
+            self.spines_volume = [tu.mesh_volume(sp,verbose=False,
+                                                 #fill_holes_obj=fill_hole_obj
+                                                ) for sp in self.spines]
     
     def __eq__(self,other):
         #print("inside equality function")
