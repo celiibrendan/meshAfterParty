@@ -24,7 +24,7 @@ for p in $(kubectl get pods | grep Terminating | awk '{print $1}'); do kubectl d
 """
 How to clear the external
 
-schema.external['decomposition'].delete(delete_external_files=False)
+schema.external['decomposition'].delete(delete_external_files=True)
 
 """
 decomposition_folder = "decomposition"

@@ -2718,7 +2718,7 @@ def skeletonize_connected_branch(current_mesh,
                         limb_name=None,
                         use_surface_after_CGAL = True,
                         remove_cycles=True,
-                        connectivity="edges",
+                        connectivity="vertices",
                         verbose=False,
                                  
                         ):
@@ -2735,7 +2735,10 @@ def skeletonize_connected_branch(current_mesh,
     - with some downsampling
     5) Stitch the skeleton 
     """
-    debug = True
+    debug = False
+    
+    if debug:
+        print(f"connectivity = {connectivity}")
     
     
     print(f"inside skeletonize_connected_branch and use_surface_after_CGAL={use_surface_after_CGAL}, surface_reconstruction_size={surface_reconstruction_size}")
@@ -2810,9 +2813,10 @@ def skeletonize_connected_branch(current_mesh,
         if verbose:
             print(f"restriction_threshold = {restriction_threshold}")
             
+        #the connectivity her HAS to edges or could send a non-manifold mesh to calcification
         mesh_pieces = split_significant_pieces(new_mesh,
                                             significance_threshold=restriction_threshold,
-                                              connectivity=connectivity)
+                                              connectivity="edges")
         
         if skeleton_print:
             print(f"Signifiant mesh pieces of {surface_reconstruction_size} size "
@@ -2864,7 +2868,9 @@ def skeletonize_connected_branch(current_mesh,
             #collect the skeletons and subtract from the mesh
             
             significant_poisson_skeleton = read_skeleton_edges_coordinates(skeleton_files)
-            
+            if debug:
+                print(f"skeleton_files = {skeleton_files}")
+                print(f"significant_poisson_skeleton = {significant_poisson_skeleton}")
             
             
             if len(significant_poisson_skeleton) > 0:
@@ -4467,7 +4473,8 @@ def skeletonize_and_clean_connected_branch_CGAL(mesh,
     """
     branch = mesh
     clean_time = time.time()
-    current_skeleton = skeletonize_connected_branch(branch,**kwargs)
+    current_skeleton = skeletonize_connected_branch(branch,verbose=verbose,
+                                                    **kwargs)
     
     print("Checking connected components after skeletonize_connected_branch")
     check_skeleton_connected_component(current_skeleton)

@@ -1025,6 +1025,20 @@ def preprocess_limb(mesh,
                                                             connectivity="edges",
                                 main_mesh = limb_mesh_mparty,
                                 print_flag = False)
+        
+        """ 1/3/21s
+        Big Conclusion from debugging: the large mesh pieces themselves (before combining into map pieces)
+        themselves aren't totally connected by edges (can be split)
+
+        - so even if large pieces do have a shared edge and you combine them together,
+        they can still be split by the edges into multiple pieces because the original pieces
+        could be split into multiple pieces
+
+        
+
+        """
+        
+        
         if print_fusion_steps:
             print(f"mesh_large_connectivity: {time.time() - fusion_time }")
             fusion_time = time.time()
