@@ -793,11 +793,17 @@ def filter_limb_correspondence_for_end_nodes(limb_correspondence,
     lc_width_from_skeletons = [v["width_from_skeleton"] for v in limb_correspondence_individual.values()]
 
     #1) Get all of the starting coordinates
-    all_starting_coords = []
+#     all_starting_coords = []
+#     if not starting_info is None:
+#         for soma_idx,soma_v in network_starting_info_revised_cleaned.items():
+#             for soma_group_idx,soma_group_v in soma_v.items():
+#                 all_starting_coords.append(soma_group_v["endpoint"])
+                
     if not starting_info is None:
-        for soma_idx,soma_v in network_starting_info_revised_cleaned.items():
-            for soma_group_idx,soma_group_v in soma_v.items():
-                all_starting_coords.append(soma_group_v["endpoint"])
+        all_starting_coords = nru.all_soma_connnecting_endpionts_from_starting_info(network_starting_info_revised_cleaned,multiple_limbs=False)
+    else:
+        all_starting_coords = []
+                
     
     if error_on_no_starting_coordinates:
         if len(all_starting_coords) == 0:

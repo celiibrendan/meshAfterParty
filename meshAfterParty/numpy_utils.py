@@ -300,6 +300,8 @@ def setdiff1d(arr1,arr2,assume_unique=False,return_indices=True):
     else:
         return arr1[arr_1_indices_sorted]
     
+def setdiff2d(arr1,arr2):
+    return np.array([k for k in arr1 if len(nu.matching_rows(arr2,k))==0])
     
 def divide_into_label_indexes(mapping):
     """
@@ -398,3 +400,6 @@ def intersecting_array_components(arrays,sort_components=True,verbose=False,perf
 
 def array_split(array,n_groups):
     return np.array_split(array,n_groups)
+
+
+import numpy_utils as nu

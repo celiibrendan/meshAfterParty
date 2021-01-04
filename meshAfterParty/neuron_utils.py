@@ -3141,7 +3141,7 @@ def all_soma_connnecting_endpionts_from_starting_info(starting_info,multiple_lim
                 all_endpoints.append(group_v["endpoint"])
         
 
-    all_endpoints = np.unique(np.vstack(all_endpoints).reshape(-1,3),axis=1)
+    all_endpoints = np.unique(np.vstack(all_endpoints),axis=0)
     return all_endpoints
     
     

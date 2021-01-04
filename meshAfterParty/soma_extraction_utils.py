@@ -591,15 +591,16 @@ def original_mesh_soma(
     return soma_meshes_new
     
 import system_utils as su
+import numpy as np
 def extract_soma_center(segment_id,
                             current_mesh_verts,
                             current_mesh_faces,
 
                             outer_decimation_ratio= 0.25,
                             large_mesh_threshold = 20000,#60000,
-                            large_mesh_threshold_inner = 20000,
+                            large_mesh_threshold_inner = 13000, #was changed so dont filter away som somas
                             soma_width_threshold = 0.32,
-                            soma_size_threshold = 15000,
+                            soma_size_threshold = 9000, #changed this to smaller so didn't filter some somas away
                             inner_decimation_ratio = 0.25,
                             volume_mulitplier=8,
                             #side_length_ratio_threshold=3
@@ -624,7 +625,8 @@ def extract_soma_center(segment_id,
                             segmentation_at_end=True,
                             last_size_threshold = 2000,#1300,
                         
-                            largest_hole_threshold = 17000
+                            largest_hole_threshold = 17000,
+                            max_fail_loops = np.inf,
                             ):
 
     global_start_time = time.time()
@@ -873,16 +875,16 @@ def extract_soma_center(segment_id,
             total_soma_list += to_add_list
 
             # --------------- KEEP TRACK IF FAILED TO FIND SOMA (IF TOO MANY FAILS THEN BREAK)
-            if n_failed_inner_soma_loops >= 2:
-                print("breaking inner loop because 2 soma fails in a row")
+            if n_failed_inner_soma_loops >= max_fail_loops:
+                print(f"breaking inner loop because {max_fail_loops} soma fails in a row")
                 break
 
 
         # --------------- KEEP TRACK IF FAILED TO FIND SOMA (IF TOO MANY FAILS THEN BREAK)
         if somas_found_in_big_loop == False:
             no_somas_found_in_big_loop += 1
-            if no_somas_found_in_big_loop >= 2:
-                print("breaking because 2 fails in a row in big loop")
+            if no_somas_found_in_big_loop >= max_fail_loops:
+                print(f"breaking because {max_fail_loops} fails in a row in big loop")
                 break
 
         else:

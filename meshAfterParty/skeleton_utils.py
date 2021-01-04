@@ -4880,6 +4880,8 @@ def move_point_to_nearest_branch_end_point_within_threshold(
     node_for_stitch = xu.get_nodes_with_attributes_dict(curr_skeleton_MAP_graph,dict(coordinates=MAP_stitch_point))[0]
     #get all of the endnodes or high degree nodes
     
+    if verbose:
+        print(f"node_for_stitch = {node_for_stitch}: {xu.get_coordinate_by_graph_node(curr_skeleton_MAP_graph,node_for_stitch)}")
     # -------- 1/2 Make sure that stitch point is not part of the exclude node point, and if so then move it ---------#
     if not (excluded_node_coordinates is None):
         possible_node_loc_to_exclude = np.array([xu.get_graph_node_by_coordinate(curr_skeleton_MAP_graph,zz,return_neg_one_if_not_find=True) for zz in excluded_node_coordinates])
@@ -4888,6 +4890,10 @@ def move_point_to_nearest_branch_end_point_within_threshold(
                                         node=node_for_stitch,
                                         return_coordinate=False,
                                                         )
+        # --- 1/4 addition that helped debug where the stitch point was being connected to an exclude node -- #
+        MAP_stitch_point = xu.get_coordinate_by_graph_node(curr_skeleton_MAP_graph,node_for_stitch)
+    if verbose:
+        print(f"node_for_stitch AFTER = {node_for_stitch}: {xu.get_coordinate_by_graph_node(curr_skeleton_MAP_graph,node_for_stitch)}")
     
     # ----- 11/13 addition: Use the node locations sent or just use the high degree or end nodes from the graph
     if possible_node_coordinates is None:
@@ -4899,26 +4905,31 @@ def move_point_to_nearest_branch_end_point_within_threshold(
         possible_node_loc = np.array(curr_MAP_end_nodes + curr_MAP_branch_nodes)
     else:
         possible_node_loc = np.array([xu.get_graph_node_by_coordinate(curr_skeleton_MAP_graph,zz) for zz in possible_node_coordinates])
-        
+    
+    if verbose:
+        print(f"possible_node_loc = {possible_node_loc}")
     #removing the high degree coordinates that should not be there
+    
     if not (excluded_node_coordinates is None):
         possible_node_loc = np.setdiff1d(possible_node_loc,possible_node_loc_to_exclude)
         
-
+    if verbose:
+        print(f"possible_node_loc AFTER = {possible_node_loc}")
+    
     #get the distance along the skeleton from the stitch point to all of the end or branch nodes
     curr_shortest_path,end_node_1,end_node_2 = xu.shortest_path_between_two_sets_of_nodes(curr_skeleton_MAP_graph,
                                                                 node_list_1=[node_for_stitch],
                                                                 node_list_2=possible_node_loc)
 
-#     if verbose:
-#         print(f"curr_shortest_path = {curr_shortest_path}")
+    if verbose:
+        print(f"curr_shortest_path = {curr_shortest_path}")
 
         
     changed_node = False
     if len(curr_shortest_path) == 1:
         if verbose:
              print(f"Current stitch point was a branch or endpoint")
-        MAP_stitch_point_new = coordinate
+        MAP_stitch_point_new = MAP_stitch_point
     else:
         
         #get the length of the path
@@ -4938,7 +4949,7 @@ def move_point_to_nearest_branch_end_point_within_threshold(
             MAP_stitch_point_new = end_node_2
             changed_node=True
         else:
-            MAP_stitch_point_new = coordinate
+            MAP_stitch_point_new = MAP_stitch_point
     
     if return_coordinate and changed_node:
         MAP_stitch_point_new = xu.get_node_attributes(curr_skeleton_MAP_graph,node_list=MAP_stitch_point_new)[0]
