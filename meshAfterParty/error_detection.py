@@ -352,6 +352,8 @@ def resolving_crossovers(limb_obj,
 
     """
     
+    
+    
     #1) Get all the branches that correspond to the coordinate
     sk_branches = [br.skeleton for br in limb_obj]
 
@@ -366,10 +368,12 @@ def resolving_crossovers(limb_obj,
     
     
     if plot_intermediates:
+        
         nviz.plot_objects(meshes=[limb_obj[k].mesh for k in coordinate_branches],
                          meshes_colors=curr_colors,
                          skeletons=[limb_obj[k].skeleton for k in coordinate_branches],
                          skeletons_colors=curr_colors)
+    
     
     # 2) For each branch
     # - get the boundary cosine angle between the other branches
@@ -411,6 +415,8 @@ def resolving_crossovers(limb_obj,
     
     if verbose: 
         print(f"Final Matches = {match_branches}")
+        
+    
         
     # -------- 12 / 31 : Will attempt to only keep the best singular match between nodes ------- #
     """
@@ -500,6 +506,9 @@ def resolving_crossovers(limb_obj,
             print(f"n_components in adjusted graph = {nx.number_connected_components(graph_copy)}")
         return_value.append(graph_copy)
         
+        
+        
+    
     return return_value
 
 

@@ -777,7 +777,9 @@ def filter_limb_correspondence_for_end_nodes(limb_correspondence,
                                              filter_end_node_length=4500,
                                              error_on_no_starting_coordinates = True,
                                              plot_new_correspondence = False,
-                                            verbose = True
+                                             error_on_starting_coordinates_not_endnodes = True,
+                                            verbose = True,
+                                             
                                              
                                             ):
     """
@@ -811,7 +813,7 @@ def filter_limb_correspondence_for_end_nodes(limb_correspondence,
 #                 all_starting_coords.append(soma_group_v["endpoint"])
                 
     if not starting_info is None:
-        all_starting_coords = nru.all_soma_connnecting_endpionts_from_starting_info(network_starting_info_revised_cleaned,multiple_limbs=False)
+        all_starting_coords = nru.all_soma_connnecting_endpionts_from_starting_info(network_starting_info_revised_cleaned)
     else:
         all_starting_coords = []
                 
@@ -820,7 +822,8 @@ def filter_limb_correspondence_for_end_nodes(limb_correspondence,
         if len(all_starting_coords) == 0:
             raise Exception(f"No starting coordinates found: network_starting_info_revised_cleaned = {network_starting_info_revised_cleaned} ")
 
-
+    # ---------- 1/5/2021: Will check all starting points as end nodes and if not all degree 1 then error --------#
+    
 
     #2) Assemble the entire skeleton and run the skeleton cleaning process
     curr_limb_sk_cleaned,rem_branches = sk.clean_skeleton(sk.stack_skeletons(lc_skeletons),
@@ -829,7 +832,8 @@ def filter_limb_correspondence_for_end_nodes(limb_correspondence,
                         endpoints_must_keep=all_starting_coords,
                          return_skeleton=True,
                          print_flag=False,
-                        return_removed_skeletons=True)
+                        return_removed_skeletons=True,
+                        error_if_endpoints_must_keep_not_endnode=error_on_starting_coordinates_not_endnodes)
 
     if verbose:
         print(f"Removed {len(rem_branches)} skeletal branches")
@@ -957,7 +961,9 @@ def preprocess_limb(mesh,
                     
                     check_correspondence_branches = True,
                     filter_end_nodes_from_correspondence=True,
-                    error_on_no_starting_coordinates=True
+                    error_on_no_starting_coordinates=True,
+                    
+                    prevent_MP_starter_branch_stitches = False, #will control if a MP soma extending branch is able to be stitched to
                     
                    ):
     #print(f"error_on_no_starting_coordinates = {error_on_no_starting_coordinates}")
@@ -1970,6 +1976,10 @@ def preprocess_limb(mesh,
             curr_MP_branch_skeletons = [limb_correspondence_MP[MP_idx][k]["branch_skeleton"] for k in sk_conn]
             endpoint_nodes_coordinates = np.array([sk.find_branch_endpoints(k) for k in curr_MP_branch_skeletons])
             endpoint_nodes_coordinates = np.unique(endpoint_nodes_coordinates.reshape(-1,3),axis=0)
+            
+            """ ---------- 1 /5: Take out the possible endpoints --------------------"""
+            if prevent_MP_starter_branch_stitches:
+                endpoint_nodes_coordinates = nu.setdiff2d(endpoint_nodes_coordinates,total_keep_endpoints)
 
 
             #2) Find the closest endpoint vertex to the vertex connection group (this is MP stitch point)
@@ -2458,12 +2468,12 @@ def preprocess_limb(mesh,
     --> error if none
     ii) Get all of the endpoints of all matching branches
     iii) Filter the endpoints to only those that are degree 1 in the overall skeleton
-    --> if none then just keep all endpoints
+    --> if none then just keep all endpoints (AND THIS WILL CAUSE AN ERROR)
     iv) Find the closest viable endpoint to the mean of the boundary group
     v) save the overlap vertices and the winning endpoint as a dictionary
 
     """
-
+    
     sorted_keys = np.sort(list(limb_correspondence_individual.keys()))
     curr_branches = [limb_correspondence_individual[k]["branch_skeleton"] for k in sorted_keys]
     curr_meshes = [limb_correspondence_individual[k]["branch_mesh"] for k in sorted_keys]
@@ -2577,7 +2587,8 @@ def preprocess_limb(mesh,
                                                      mesh=limb_mesh_mparty,
                                                      starting_info=network_starting_info_revised_cleaned,
                                                     filter_end_node_length=filter_end_node_length,
-                                                    error_on_no_starting_coordinates=error_on_no_starting_coordinates
+                                                    error_on_no_starting_coordinates=error_on_no_starting_coordinates,
+                                                    error_on_starting_coordinates_not_endnodes= prevent_MP_starter_branch_stitches
 
                                                     )
 

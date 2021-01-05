@@ -3190,14 +3190,14 @@ def skeleton_touching_branches(limb_obj,branch_idx,
         return np.concatenate(neighbor_branches_by_endpoint)
     
     
-def all_soma_connnecting_endpionts_from_starting_info(starting_info,multiple_limbs=True):
+def all_soma_connnecting_endpionts_from_starting_info(starting_info):
     all_endpoints = []
-    if multiple_limbs:
+    try:
         for limb_idx,limb_start_v in starting_info.items():
             for soma_idx,soma_v in limb_start_v.items():
                 for soma_group_idx,group_v in soma_v.items():
                     all_endpoints.append(group_v["endpoint"])
-    else:
+    except:
         for soma_idx,soma_v in starting_info.items():
             for soma_group_idx,group_v in soma_v.items():
                 all_endpoints.append(group_v["endpoint"])

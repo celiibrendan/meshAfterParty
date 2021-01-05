@@ -799,6 +799,8 @@ class Limb:
                                                                        verbose=True)
         self.concept_network.remove_edges_from(list(self.concept_network.edges()))
         self.concept_network.add_edges_from(list(new_concept_network.edges()))
+        self.concept_network.remove_edges_from(self.deleted_edges)
+        self.concept_network.remove_edges_from(self.created_edges)
         
         
     def __init__(self,
@@ -808,6 +810,8 @@ class Limb:
                              mesh_face_idx=None,
                             labels=[],
                              branch_objects = dict(),#this will have a dictionary mapping to the branch objects if provided
+                             deleted_edges = [],
+                             created_edges = [],
                             verbose=False):
         
         
@@ -846,16 +850,17 @@ class Limb:
             
             
             
-            if hasattr(mesh,"current_touching_soma_vertices"):
-                self.current_touching_soma_vertices = dc(mesh.current_touching_soma_vertices)
-            else:
-                self.current_touching_soma_vertices = None
+            attributes_to_set = dict(current_touching_soma_vertices=None,
+                                current_soma_group_idx = None,
+                                deleted_edges = [],
+                                created_edges = [])
             
-            if hasattr(mesh,"current_soma_group_idx"):
-                self.current_soma_group_idx = dc(mesh.current_soma_group_idx)
-            else:
-                self.current_soma_group_idx = None
-            
+            for attr,attr_v in attributes_to_set.items():
+                if hasattr(mesh,attr):
+                    setattr(self,attr,dc(getattr(mesh,attr)))
+                else:
+                    setattr(self,attr,attr_v)
+
             self.current_starting_soma = dc(mesh.current_starting_soma)
             self.labels = dc(mesh.labels)
             if not nu.is_array_like(self.labels):
@@ -957,9 +962,14 @@ class Limb:
                              curr_data_label="data"
                             )
             
+        #Setting the concept network
+        self.deleted_edges =deleted_edges
+        self.created_edges = created_edges
         self.set_concept_network_edges_from_current_starting_data()
         self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True,
                                                                             suppress_disconnected_errors=suppress_disconnected_errors)
+        
+        
         
     # ----------------- 9/2 To help with compression ------------------------- #
     def get_attribute_dict(self,attribute_name):

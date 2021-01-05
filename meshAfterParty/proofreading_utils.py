@@ -68,6 +68,7 @@ def get_best_cut_edge(curr_limb,
     4) Record the cuts that will be made
     5) Make the alterations to the graph (can be adding and creating edges)
     """
+    print("\n --------- START OF GET BEST EDGE --------- ")
     removed_branches=[]
     
     if (not remove_segment_threshold is None) and (remove_segment_threshold > 0):
@@ -361,6 +362,8 @@ def cut_limb_network_by_edges(curr_limb,
             print(f"edges_to_delete = {edges_to_delete}")
         curr_limb.concept_network.remove_edges_from(edges_to_delete)
         
+        curr_limb.deleted_edges += edges_to_delete
+        
     #apply the winning cut
     accepted_edges_to_create = []
     if not edges_to_create is None:
@@ -385,6 +388,12 @@ def cut_limb_network_by_edges(curr_limb,
                 if verbose:
                     print(f"Accepted edge ({n1,n2})")
                 accepted_edges_to_create.append([n1,n2])
+                
+                
+        #add them to the properties
+        curr_limb.created_edges += accepted_edges_to_create
+    
+    
     if return_accepted_edges_to_create:
         return curr_limb,accepted_edges_to_create
     

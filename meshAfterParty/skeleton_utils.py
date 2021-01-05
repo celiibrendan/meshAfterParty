@@ -1654,7 +1654,8 @@ def clean_skeleton(G,
                   return_skeleton=True,
                    endpoints_must_keep = None, #must be the same size as soma_border_vertices
                   print_flag=False,
-                  return_removed_skeletons=False):
+                  return_removed_skeletons=False,
+                  error_if_endpoints_must_keep_not_endnode=True):
     """
     Example of how to use: 
     
@@ -1773,11 +1774,14 @@ def clean_skeleton(G,
                 end_node_idx = end_node_idx[0]
                 try:
                     end_node_must_keep_idx = np.where(end_nodes==end_node_idx)[0][0]
-                    
                 except:
-                    print(f"end_nodes = {end_nodes}")
-                    print(f"end_node_idx = {end_node_idx}")
-                    raise Exception("Something went wrong when trying to find end nodes")
+                    if error_if_endpoints_must_keep_not_endnode:
+                        print(f"end_nodes = {end_nodes}")
+                        print(f"end_node_idx = {end_node_idx}")
+                        raise Exception("Something went wrong when trying to find end nodes")
+                    else:
+                        print(f"end_nodes = {end_nodes} wasn't endnode but continuing anyway")
+                        continue
                 all_single_nodes_to_eliminate.append(end_node_must_keep_idx)
             else:
                 raise Exception("Passed end node to keep that wasn't in the graph")
