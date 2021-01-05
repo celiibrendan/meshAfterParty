@@ -2355,6 +2355,7 @@ def remove_mesh_interior(mesh,
                          return_removed_pieces=False,
                          connectivity="vertices",
                          try_hole_close=True,
+                         return_face_indices=False,
                          **kwargs):
     """
     Will remove interior faces of a mesh with a certain significant size
@@ -2373,13 +2374,22 @@ def remove_mesh_interior(mesh,
             print(f"No significant ({size_threshold_to_remove}) interior meshes present")
             if len(meshes_sizes)>0:
                 print(f"largest is {(np.max(meshes_sizes))}")
-        return_mesh= mesh
+        if return_face_indices:
+            return_mesh = np.arange(len(mesh.faces))
+        else:
+            return_mesh= mesh
     else:
         if verbose:
             print(f"Removing the following inside neurons: {sig_inside}")
-        return_mesh= subtract_mesh(mesh,sig_inside)
         
-
+        if return_face_indices:
+            return_mesh= subtract_mesh(mesh,sig_inside,
+                    return_mesh=False
+                   )
+        else:
+            return_mesh= subtract_mesh(mesh,sig_inside)
+        
+        
     if return_removed_pieces:
         # --- 11/15: Need to only return inside pieces that are mapped to the original face ---
         sig_inside_remapped = [tu.original_mesh_faces_map(mesh,jj,

@@ -10,6 +10,7 @@ from importlib import reload
 def plot_soma_limb_concept_network(neuron_obj,
                                   soma_color="red",
                                   limb_color="aqua",
+                                   multi_touch_color = "brown",
                                   node_size=500,
                                   font_color="black",
                                   node_colors=dict(),
@@ -29,6 +30,7 @@ def plot_soma_limb_concept_network(neuron_obj,
     """
 
     node_list = xu.get_node_list(neuron_obj.concept_network)
+    multi_touch_nodes = neuron_obj.same_soma_multi_touching_limbs
     node_list_colors = []
     for n in node_list:
         if n in list(node_colors.keys()):
@@ -37,7 +39,10 @@ def plot_soma_limb_concept_network(neuron_obj,
             if "S" in n:
                 curr_color = soma_color
             else:
-                curr_color = limb_color
+                if int(n[1:]) in multi_touch_nodes:
+                    curr_color = multi_touch_color
+                else:
+                    curr_color = limb_color
         node_list_colors.append(curr_color)
     
     #print(f"font_color = {font_color}")
@@ -1916,17 +1921,18 @@ def visualize_neuron_path(neuron_obj,
                              scatter_size=scatter_size,
                              )
 
-def limb_correspondence_plottable(limb_correspondence):
+def limb_correspondence_plottable(limb_correspondence,mesh_name="branch_mesh"):
     """
     Extracts the meshes and skeleton parts from limb correspondence so can be plotted
     
     """
-    if list(limb_correspondence[0].keys())[0] == 0:
+    keys = list(limb_correspondence.keys())
+    if list(limb_correspondence[keys[0]].keys())[0] == 0:
         # then we have a limb correspondence with multiple objects
-        meshes=gu.combine_list_of_lists([[k["branch_mesh"] for k in ki.values()] for ki in limb_correspondence.values()])
+        meshes=gu.combine_list_of_lists([[k[mesh_name] for k in ki.values()] for ki in limb_correspondence.values()])
         skeletons=gu.combine_list_of_lists([[k["branch_skeleton"] for k in ki.values()] for ki in limb_correspondence.values()])
     else:
-        meshes=[k["branch_mesh"] for k in limb_correspondence.values()]
+        meshes=[k[mesh_name] for k in limb_correspondence.values()]
         skeletons=[k["branch_skeleton"] for k in limb_correspondence.values()]
     
     return meshes,skeletons
@@ -1934,14 +1940,21 @@ def limb_correspondence_plottable(limb_correspondence):
 import general_utils as gu
 def plot_limb_correspondence(limb_correspondence,
                             meshes_colors="random",
-                            skeleton_colors="random"):
-    meshes,skeletons = limb_correspondence_plottable(limb_correspondence)
+                            skeleton_colors="random",
+                            mesh_name="branch_mesh",
+                            scatters=[],
+                            scatter_size=0.3,
+                            **kwargs):
+    meshes,skeletons = limb_correspondence_plottable(limb_correspondence,mesh_name=mesh_name)
         
     nviz.plot_objects(
                       meshes=meshes,
                      meshes_colors=meshes_colors,
                      skeletons=skeletons,
-                     skeletons_colors=skeleton_colors
+                     skeletons_colors=skeleton_colors,
+        scatters=scatters,
+        scatter_size = scatter_size,
+        **kwargs
                      )
     
     

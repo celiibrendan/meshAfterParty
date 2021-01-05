@@ -377,6 +377,11 @@ class Limb:
         return limb_corr
     
     @property
+    def divided_skeletons(self):
+        curr_corr = self.limb_correspondence
+        return np.array([curr_corr[k]["branch_skeleton"] for k in np.sort(list(curr_corr.keys()))])
+        
+    @property
     def spines(self):
         self._index = -1
         total_spines = []
@@ -634,6 +639,9 @@ class Limb:
             
         if print_flag:
             print(f"node_widths= {node_widths}")
+            
+            
+        
         directional_concept_network = nru.convert_concept_network_to_directional(
             curr_limb_concept_network,
             node_widths=node_widths,                                                    
@@ -762,6 +770,15 @@ class Limb:
         self.current_touching_soma_vertices = matching_concept_network_dict["touching_soma_vertices"]
         self.current_soma_group_idx = matching_concept_network_dict["soma_group_idx"]
         
+        """
+        --- 1/4/2021 Change: Making so redoes the edges of the concept network when resetting the source
+        
+        
+        """
+        #Now need to reset the edges according to the new starting info
+        self.set_concept_network_edges_from_current_starting_data()
+
+        
         if print_flag:
             self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True,print_flag=print_flag,
                                                                                            suppress_disconnected_errors=suppress_disconnected_errors,
@@ -773,7 +790,17 @@ class Limb:
                                                                                                **kwargs)
         
         
-    
+    def set_concept_network_edges_from_current_starting_data(self):
+        new_concept_network = nru.branches_to_concept_network(curr_branch_skeletons= self.divided_skeletons,
+                                                                  starting_coordinate=self.current_starting_coordinate,
+                                                                  starting_edge=self.current_starting_endpoints,
+                                                                  touching_soma_vertices=self.current_touching_soma_vertices,
+                                                                       soma_group_idx=self.current_soma_group_idx,
+                                                                       verbose=True)
+        self.concept_network.remove_edges_from(list(self.concept_network.edges()))
+        self.concept_network.add_edges_from(list(new_concept_network.edges()))
+        
+        
     def __init__(self,
                              mesh,
                              curr_limb_correspondence=None,
@@ -930,10 +957,9 @@ class Limb:
                              curr_data_label="data"
                             )
             
+        self.set_concept_network_edges_from_current_starting_data()
         self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True,
                                                                             suppress_disconnected_errors=suppress_disconnected_errors)
-        
-        
         
     # ----------------- 9/2 To help with compression ------------------------- #
     def get_attribute_dict(self,attribute_name):

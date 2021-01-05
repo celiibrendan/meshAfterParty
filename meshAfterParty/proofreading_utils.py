@@ -433,7 +433,7 @@ def multi_soma_split_suggestions(neuron_obj,
         3) Get the shortest path between each combination of starting nodes
 
         """
-        max_iterations = 100
+        max_iterations = 10
 
         #2) Get all of the starting nodes for somas
         all_starting_nodes = [k["starting_node"] for k in curr_limb_copy.all_concept_network_data]
@@ -464,11 +464,12 @@ def multi_soma_split_suggestions(neuron_obj,
 
             counter = 0
             success = False
+            
             while True:
                 if verbose:
                     print(f" Cut iteration {counter}")
                 try:
-
+                    curr_limb_copy.set_concept_network_directional(starting_node=st_n_1)
                     soma_to_soma_path = np.array(nx.shortest_path(curr_limb_copy.concept_network,st_n_1,st_n_2))
                 except:
                     if verbose:
@@ -480,6 +481,7 @@ def multi_soma_split_suggestions(neuron_obj,
                     print(f"Shortest path = {list(soma_to_soma_path)}")
 
                 # say we found the cut node to make
+                
                 cut_edges, added_edges, curr_limb_copy,removed_branches = pru.get_best_cut_edge(curr_limb_copy,soma_to_soma_path,
                                                                 remove_segment_threshold=remove_segment_threshold,
                                                                                verbose=verbose,
@@ -499,11 +501,12 @@ def multi_soma_split_suggestions(neuron_obj,
                 if len(removed_branches)>0:
                     total_removed_branches += removed_branches
                 
-                
+                print(f"-----------counter = {counter}------------")
                 counter += 1
 
                 if counter > max_iterations:
                     print(f"Breaking because hit max iterations {max_iterations}")
+                    break
 
             local_results["edges_to_delete"] = total_soma_paths_to_cut
             local_results["edges_to_create"] = total_soma_paths_to_add

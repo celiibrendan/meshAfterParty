@@ -429,6 +429,7 @@ def get_skeletal_distance(main_mesh,edges,
     
     
     """
+    
     #print(f"INSIDE GET SKELETAL DISTANCE distance_by_mesh_center = {distance_by_mesh_center}")
     debug=False
 
@@ -822,6 +823,8 @@ def get_skeletal_distance(main_mesh,edges,
                 print("In fast_mesh_split")
                 c_time = time.time()
                 
+            
+                
             conn_face_components = nu.intersecting_array_components(face_subtract_indices,sort_components=True)
             conn_comps_lenghts = np.array([len(k) for k in conn_face_components])
             max_len_components_idx = np.where(conn_comps_lenghts == np.max(conn_comps_lenghts))[0]
@@ -842,7 +845,9 @@ def get_skeletal_distance(main_mesh,edges,
             
             #3) Get a submesh of that
             new_submesh = main_mesh.submesh([unique_removed_faces_pre],only_watertight=False,append=True)
+            
             split_meshes,components_faces = tu.split(new_submesh,return_components=True,connectivity=connectivity)
+            
             
             if debug:
                 print(f"split_meshes (connectivity = {connectivity}) = {time.time() - c_time}")
@@ -904,6 +909,9 @@ def mesh_correspondence_adaptive_distance(curr_branch_skeleton,
         stitch_patches= stitch_patches,
         connectivity=connectivity
     )
+    
+    
+    
     
     
     if debug:

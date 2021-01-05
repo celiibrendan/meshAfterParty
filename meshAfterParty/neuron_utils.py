@@ -2578,56 +2578,38 @@ def spine_volume_per_branch_eligible(neuron_obj):
 
 import copy
 import numpy as np
-def branch_boundary_transition(curr_limb,
-                              edge,
+
+def align_and_restrict_branch(base_branch,
+                              common_endpoint=None,
                               width_name= "no_spine_median_mesh_center",
-                              offset=500,
-                              comparison_distance=2000,
-                              skeleton_segment_size=1000,
-                              return_skeletons=True,
-                              verbose=False):
-    """
-    Purpose: Will find the boundary skeletons and width average at the boundary
-    with some specified boundary skeletal length (with an optional offset)
-
-
-    """
-
-    base_node = edge[-1]
-    upstream_node= edge[0]
-    upstream_node_original = upstream_node
-
-    base_branch = curr_limb[base_node]
-    upstream_branch = curr_limb[upstream_node]
-
-
-    # 0) make sure the two nodes are connected in the concept network
-    if base_node not in xu.get_neighbors(curr_limb.concept_network,upstream_node):
-        raise Exception(f"base_node ({base_node}) and upstream_node ({upstream_node}) are not connected in the concept network")
-
-    # ----- Part 1: Do the processing on the base node -------------- #
-    common_endpoint = sk.shared_endpoint(base_branch.skeleton,upstream_branch.skeleton)
-    if verbose:
-        print(f"common_endpoint = {common_endpoint}")
+                             offset=500,
+                             comparison_distance=2000,
+                             skeleton_segment_size=1000,
+                              verbose=False,
+                             ):
     
+
     #Now just need to do the resizing (and so the widths calculated will match this)
     base_skeleton_ordered = sk.resize_skeleton_branch(base_branch.skeleton,skeleton_segment_size)
 
-    #figure out if need to flip or not:
-    if np.array_equal(common_endpoint,base_skeleton_ordered[-1][-1]):
-        
-        base_width_ordered = np.flip(base_branch.width_array[width_name])
-        base_skeleton_ordered = sk.flip_skeleton(base_skeleton_ordered)
-        flip_flag = True
-        if verbose:
-            print("Base needs flipping")
-            print(f"Skeleton after flip = {base_skeleton_ordered}")
-    elif np.array_equal(common_endpoint,base_skeleton_ordered[0][0]):
-        base_width_ordered = base_branch.width_array[width_name]
-        flip_flag = False
-    else:
-        raise Exception("No matching endpoint")
+    if not common_endpoint is None:
+        #figure out if need to flip or not:
+        if np.array_equal(common_endpoint,base_skeleton_ordered[-1][-1]):
 
+            base_width_ordered = np.flip(base_branch.width_array[width_name])
+            base_skeleton_ordered = sk.flip_skeleton(base_skeleton_ordered)
+            flip_flag = True
+            if verbose:
+                print("Base needs flipping")
+                print(f"Skeleton after flip = {base_skeleton_ordered}")
+        elif np.array_equal(common_endpoint,base_skeleton_ordered[0][0]):
+            base_width_ordered = base_branch.width_array[width_name]
+            flip_flag = False
+        else:
+            raise Exception("No matching endpoint")
+    else:
+        base_width_ordered = base_branch.width_array[width_name]
+        
     # apply the cutoff distance
     if verbose:
         print(f"Base offset = {offset}")
@@ -2673,10 +2655,64 @@ def branch_boundary_transition(curr_limb,
          _) = sk.restrict_skeleton_from_start(base_skeleton_ordered,
                                                                         comparison_distance,
                                                                          subtract_cutoff=False)
+        
 
-    base_final_skeleton
+    
     base_final_widths = base_width_ordered[base_final_indexes]
     base_final_seg_lengths = sk.calculate_skeleton_segment_distances(base_final_skeleton,cumsum=False)
+    
+    return base_final_skeleton,base_final_widths,base_final_seg_lengths
+
+import copy
+def branch_boundary_transition(curr_limb,
+                              edge,
+                              width_name= "no_spine_median_mesh_center",
+                              offset=500,
+                              comparison_distance=2000,
+                              skeleton_segment_size=1000,
+                              return_skeletons=True,
+                              verbose=False):
+    """
+    Purpose: Will find the boundary skeletons and width average at the boundary
+    with some specified boundary skeletal length (with an optional offset)
+
+
+    """
+
+    base_node = edge[-1]
+    upstream_node= edge[0]
+    upstream_node_original = upstream_node
+
+    base_branch = curr_limb[base_node]
+    upstream_branch = curr_limb[upstream_node]
+
+
+    # 0) make sure the two nodes are connected in the concept network
+    if base_node not in xu.get_neighbors(curr_limb.concept_network,upstream_node):
+        raise Exception(f"base_node ({base_node}) and upstream_node ({upstream_node}) are not connected in the concept network")
+
+    # ----- Part 1: Do the processing on the base node -------------- #
+    common_endpoint = sk.shared_endpoint(base_branch.skeleton,upstream_branch.skeleton)
+    common_endpoint_original = copy.copy(common_endpoint)
+    if verbose:
+        print(f"common_endpoint = {common_endpoint}")
+    
+    (base_final_skeleton,
+    base_final_widths,
+    base_final_seg_lengths) = nru.align_and_restrict_branch(base_branch,
+                              common_endpoint=common_endpoint,
+                                 width_name=width_name,
+                             offset=offset,
+                             comparison_distance=comparison_distance,
+                             skeleton_segment_size=skeleton_segment_size,
+                              verbose=verbose,
+                             )
+    
+    
+    
+    
+    
+    
 
     # ----- Part 2: Do the processing on the upstream nodes -------------- #
     upstream_offset = offset
@@ -2715,6 +2751,8 @@ def branch_boundary_transition(curr_limb,
 
         #2) resize the upstream skeleton to get it ordered and right scale of width
         upstream_skeleton_ordered = sk.resize_skeleton_branch(upstream_branch.skeleton,skeleton_segment_size)
+        if verbose:
+            print(f"upstream_skeleton_ordered {sk.calculate_skeleton_distance(upstream_skeleton_ordered)} = {upstream_skeleton_ordered}")
 
         #3) Flip the skeleton and width array if needs to be flipped
         if np.array_equal(common_endpoint,upstream_skeleton_ordered[-1][-1]):
@@ -2727,9 +2765,15 @@ def branch_boundary_transition(curr_limb,
         else:
             raise Exception("No matching endpoint")
 
+            
+        if verbose: 
+            print(f"flip_flag = {flip_flag}")
+            print(f"upstream_offset = {upstream_offset}")
 
         #4) if current offset is greater than 0, then restrict skeelton to offset:
         if upstream_offset > 0:
+            if verbose:
+                print("Restricting to offset")
             (skeleton_minus_buffer,
              offset_indexes,
              offset_success) = sk.restrict_skeleton_from_start(upstream_skeleton_ordered,
@@ -2741,6 +2785,9 @@ def branch_boundary_transition(curr_limb,
             skeleton_minus_buffer = upstream_skeleton_ordered
             offset_indexes = np.arange(len(upstream_skeleton_ordered))
             offset_success = True
+        
+        
+        #print(f"skeleton_minus_buffer {sk.calculate_skeleton_distance(skeleton_minus_buffer)} = {skeleton_minus_buffer}")
 
         """
         5a) if it was not long enough:
@@ -2761,6 +2808,9 @@ def branch_boundary_transition(curr_limb,
             """
             #making sure the upstream offset is 0 if we were successful
             upstream_offset = 0
+            
+            if verbose:
+                print(f"After subtracting the offset the length is: {sk.calculate_skeleton_distance(skeleton_minus_buffer)}")
 
             #- restrit skeleton by comparison distance
             (skeleton_comparison,
@@ -2801,15 +2851,32 @@ def branch_boundary_transition(curr_limb,
 
         count += 1
 
+    upstream_final_skeleton = sk.stack_skeletons(upstream_skeleton)
+    if verbose:
+        print(f"upstream_final_skeleton = {upstream_final_skeleton}")
 
     # Do a check at the very end and if no skeleton then just take that branches
-    if len(upstream_skeleton) <= 0:
+    if len(upstream_final_skeleton) <= 0:
         print("No upstream skeletons so doing backup")
         resize_sk = sk.resize_skeleton_branch(curr_limb[upstream_node_original].skeleton,
                                                        skeleton_segment_size)
         upstream_skeleton = [resize_sk]
         upstream_seg_lengths = [sk.calculate_skeleton_segment_distances(resize_sk,cumsum=False)]
         upstream_seg_widths = [curr_limb[upstream_node_original].width_array[width_name]]
+        
+        (upstream_final_skeleton,
+         upstream_final_widths,
+        upstream_final_seg_lengths) = nru.align_and_restrict_branch(curr_limb[upstream_node_original],
+                                  common_endpoint=common_endpoint_original,
+                                width_name=width_name,
+                                 offset=offset,
+                                 comparison_distance=comparison_distance,
+                                 skeleton_segment_size=skeleton_segment_size,
+                                  verbose=verbose,
+                                 )
+    else:
+        upstream_final_seg_lengths = np.concatenate(upstream_seg_lengths)
+        upstream_final_widths = np.concatenate(upstream_seg_widths)
 
 
 
@@ -2825,12 +2892,7 @@ def branch_boundary_transition(curr_limb,
 
     base_final_skeleton
     
-    
-    
-    upstream_final_skeleton = sk.stack_skeletons(upstream_skeleton)
-    upstream_final_seg_lengths = np.concatenate(upstream_seg_lengths)
-    upstream_final_widths = np.concatenate(upstream_seg_widths)
-    
+
     base_width_average = nu.average_by_weights(weights = base_final_seg_lengths,
                                 values = base_final_widths)
     upstream_width_average = nu.average_by_weights(weights = upstream_final_seg_lengths,
@@ -3140,8 +3202,8 @@ def all_soma_connnecting_endpionts_from_starting_info(starting_info,multiple_lim
             for soma_group_idx,group_v in soma_v.items():
                 all_endpoints.append(group_v["endpoint"])
         
-
-    all_endpoints = np.unique(np.vstack(all_endpoints),axis=0)
+    if len(all_endpoints) > 0:
+        all_endpoints = np.unique(np.vstack(all_endpoints),axis=0)
     return all_endpoints
     
     

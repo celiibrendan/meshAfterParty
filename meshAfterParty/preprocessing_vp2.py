@@ -30,6 +30,7 @@ def mesh_correspondence_first_pass(mesh,
                                    skeleton=None,
                                    skeleton_branches=None,
                                   distance_by_mesh_center=True,
+                                   remove_inside_pieces_threshold = 0,
                                   connectivity="edges"):
     """
     Will come up with the mesh correspondences for all of the skeleton
@@ -38,6 +39,16 @@ def mesh_correspondence_first_pass(mesh,
     """
     curr_limb_mesh = mesh
     curr_limb_sk = skeleton
+    
+    if remove_inside_pieces_threshold > 0:
+        curr_limb_mesh_indices = tu.remove_mesh_interior(curr_limb_mesh,
+                                                 size_threshold_to_remove=remove_inside_pieces_threshold,
+                                                 try_hole_close=False,
+                                                 return_face_indices=True,
+                                                )
+        curr_limb_mesh = curr_limb_mesh.submesh([curr_limb_mesh_indices],append=True,repair=False)
+    else:
+        curr_limb_mesh_indices = np.arange(len(curr_limb_mesh.faces))
     
     if skeleton_branches is None:
         if skeleton is None:
@@ -89,7 +100,7 @@ def mesh_correspondence_first_pass(mesh,
 
         local_correspondence[j]["branch_skeleton"] = curr_branch_sk
         local_correspondence[j]["correspondence_mesh"] = curr_submesh
-        local_correspondence[j]["correspondence_face_idx"] = curr_branch_face_correspondence
+        local_correspondence[j]["correspondence_face_idx"] = curr_limb_mesh_indices[curr_branch_face_correspondence]
         local_correspondence[j]["width_from_skeleton"] = width_from_skeleton
         
     return local_correspondence
@@ -1259,7 +1270,8 @@ def preprocess_limb(mesh,
         local_correspondence = mesh_correspondence_first_pass(mesh=mesh,
                                                              skeleton=cleaned_branch,
                                                              distance_by_mesh_center=distance_by_mesh_center,
-                                                             connectivity="edges")
+                                                             connectivity="edges",
+                                                             remove_inside_pieces_threshold=100)
 
 
         print(f"Total time for decomposition = {time.time() - start_time}")
