@@ -4553,6 +4553,22 @@ def skeletonize_and_clean_connected_branch_CGAL(mesh,
         coordinates_to_keep = None
     
     check_skeleton_connected_component(current_skeleton)
+    
+    
+    
+    
+    """ ----------- 1/6/21 Addition -----------------
+    Can check for end-nodes that should not be filtered away 
+    because represent significant portions of mesh
+    
+
+    
+    """
+    
+    
+    
+    
+    
     new_cleaned_skeleton = clean_skeleton(current_skeleton,
                             distance_func=skeletal_distance,
                       min_distance_to_junction=filter_end_node_length, #this used to be a tuple i think when moved the parameter up to function defintion

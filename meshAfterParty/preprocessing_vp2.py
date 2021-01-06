@@ -774,7 +774,7 @@ import general_utils as gu
 def filter_limb_correspondence_for_end_nodes(limb_correspondence,
                                              mesh,
                                              starting_info=None,
-                                             filter_end_node_length=4500,
+                                             filter_end_node_length=4000,
                                              error_on_no_starting_coordinates = True,
                                              plot_new_correspondence = False,
                                              error_on_starting_coordinates_not_endnodes = True,
@@ -932,7 +932,7 @@ def preprocess_limb(mesh,
                    meshparty_n_surface_downsampling = 2,
                     combine_close_skeleton_nodes=True,
                     combine_close_skeleton_nodes_threshold=700,
-                    filter_end_node_length=4500,
+                    filter_end_node_length=4000,
                     use_meshafterparty=True,
                     perform_cleaning_checks = True,
                     
@@ -2633,7 +2633,7 @@ def preprocess_neuron(
                 sig_th_initial_split=15, #for significant splitting meshes in the intial mesh split
                 limb_threshold = 2000, #the mesh faces threshold for a mesh to be qualified as a limb (otherwise too small)
     
-                filter_end_node_length=4500, #used in cleaning the skeleton during skeletonizations
+                filter_end_node_length=4000, #used in cleaning the skeleton during skeletonizations
                 return_no_somas = False, #whether to error or to return an empty list for somas
     
                 decomposition_type="meshafterparty",

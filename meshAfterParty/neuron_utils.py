@@ -556,7 +556,10 @@ def convert_concept_network_to_directional(concept_network,
     #     print(f"processed_nodes = {processed_nodes}")
     #     print(f"to_be_processed_nodes = {to_be_processed_nodes}")
 
+        if len(to_be_processed_nodes) == 0:
+            break
         #a. Get the next node to be processed
+        
         curr_node = to_be_processed_nodes.pop(0)
         #print(f"curr_node = {curr_node}")
         #b. Get all neighbors
@@ -580,8 +583,7 @@ def convert_concept_network_to_directional(concept_network,
 
 
         #z. when no more nodes in to_be_processed list then reak
-        if len(to_be_processed_nodes) == 0:
-            break
+        
 
     #print(f"incoming_edges_to_node = {incoming_edges_to_node}")
     #6) if the no_cycles option is selected:
@@ -2658,7 +2660,7 @@ def align_and_restrict_branch(base_branch,
         
 
     
-    base_final_widths = base_width_ordered[base_final_indexes]
+    base_final_widths = base_width_ordered[np.clip(base_final_indexes,0,len(base_width_ordered)-1)]
     base_final_seg_lengths = sk.calculate_skeleton_segment_distances(base_final_skeleton,cumsum=False)
     
     return base_final_skeleton,base_final_widths,base_final_seg_lengths
@@ -2753,6 +2755,14 @@ def branch_boundary_transition(curr_limb,
         upstream_skeleton_ordered = sk.resize_skeleton_branch(upstream_branch.skeleton,skeleton_segment_size)
         if verbose:
             print(f"upstream_skeleton_ordered {sk.calculate_skeleton_distance(upstream_skeleton_ordered)} = {upstream_skeleton_ordered}")
+            
+        
+          # ----------- 1 /5 : To prevent from erroring when indexing into width
+#         #accounting for the fact that the skeleton might be a little longer thn the width array now
+#         upstream_width = upstream_branch.width_array[width_name]
+#         extra_width_segment = [upstream_width[-1]]*(len(upstream_skeleton_ordered)-len(upstream_width))
+#         upstream_width = np.hstack([upstream_width,extra_width_segment])
+         
 
         #3) Flip the skeleton and width array if needs to be flipped
         if np.array_equal(common_endpoint,upstream_skeleton_ordered[-1][-1]):
@@ -2824,7 +2834,7 @@ def branch_boundary_transition(curr_limb,
 
             
             upstream_indices = offset_indexes[comparison_indexes]
-            upstream_seg_widths.append(upstream_width_ordered[upstream_indices])
+            upstream_seg_widths.append(upstream_width_ordered[np.clip(upstream_indices,0,len(upstream_width_ordered)-1) ])
 
             # - subtract new distance from comparison distance
             upstream_comparison -= sk.calculate_skeleton_distance(skeleton_comparison)

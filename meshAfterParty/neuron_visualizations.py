@@ -71,6 +71,7 @@ def plot_limb_concept_network_2D(neuron_obj,
                                  pos_vertical_gap=0.05,
                                  fig_width=40,
                                  fig_height=20,
+                                 suppress_disconnected_errors=True,
                                   **kwargs):
     """
     Purpose: To plot the concept network as a 2D networkx graph
@@ -128,7 +129,7 @@ def plot_limb_concept_network_2D(neuron_obj,
     if directional:
         graph_list = []
         for s in somas:
-            limb_obj.set_concept_network_directional(starting_soma=s)
+            limb_obj.set_concept_network_directional(starting_soma=s,suppress_disconnected_errors=suppress_disconnected_errors)
             graph_list.append(limb_obj.concept_network_directional)
         full_concept_network = xu.combine_graphs(graph_list)
     else:
@@ -229,7 +230,8 @@ def plot_concept_network(curr_concept_network,
                             append_figure=False,
                             highlight_starting_node=True,
                             starting_node_size=-1,
-                                 flip_y=True):
+                                 flip_y=True,
+                        suppress_disconnected_errors=False):
     
     if starting_node_size == -1:
         starting_node_size = scatter_size*3
@@ -1836,20 +1838,32 @@ def plot_split_suggestions_per_limb(neuron_obj,
     
     
     """
-    
     for curr_limb_idx,path_cut_info in limb_results.items():
         component_colors_cp = copy.copy(component_colors)
         print(f"\n\n-------- Suggestions for Limb {curr_limb_idx}------")
+        
         curr_scatters = []
         for path_i in path_cut_info:
             if len(path_i["coordinate_suggestions"])>0:
                 curr_scatters.append(np.concatenate(path_i["coordinate_suggestions"]).reshape(-1,3))
+                
+        if len(curr_scatters) == 0:
+            print("\n\n No suggested cuts for this limb!!")
+            
+            nviz.visualize_neuron(neuron_obj,
+                             visualize_type=["mesh","skeleton"],
+                             limb_branch_dict={f"L{curr_limb_idx}":"all"},
+                             mesh_color="green",
+                             skeleton_color="blue",
+                             )
+            continue
+            
         curr_scatters = np.vstack(curr_scatters)
         scatter_color_list = [mu.color_to_rgba(scatter_color,scatter_alpha)]*len(curr_scatters)
         
         # will create a dictionary that will show all of the disconnected components in different colors
         if add_components_colors:
-            curr_limb = pru.cut_limb_network_by_suggestions(neuron_obj[curr_limb_idx],
+            curr_limb = pru.cut_limb_network_by_suggestions(copy.deepcopy(neuron_obj[curr_limb_idx]),
                                                       path_cut_info)
             limb_nx = curr_limb.concept_network
             

@@ -2,6 +2,7 @@ import numpy as np
 import datajoint as dj
 from tqdm.notebook import tqdm
 from pathlib import Path
+import time
 
 """
 Good link: https://medium.com/kubernetes-tutorials/learn-how-to-assign-pods-to-nodes-in-kubernetes-using-nodeselector-and-affinity-features-e62c437f3cf8
@@ -435,6 +436,177 @@ def plot_errored_faces(segment_id,
                      **kwargs)
     
     
+# ---------------- 1/5/21 Modules that are used for downloading --------------------------------------- #
+def adapt_mesh_hdf5(segment_id=None, filepath=None, basepath=None, return_type='namedtuple', as_lengths=False):
+    """
+    Reads from a mesh hdf5 and returns it in the form of a numpy array with labeled dtype or optionally
+        as a dictionary, or optionally as separate variables.
+    :param segment_id: Segment ID will be used in conjunction with the `m65.external_mesh_path`
+        to find the mesh if filepath is not set.
+    :param filepath: File path pointing to the hdf5 mesh file. If filepath is None it will use
+        `m65.external_mesh_path` joined with the segment_id.
+    :param return_type: Options = {
+        namedtuple = return the vertices and triangles in a namedtuple format
+        dict = return the vertices and triangles as arrays in a dictionary referrenced by those names,
+        separate = return the vertex array and triangle array as separate variables in that order
+    :param as_lengths: Overrides return_type and instead returns the length of the vertex and face arrays.
+        This is done without pulling the mesh into memory, which makes it far more space and time efficient.
+    }
+    """
+    
+    if basepath is None:
+        basepath = minfig.minnie65_config.external_mesh_path
+        
+    # File manipulation
+    if filepath is None:
+        if segment_id is not None and basepath is not None:
+            filepath = os.path.join(basepath, f'{segment_id}.h5')
+        else:
+            raise TypeError('Both segment_id and filepath cannot be None.')
+    elif segment_id is None:
+        segment_id = os.path.splitext(os.path.basename(filepath))[0]
+    else:
+        raise TypeError('Both segment_id and filepath cannot be None.')
+    filepath = os.path.abspath(filepath)
+
+    # Load the mesh data
+    with h5py.File(filepath, 'r') as f:
+        if as_lengths:
+            return f['vertices'].shape[0], int(f['faces'].shape[0] / 3)
+        vertices = f['vertices'][()].astype(np.float64)
+        faces = f['faces'][()].reshape(-1, 3).astype(np.uint32)
+    
+    # Return options
+    if return_type == 'namedtuple':
+        return Mesh(
+            segment_id=segment_id,
+            vertices=vertices,
+            faces=faces
+        )        
+    elif return_type == 'dict':
+        return dict(
+            segment_id=segment_id,
+            vertices=vertices,
+            faces=faces
+        )
+    elif return_type == 'separate':
+        return vertices, faces
+    else:
+        raise TypeError(f'return_type does not accept {return_type} argument')
+        
+
+def download_meshes(
+    segment_ids=None,
+    segment_order=None,
+    target_dir=None,
+    # cloudvolume_path="precomputed://gs://microns-seunglab/minnie65/seg_minnie65_0",
+    cloudvolume_path=r"graphene://https://minniev1.microns-daf.com/segmentation/table/minnie3_v1",
+    overwrite=False,
+    n_threads=1,
+    verbose=True,
+    stitch_mesh_chunks=True,
+    download_each_supress_errors=False
+):
+    """
+    Cloudvolume also requires credentials:
+    :param segment_order: Options = {
+        None = leaves the order alone,
+        'reverse' = reverse the order,
+        'asc' = sorts in ascending order,
+        'desc' = sorts in descending order,
+        'shuffle' = shuffles the order
+    }
+    """
+    
+    if target_dir is None:
+        target_dir = minfig.minnie65_config.external_mesh_path
+        
+    
+    from meshparty import trimesh_io
+
+    if segment_ids is None:
+        segment_ids = (Segment - Mesh).fetch('segment_id')
+
+    if segment_order is not None:
+        segment_order = segment_order.lower()
+    if segment_order == 'reverse':
+        segment_ids = segment_ids[::-1]
+    elif segment_order == 'asc':
+        segment_ids = np.sort(segment_ids)
+    elif segment_order == 'desc':
+        segment_ids = np.sort(segment_ids)[::-1]
+    elif segment_order == 'shuffle':
+        np.random.shuffle(segment_ids)
+
+    mesh_download_time = time.time()
+
+    if not download_each_supress_errors:
+        trimesh_io.download_meshes(
+            seg_ids=segment_ids,
+            target_dir=target_dir,
+            cv_path=cloudvolume_path,
+            overwrite=overwrite,
+            n_threads=n_threads,
+            verbose=verbose,
+            stitch_mesh_chunks=stitch_mesh_chunks
+        )
+    else:
+        for seg in segment_ids:
+            try:
+                trimesh_io.download_meshes(
+                    seg_ids=[seg],
+                    target_dir=target_dir,
+                    cv_path=cloudvolume_path,
+                    overwrite=overwrite,
+                    n_threads=n_threads,
+                    verbose=verbose,
+                    stitch_mesh_chunks=stitch_mesh_chunks
+                )
+            except ValueError as e:
+                print(e)
+
+    total_time = time.time()-mesh_download_time
+    print(f'Done in {total_time:0f} seconds.')
+    return total_time
+
+
+def fill_from_ids(segment_ids, skip_duplicates=True):
+    for segment_id in segment_ids:
+        mesh_path = os.path.join(minfig.minnie65_config.external_mesh_path, f'{segment_id}.h5')
+        n_vertices, n_faces = adapt_mesh_hdf5(filepath=mesh_path, as_lengths=True)
+        minnie.Mesh.insert1(dict(
+            segment_id=segment_id,
+            n_vertices=n_vertices,
+            n_faces=n_faces,
+            mesh=mesh_path
+        ),
+        skip_duplicates=skip_duplicates,
+        allow_direct_insert=True)
+        
+def download_and_insert_allen_meshes(segment_ids,n_threads=1,
+                                    insert_in_multi_soma_table=False):
+    """
+    Purpose: To Download the meshes from the allen institute
+    and then insert the segment ids into the Segment
+    and Mesh table in Datajoint
+    """
+    
+    # 1) Fill segment table with segment ids
+    download_meshes(segment_ids = segment_ids,n_threads=12)
+    
+    #2) Manually add segmnet ids to segment tables
+    insert_keys = [dict(segment_id=k) for k in segment_ids]
+    minnie.Segment.insert(insert_keys,skip_duplicates=True)
+    
+    #3) Fill in the Mesh Table
+    fill_from_ids(segment_ids=segment_ids)
+    
+    if insert_in_multi_soma_table:
+        minnie.MultiSomaProofread.insert(insert_keys,skip_duplicates=True)
+    
+    
 #runs the configuration
 config_celii()
 minnie,_ = configure_minnie_vm()
+from minfig.adapters import *
+

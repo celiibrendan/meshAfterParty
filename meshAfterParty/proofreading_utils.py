@@ -71,12 +71,16 @@ def get_best_cut_edge(curr_limb,
     print("\n --------- START OF GET BEST EDGE --------- ")
     removed_branches=[]
     
+    cut_path = np.array(cut_path)
+    
     if (not remove_segment_threshold is None) and (remove_segment_threshold > 0):
+        print(f"curr_limb.deleted_edges={curr_limb.deleted_edges}")
         path_without_ends = cut_path[1:-1]
         sk_lens = np.array([sk.calculate_skeleton_distance(curr_limb[k].skeleton) for k in path_without_ends ])
         short_segments = path_without_ends[np.where(sk_lens<remove_segment_threshold)[0]]
         if verbose:
             print(f"Short segments to combine = {short_segments}")
+            
         if len(short_segments)>0:
             if verbose:
                 print("\n\n-------- Removing Segments -------------")
@@ -84,9 +88,22 @@ def get_best_cut_edge(curr_limb,
                                                  branch_list=short_segments,
                                                  plot_new_limb=False,
                                                 verbose=verbose)
-            if verbose:
-                print("\n-------- Done Removing Segments -------------\n\n")
+            print(f"curr_limb.deleted_edges 2={curr_limb.deleted_edges}")
+            curr_limb.set_concept_network_directional(starting_node=cut_path[0],
+                                                     suppress_disconnected_errors=True)
+            print(f"curr_limb.deleted_edges 3={curr_limb.deleted_edges}")
+            
             removed_branches = list(short_segments)
+            
+            for s in short_segments:
+                cut_path = cut_path[cut_path != s]
+            if verbose:
+                print(f"Revised cut path = {cut_path}")
+                print("\n-------- Done Removing Segments -------------\n\n")
+                
+                
+            
+            
         
     
     high_degree_endpoint_coordinates = find_high_degree_coordinates_on_path(curr_limb,cut_path)
@@ -105,7 +122,7 @@ def get_best_cut_edge(curr_limb,
 
         if verbose:
             print(f"Picking {curr_high_degree_coord} high degree coordinates to cut")
-
+            print(f"curr_limb.deleted_edges 4={curr_limb.deleted_edges}")
         edges_to_delete_pre,edges_to_create_pre = ed.resolving_crossovers(curr_limb,
                                                 coordinate = curr_high_degree_coord,
                                                 offset=high_degree_offset,
@@ -114,7 +131,7 @@ def get_best_cut_edge(curr_limb,
                                                 verbose = verbose,
                                                 **kwargs
                                )
-        
+        print(f"curr_limb.deleted_edges 5 ={curr_limb.deleted_edges}")
         if len(edges_to_delete_pre)>0:
             edges_to_delete = edges_to_delete_pre
             edges_to_create = edges_to_create_pre
@@ -165,7 +182,7 @@ def get_best_cut_edge(curr_limb,
 
             if verbose:
                 print(f"There were {len(err_edges)} edges that passed doubling back threshold of {double_back_threshold}")
-                print(f"Winning edge {winning_err_edge} had a doubling back of {largest_double_back}")
+                print(f"Winning edge {winning_err_edge} had a doubling back of {edges_double_back[largest_double_back]}")
                 
             edges_to_delete = [winning_err_edge]
 
@@ -236,12 +253,13 @@ def get_best_cut_edge(curr_limb,
         edges_to_delete_new,edges_to_create_new = ed.resolving_crossovers(curr_limb,
                        coordinate=suggested_cut_point,
                        return_subgraph=False)
-        
+
         if len(edges_to_delete_new) > 0:
-            edges_to_delete += edges_to_delete_new
+            edges_to_delete = np.vstack([edges_to_delete,edges_to_delete_new])
             edges_to_delete = list(np.unique(np.sort(np.array(edges_to_delete),axis=1),axis=0))
             
-
+        
+        
         if not edges_to_create is None:
             edges_to_create += edges_to_create_new
             edges_to_create = list(np.unique(np.sort(np.array(edges_to_create),axis=1),axis=0))
@@ -259,6 +277,7 @@ def get_best_cut_edge(curr_limb,
         edges_to_create = edges_to_create_final
                 
 
+    
         
     curr_limb,edges_to_create_final = pru.cut_limb_network_by_edges(curr_limb,
                                                     edges_to_delete,
@@ -359,7 +378,7 @@ def cut_limb_network_by_edges(curr_limb,
     
     if not edges_to_delete is None:
         if verbose:
-            print(f"edges_to_delete = {edges_to_delete}")
+            print(f"edges_to_delete (cut_limb_network) = {edges_to_delete}")
         curr_limb.concept_network.remove_edges_from(edges_to_delete)
         
         curr_limb.deleted_edges += edges_to_delete
@@ -477,8 +496,8 @@ def multi_soma_split_suggestions(neuron_obj,
             while True:
                 if verbose:
                     print(f" Cut iteration {counter}")
+                curr_limb_copy.set_concept_network_directional(starting_node=st_n_1,suppress_disconnected_errors=True)
                 try:
-                    curr_limb_copy.set_concept_network_directional(starting_node=st_n_1)
                     soma_to_soma_path = np.array(nx.shortest_path(curr_limb_copy.concept_network,st_n_1,st_n_2))
                 except:
                     if verbose:
@@ -1262,14 +1281,18 @@ def remove_branches_from_limb(limb_obj,branch_list,
         limb_to_soma_concept_networks = pre.calculate_limb_concept_networks(curr_limb_cp.limb_correspondence,
                                                                                     curr_limb_cp.network_starting_info,
                                                                                     run_concept_network_checks=False,
-                                                                                   )  
-
+                                                                              )  
+        #print(f"curr_limb.deleted_edges 6={curr_limb_cp.deleted_edges}")
         curr_limb_cp = neuron.Limb(curr_limb_cp.mesh,
                                  curr_limb_cp.limb_correspondence,
                                  concept_network_dict=limb_to_soma_concept_networks,
                                  mesh_face_idx = curr_limb_cp.mesh_face_idx,
                                  labels=curr_limb_cp.labels,
-                                 branch_objects=curr_limb_cp.branch_objects)
+                                 branch_objects=curr_limb_cp.branch_objects,
+                                  deleted_edges=curr_limb_cp.deleted_edges,
+                                  created_edges=curr_limb_cp.created_edges)
+        
+        #print(f"curr_limb.deleted_edges 7={curr_limb_cp.deleted_edges}")
         
         
         
@@ -1279,6 +1302,72 @@ def remove_branches_from_limb(limb_obj,branch_list,
         nviz.plot_limb_correspondence(curr_limb_cp.limb_correspondence)
     
     return curr_limb_cp
+
+
+
+# ------------------ Neuroglancer Tools Info ---------------------------- #
+import numpy as np
+import numpy_utils as nu
+import pandas as pd
+from annotationframeworkclient import FrameworkClient
+from nglui import statebuilder
+
+def set_state_builder():
+    client = FrameworkClient('minnie65_phase3_v1')
+    # The following generates a statebuilder that can turn dataframes into neuroglancer states
+    img_layer = statebuilder.ImageLayerConfig(client.info.image_source(), contrast_controls=True, black=0.35, white=0.65)
+    seg_layer = statebuilder.SegmentationLayerConfig(client.info.segmentation_source(), selected_ids_column='root_id')
+    pts = statebuilder.PointMapper('split_location', linked_segmentation_column='root_id', set_position=True)
+    anno_layer = statebuilder.AnnotationLayerConfig('split_cands', mapping_rules=pts, linked_segmentation_layer=seg_layer.name, color='#FFFFFF', active=True)
+    sb = statebuilder.StateBuilder([img_layer, seg_layer, anno_layer], state_server=client.state.state_service_endpoint)
+    return sb
+
+def set_edit_dataframe(split_locs,
+                      root_ids,
+                      priority=None,
+                      ):
+    """
+    Will create a dataframe that can be fed into a statebuilder
+    to generate a neuroglancer link
+    
+    """
+    if priority is None:
+        priority = list(np.arange(1,len(split_locs)+1))
+        
+    if not nu.is_array_like(root_ids):
+        root_ids = [root_ids]*len(split_locs)
+        
+    edit_df = pd.DataFrame({'split_location': split_locs,
+                            'root_id': root_ids,
+                            'priority': priority})
+    return edit_df
+
+def neuroglancer_split_link(split_locs,
+                      root_ids,
+                      priority=None):
+    """
+    
+    
+    
+    Example:
+    limb_results = pru.multi_soma_split_suggestions(neuron_obj)
+    split_coordinates = pru.get_all_coordinate_suggestions(limb_results)
+    
+    neuroglancer_split_link(split_coordinates,
+                          neuron_obj.segment_id)
+    
+    
+    """
+    sb = set_state_builder()
+    edit_df = set_edit_dataframe(split_locs,
+                      root_ids,
+                      priority,
+                      )
+    
+    return sb.render_state(edit_df.sort_values(by='priority'), return_as='html')
+
+
+
 
 
 

@@ -796,7 +796,8 @@ class Limb:
                                                                   starting_edge=self.current_starting_endpoints,
                                                                   touching_soma_vertices=self.current_touching_soma_vertices,
                                                                        soma_group_idx=self.current_soma_group_idx,
-                                                                       verbose=True)
+                                                                       verbose=False)
+        
         self.concept_network.remove_edges_from(list(self.concept_network.edges()))
         self.concept_network.add_edges_from(list(new_concept_network.edges()))
         self.concept_network.remove_edges_from(self.deleted_edges)
@@ -854,7 +855,6 @@ class Limb:
                                 current_soma_group_idx = None,
                                 deleted_edges = [],
                                 created_edges = [])
-            
             for attr,attr_v in attributes_to_set.items():
                 if hasattr(mesh,attr):
                     setattr(self,attr,dc(getattr(mesh,attr)))
@@ -873,6 +873,11 @@ class Limb:
             
             return 
         
+        debug_edges = False
+        
+        if debug_edges:
+            print(f"before set: deleted_edges={deleted_edges}")
+            print(f"before set: created_edges={created_edges}")
         
         self._index = -1
         self.mesh=mesh
@@ -965,10 +970,19 @@ class Limb:
         #Setting the concept network
         self.deleted_edges =deleted_edges
         self.created_edges = created_edges
+        
+        if debug_edges:
+            print(f"self.deleted_edges = {self.deleted_edges}")
+            print(f"self.created_edges = {self.created_edges}")
+        
         self.set_concept_network_edges_from_current_starting_data()
         self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True,
                                                                             suppress_disconnected_errors=suppress_disconnected_errors)
         
+        if debug_edges:
+            print(f"self.deleted_edges = {self.deleted_edges}")
+            print(f"self.created_edges = {self.created_edges}")
+
         
         
     # ----------------- 9/2 To help with compression ------------------------- #

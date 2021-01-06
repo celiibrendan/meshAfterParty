@@ -33,7 +33,8 @@ def width_jump_edges(limb,
         
         
         curr_limb.set_concept_network_directional(starting_soma=curr_soma,
-                                                 soma_group_idx=curr_soma_group)
+                                                 soma_group_idx=curr_soma_group,
+                                                 suppress_disconnected_errors=True)
         curr_net = curr_limb.concept_network_directional
 
         if verbose: 
@@ -177,7 +178,8 @@ def double_back_edges(
         
             
         curr_limb.set_concept_network_directional(starting_soma=curr_soma,
-                                                 soma_group_idx=curr_soma_group)
+                                                 soma_group_idx=curr_soma_group,
+                                                 suppress_disconnected_errors=True)
         curr_net = curr_limb.concept_network_directional
 
         if verbose: 
@@ -352,6 +354,8 @@ def resolving_crossovers(limb_obj,
 
     """
     
+    print("***inside resolve crossover!!!!****")
+    
     
     
     #1) Get all the branches that correspond to the coordinate
@@ -490,8 +494,8 @@ def resolving_crossovers(limb_obj,
         edges_to_create = []
             
     if verbose: 
-        print(f"edges_to_delete = {edges_to_delete}")
-        print(f"edges_to_create = {edges_to_create}")
+        print(f"edges_to_delete (resolve crossover) = {edges_to_delete}")
+        print(f"edges_to_create (resolve crossover) = {edges_to_create}")
     
     return_value = [edges_to_delete] 
     if return_new_edges:
@@ -507,8 +511,6 @@ def resolving_crossovers(limb_obj,
         return_value.append(graph_copy)
         
         
-        
-    
     return return_value
 
 
