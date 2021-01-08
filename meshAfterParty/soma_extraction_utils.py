@@ -629,7 +629,8 @@ def extract_soma_center(segment_id,
                         
                             largest_hole_threshold = 17000,
                             max_fail_loops = 10,#np.inf,
-                        perform_pairing = False
+                        perform_pairing = False,
+                        verbose=False,
                             ):
 
     global_start_time = time.time()
@@ -860,9 +861,50 @@ def extract_soma_center(segment_id,
 
                         curr_side_len_check = side_length_check(soma_mesh,side_length_ratio_threshold)
                         curr_volume_check = soma_volume_check(soma_mesh,volume_mulitplier)
+                        
+
                         if curr_side_len_check and curr_volume_check:
-                            to_add_list.append(soma_mesh)
-                            to_add_list_sdf.append(sdf)
+                            #check if we can split this into two
+                            
+                            #1) Run th esegmentation algorithm again to segment the mesh (had to run the higher smoothing to seperate some)
+                            mesh_extra, mesh_extra_sdf = tu.mesh_segmentation(soma_mesh,clusters=3,smoothness=0.01,verbose=True)
+                            mesh_extra = np.array(mesh_extra)
+
+                            #2) Filter out meshes by sizs and sdf threshold
+                            mesh_extra_lens = np.array([len(kk.faces) for kk in mesh_extra])
+                            filtered_meshes_idx = np.where((mesh_extra_lens >= soma_size_threshold) & (mesh_extra_lens <= soma_size_threshold_max) & (mesh_extra_sdf>soma_width_threshold))[0]
+
+
+
+                            if len(filtered_meshes_idx) >= 2:
+                                filtered_meshes = mesh_extra[filtered_meshes_idx]
+                                filtered_meshes_sdf = mesh_extra_sdf[filtered_meshes_idx]
+
+                                to_add_list_retry = []
+                                to_add_list_sdf_retry = []
+
+                                for f_m,f_m_sdf in zip(filtered_meshes,filtered_meshes_sdf):
+                                    curr_side_len_check_retry = side_length_check(f_m,side_length_ratio_threshold)
+                                    curr_volume_check_retry = soma_volume_check(f_m,volume_mulitplier)
+
+                                    if curr_side_len_check_retry and curr_volume_check_retry:
+                                        to_add_list_retry.append(f_m)
+                                        to_add_list_sdf_retry.append(f_m_sdf)
+
+                                if len(to_add_list_retry)>1:
+                                    if verbose:
+                                        print("Using the new feature that split the soma further into more groups")
+                                    to_add_list += to_add_list_retry
+                                    to_add_list_sdf += to_add_list_sdf_retry
+
+                                else:
+                                    to_add_list.append(soma_mesh)
+                                    to_add_list_sdf.append(sdf)
+
+
+                            else:
+                                to_add_list.append(soma_mesh)
+                                to_add_list_sdf.append(sdf)
                         
                         else:
                             # ---------- 1/7 Addition: Trying one more additional cgal segmentation to see if there is actually a soma ---
@@ -876,7 +918,6 @@ def extract_soma_center(segment_id,
 
                             print(f"->Attempting retry of soma because failed first checks: "
                                      f"soma_mesh = {soma_mesh}, curr_side_len_check = {curr_side_len_check}, curr_volume_check = {curr_volume_check}")
-
                             #1) Run th esegmentation algorithm again to segment the mesh
                             mesh_extra, mesh_extra_sdf = tu.mesh_segmentation(soma_mesh,clusters=3,smoothness=0.2,verbose=True)
                             mesh_extra = np.array(mesh_extra)
@@ -885,6 +926,7 @@ def extract_soma_center(segment_id,
                             mesh_extra_lens = np.array([len(kk.faces) for kk in mesh_extra])
                             filtered_meshes_idx = np.where((mesh_extra_lens >= soma_size_threshold) & (mesh_extra_lens <= soma_size_threshold_max) & (mesh_extra_sdf>soma_width_threshold))[0]
 
+                            
                             if len(filtered_meshes_idx) > 0:
                                 filtered_meshes = mesh_extra[filtered_meshes_idx]
                                 filtered_meshes_sdf = mesh_extra_sdf[filtered_meshes_idx]

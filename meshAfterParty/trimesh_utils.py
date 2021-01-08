@@ -225,10 +225,19 @@ def bbox_mesh_restriction(curr_mesh,bbox_upper_corners,
 
 
 # -------------- 11/21 More bounding box functions ----- #
-def bounding_box_corners(mesh):
+def bounding_box_corners(mesh,bbox_multiply_ratio=1):
     bbox_verts = mesh.bounding_box.vertices
-    return np.array([np.min(bbox_verts,axis=0),np.max(bbox_verts,axis=0)]).reshape(2,3)
-
+    bb_corners = np.array([np.min(bbox_verts,axis=0),np.max(bbox_verts,axis=0)]).reshape(2,3)
+    if bbox_multiply_ratio == 1:
+        return bb_corners
+    
+    bbox_center = np.mean(bb_corners,axis=0)
+    bbox_distance = np.max(bb_corners,axis=0)-bbox_center
+    new_corners = np.array([bbox_center - bbox_multiply_ratio*bbox_distance,
+                            bbox_center + bbox_multiply_ratio*bbox_distance
+                           ]).reshape(-1,3)
+    return new_corners
+        
 
 def check_meshes_outside_mesh_bbox(main_mesh,test_meshes,
                                   return_indices=False):
@@ -238,7 +247,8 @@ def check_meshes_outside_mesh_bbox(main_mesh,test_meshes,
 
 def check_meshes_inside_mesh_bbox(main_mesh,test_meshes,
                                   return_indices=False,
-                                  return_inside=True):
+                                  return_inside=True,
+                                 bbox_multiply_ratio=1):
     """
     Purpose: Will check to see if any of the vertices
     of the test meshes are inside the bounding box of the main mesh
@@ -254,7 +264,7 @@ def check_meshes_inside_mesh_bbox(main_mesh,test_meshes,
     
     """
     #1) Get the bounding box corners of the main mesh
-    main_mesh_bbox_corners = bounding_box_corners(main_mesh)
+    main_mesh_bbox_corners = bounding_box_corners(main_mesh,bbox_multiply_ratio)
     
     #2) Iterate through test meshes
     inside_meshes_idx = []
@@ -2708,15 +2718,16 @@ def skeleton_to_mesh_correspondence(mesh,
                                                  return_face_indices=True,
                                                 )
         curr_limb_mesh_indices = np.array(curr_limb_mesh_indices)
-        mesh = mesh.submesh([curr_limb_mesh_indices],append=True,repair=False)
+        curr_mesh = mesh.submesh([curr_limb_mesh_indices],append=True,repair=False)
     else:
         curr_limb_mesh_indices = np.arange(len(mesh.faces))
+        curr_mesh = mesh
 
 
     #1) Run the first pass mesh correspondence
     for curr_sk in skeletons:
         returned_data = cu.mesh_correspondence_adaptive_distance(curr_sk,
-                                  mesh,
+                                  curr_mesh,
                                  skeleton_segment_width = 1000,
                                  distance_by_mesh_center=distance_by_mesh_center,
                                                             connectivity=connectivity)
