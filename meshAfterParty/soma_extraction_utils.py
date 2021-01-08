@@ -578,7 +578,9 @@ def original_mesh_soma(
         #How to seperate the mesh faces
         seperate_soma_meshes,soma_face_components = tu.split(soma_meshes,only_watertight=False)
         #take the top largest ones depending how many were originally in the soma list
+        su.compressed_pickle(seperate_soma_meshes,"seperate_soma_meshes")
         seperate_soma_meshes = seperate_soma_meshes[:len(soma_mesh_list)]
+        
         soma_face_components = soma_face_components[:len(soma_mesh_list)]
 
 
@@ -626,7 +628,8 @@ def extract_soma_center(segment_id,
                             last_size_threshold = 2000,#1300,
                         
                             largest_hole_threshold = 17000,
-                            max_fail_loops = np.inf,
+                            max_fail_loops = 10,#np.inf,
+                        perform_pairing = False
                             ):
 
     global_start_time = time.time()
@@ -860,11 +863,50 @@ def extract_soma_center(segment_id,
                         if curr_side_len_check and curr_volume_check:
                             to_add_list.append(soma_mesh)
                             to_add_list_sdf.append(sdf)
-
+                        
                         else:
-                            print(f"--->This soma mesh was not added because it did not pass the sphere validation:\n "
-                                 f"soma_mesh = {soma_mesh}, curr_side_len_check = {curr_side_len_check}, curr_volume_check = {curr_volume_check}")
-                            continue
+                            # ---------- 1/7 Addition: Trying one more additional cgal segmentation to see if there is actually a soma ---
+                            """
+                            Pseudocode: 
+                            1) Run th esegmentation algorithm again to segment the mesh
+                            2) Filter out meshes by sizs and sdf threshold
+                            3) If there are any remaining meshes, pick the largest sdf mesh and test for volume and side length check
+                            --> if matches then adds
+                            """
+
+                            print(f"->Attempting retry of soma because failed first checks: "
+                                     f"soma_mesh = {soma_mesh}, curr_side_len_check = {curr_side_len_check}, curr_volume_check = {curr_volume_check}")
+
+                            #1) Run th esegmentation algorithm again to segment the mesh
+                            mesh_extra, mesh_extra_sdf = tu.mesh_segmentation(soma_mesh,clusters=3,smoothness=0.2,verbose=True)
+                            mesh_extra = np.array(mesh_extra)
+
+                            #2) Filter out meshes by sizs and sdf threshold
+                            mesh_extra_lens = np.array([len(kk.faces) for kk in mesh_extra])
+                            filtered_meshes_idx = np.where((mesh_extra_lens >= soma_size_threshold) & (mesh_extra_lens <= soma_size_threshold_max) & (mesh_extra_sdf>soma_width_threshold))[0]
+
+                            if len(filtered_meshes_idx) > 0:
+                                filtered_meshes = mesh_extra[filtered_meshes_idx]
+                                filtered_meshes_sdf = mesh_extra_sdf[filtered_meshes_idx]
+
+                                sdf_winning_index = np.argmax(filtered_meshes_sdf)
+                                soma_mesh_retry = filtered_meshes[sdf_winning_index]
+                                sdf_retry = filtered_meshes_sdf[sdf_winning_index]
+
+                                curr_side_len_check_retry = side_length_check(soma_mesh_retry,side_length_ratio_threshold)
+                                curr_volume_check_retry = soma_volume_check(soma_mesh_retry,volume_mulitplier)
+
+                                if curr_side_len_check_retry and curr_volume_check_retry:
+                                    to_add_list.append(soma_mesh_retry)
+                                    to_add_list_sdf.append(sdf_retry)
+                                else:
+                                    print(f"--->This soma mesh was not added because failed retry of sphere validation:\n "
+                                         f"soma_mesh = {soma_mesh_retry}, curr_side_len_check = {curr_side_len_check_retry}, curr_volume_check = {curr_volume_check_retry}")
+                                    continue
+                            else:
+                                print(f"Could not find valid soma mesh in retry")
+                                continue
+
 
                     n_failed_inner_soma_loops = 0
 
@@ -896,14 +938,16 @@ def extract_soma_center(segment_id,
 
     """ IF THERE ARE MULTIPLE SOMAS THAT ARE WITHIN A CERTAIN DISTANCE OF EACH OTHER THEN JUST COMBINE THEM INTO ONE"""
     pairings = []
-    for y,soma_1 in enumerate(total_soma_list):
-        for z,soma_2 in enumerate(total_soma_list):
-            if y<z:
-                mesh_tree = KDTree(soma_1.vertices)
-                distances,closest_node = mesh_tree.query(soma_2.vertices)
+    
+    if perform_pairing:
+        for y,soma_1 in enumerate(total_soma_list):
+            for z,soma_2 in enumerate(total_soma_list):
+                if y<z:
+                    mesh_tree = KDTree(soma_1.vertices)
+                    distances,closest_node = mesh_tree.query(soma_2.vertices)
 
-                if np.min(distances) < 4000:
-                    pairings.append([y,z])
+                    if np.min(distances) < 4000:
+                        pairings.append([y,z])
 
 
     #creating the combined meshes from the list
@@ -1174,8 +1218,21 @@ def extract_soma_center(segment_id,
             filtered_soma_list_sdf_revised.append(f_soma_sdf_final)
 
 
+            
 
         filtered_soma_list = np.array(filtered_soma_list_revised)
         filtered_soma_list_sdf = np.array(filtered_soma_list_sdf_revised)
         
-    return list(filtered_soma_list),run_time,filtered_soma_list_sdf 
+        """
+        # ----------- 1/7/21 ---------------#
+        Now was to stitch the somas together if they are touching
+
+        """
+        connected_meshes_components = tu.mesh_list_connectivity(meshes=filtered_soma_list,
+                                 main_mesh=recov_orig_mesh,
+                                                    return_connected_components=True)
+
+        filtered_soma_list_components = np.array([tu.combine_meshes(filtered_soma_list[k]) for k in connected_meshes_components])
+        filtered_soma_list_sdf_components = np.array([np.mean(filtered_soma_list_sdf[k]) for k in connected_meshes_components])
+        
+    return list(filtered_soma_list_components),run_time,filtered_soma_list_sdf_components 

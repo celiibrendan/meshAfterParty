@@ -56,6 +56,8 @@ def plot_limb_concept_network_2D(neuron_obj,
                                  node_colors=dict(),
                                  limb_name=None,
                                  somas=None,
+                                 starting_soma=None,
+                                 starting_soma_group=0,
                                  default_color = "green",
                                   node_size=2000,
                                   font_color="white",
@@ -128,10 +130,16 @@ def plot_limb_concept_network_2D(neuron_obj,
     # (COULD NOT END UP CONCATENATING AND JUST USE ONE SOMA AS STARTING POINT)
     if directional:
         graph_list = []
-        for s in somas:
-            limb_obj.set_concept_network_directional(starting_soma=s,suppress_disconnected_errors=suppress_disconnected_errors)
-            graph_list.append(limb_obj.concept_network_directional)
-        full_concept_network = xu.combine_graphs(graph_list)
+        if starting_soma is not None:
+            limb_obj.set_concept_network_directional(starting_soma=starting_soma,
+                                                     soma_group_idx = starting_soma_group,
+                                                     suppress_disconnected_errors=suppress_disconnected_errors)
+            full_concept_network = limb_obj.concept_network_directional
+        else:
+            for s in somas:
+                limb_obj.set_concept_network_directional(starting_soma=s,suppress_disconnected_errors=suppress_disconnected_errors)
+                graph_list.append(limb_obj.concept_network_directional)
+            full_concept_network = xu.combine_graphs(graph_list)
     else:
         full_concept_network = limb_obj.concept_network
 

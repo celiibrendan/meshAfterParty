@@ -4457,6 +4457,120 @@ def path_ordered_skeleton(skeleton):
 
     return ordered_skeleton
 
+# ----------- 1/6 Addition: To help and not filter away significant skeleton pieces --------- #
+import trimesh_utils as tu
+def find_end_nodes_with_significant_mesh_correspondence(
+    skeleton,
+    mesh,
+    mesh_threshold = 275,
+    skeleton_considered_min = 1600,
+    skeleton_considered_max = 6000,
+    plot_viable_endpoint_correspondences = False,
+    plot_keep_endpoints = False,
+    verbose = False):
+
+
+    current_skeleton = skeleton
+    keep_node_coordinates = []
+
+    if len(current_skeleton) == 0:
+        return []
+        
+
+    #1) Turn the skeleton into a graph
+    sk_graph = sk.convert_skeleton_to_graph(current_skeleton)
+
+    #2) Get all of the end nodes
+    end_nodes = xu.get_nodes_of_degree_k(sk_graph,1)
+
+    #3) Get all of the high degree nodes in the graph
+    high_degree_nodes = xu.get_nodes_greater_or_equal_degree_k(sk_graph,3)
+
+    """
+    checking that this went well:
+
+    endnode_coordinates = xu.get_coordinate_by_graph_node(sk_graph,end_nodes)
+    high_degree_coordinates = xu.get_coordinate_by_graph_node(sk_graph,high_degree_nodes)
+
+    nviz.plot_objects(mesh,
+                     skeletons=[current_skeleton],
+                     scatters=[endnode_coordinates,high_degree_coordinates],
+                     scatters_colors=["red","blue"],
+                     scatter_size=1)
+
+    """
+
+
+    if len(high_degree_nodes) > 0 and len(end_nodes)>0:
+        viable_end_node = []
+        viable_end_node_skeletons = []
+        viable_end_node_skeletons_len = []
+
+        for j,e_node in enumerate(end_nodes):
+
+            #a. Find the path to the nearest high degree node
+            curr_path,_,_ = xu.shortest_path_between_two_sets_of_nodes(sk_graph,[e_node],high_degree_nodes)
+
+            #b. Get the skeleton of that subgraph
+            subskeleton_graph = sk_graph.subgraph(curr_path)
+            end_node_skeleton = sk.convert_graph_to_skeleton(subskeleton_graph)
+
+            #c. If length of that skeleton is within a certain range:
+            end_node_skeleton_len = sk.calculate_skeleton_distance(end_node_skeleton)
+            if end_node_skeleton_len <= skeleton_considered_max and end_node_skeleton_len >= skeleton_considered_min:
+                viable_end_node.append(e_node)
+                viable_end_node_skeletons.append(end_node_skeleton)
+                viable_end_node_skeletons_len.append(end_node_skeleton_len)
+            else:
+                if verbose:
+                    print(f"{j}th endnode ({e_node}) was not checked because length was {end_node_skeleton_len}")
+
+
+        """
+        Checking viable paths were made:
+
+        nviz.plot_objects(mesh,
+                         skeletons=viable_end_node_skeletons,
+                         scatters=[endnode_coordinates,high_degree_coordinates],
+                         scatters_colors=["red","blue"],
+                         scatter_size=1)
+        """
+
+        if len(viable_end_node) > 0:
+            viable_skeleton_meshes = tu.skeleton_to_mesh_correspondence(mesh = mesh,
+                                                            skeletons = viable_end_node_skeletons,
+                                                              verbose=verbose
+                                               )
+
+            if plot_viable_endpoint_correspondences:
+                nviz.plot_objects(meshes=viable_skeleton_meshes,
+                          meshes_colors="random",
+                          skeletons=viable_end_node_skeletons,
+                         skeletons_colors="random")
+
+
+
+            mesh_lengths = np.array([len(k.faces) for k in viable_skeleton_meshes])
+            viable_end_node = np.array(viable_end_node)
+
+            viable_end_node_final = viable_end_node[mesh_lengths > mesh_threshold]
+
+            if verbose:
+                print(f"Final end nodes to keep = {viable_end_node_final}")
+            if len(viable_end_node_final)>0:
+                keep_node_coordinates = xu.get_coordinate_by_graph_node(sk_graph,list(viable_end_node_final))
+
+    if plot_keep_endpoints:
+        if len(keep_node_coordinates) == 0:
+            print("!!! NO KEEP ENDPOINTS FOUND !!!")
+        else:
+            nviz.plot_objects(mesh,
+                         skeletons=[current_skeleton],
+                         scatters=[keep_node_coordinates],
+                         scatters_colors=["red"],
+                         scatter_size=1)
+
+    return keep_node_coordinates
 
 
 # ---------------------- For preprocessing of neurons revised ------------------ #
@@ -4475,10 +4589,22 @@ def skeletonize_and_clean_connected_branch_CGAL(mesh,
     Purpose: To create a clean skeleton from a mesh
     (used in the neuron preprocessing package)
     """
+    debug = True
+    
     branch = mesh
     clean_time = time.time()
+    
+    if debug is True:
+#         print(f"curr_soma_to_piece_touching_vertices = {curr_soma_to_piece_touching_vertices}")
+#         print(f"total_border_vertices = {total_border_vertices}")
+#         print(f"filter_end_node_length = {filter_end_node_length}")
+#         print(f"kwargs = {kwargs}")
+        pass
+        
+    
     current_skeleton = skeletonize_connected_branch(branch,verbose=verbose,
                                                     **kwargs)
+    
     
     print("Checking connected components after skeletonize_connected_branch")
     check_skeleton_connected_component(current_skeleton)
@@ -4564,9 +4690,26 @@ def skeletonize_and_clean_connected_branch_CGAL(mesh,
 
     
     """
+    if verbose:
+        print(f"coordinates_to_keep BEFORE significant mesh check = {coordinates_to_keep}")
     
+    sign_coordinates_from_mesh = sk.find_end_nodes_with_significant_mesh_correspondence(
+                                mesh = mesh,
+                                skeleton = current_skeleton,
+                                skeleton_considered_max=filter_end_node_length+2,
+                                plot_viable_endpoint_correspondences = False,
+                                plot_keep_endpoints = False,
+                                verbose = False)
+    if len(sign_coordinates_from_mesh)>0:
+        if coordinates_to_keep is not None:
+            coordinates_to_keep = np.vstack([coordinates_to_keep,sign_coordinates_from_mesh])
+        else:
+            coordinates_to_keep = sign_coordinates_from_mesh
     
-    
+    if verbose:
+        print(f"sign_coordinates_from_mesh = {sign_coordinates_from_mesh}")
+        print(f"coordinates_to_keep AFTER significant mesh check = {coordinates_to_keep}")
+
     
     
     new_cleaned_skeleton = clean_skeleton(current_skeleton,

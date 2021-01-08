@@ -702,6 +702,8 @@ class Limb:
             soma_group_idx = self.get_soma_group_by_starting_node(starting_node)
             starting_soma = self.get_soma_by_starting_node(starting_node)
             
+        if soma_group_idx is None:
+            soma_group_idx = 0
         
         if soma_group_idx == -1:
             soma_group_idx = self.current_soma_group_idx

@@ -957,6 +957,7 @@ def mesh_list_connectivity(meshes,
                            min_common_vertices=1,
                            return_vertex_connection_groups=False,
                            return_largest_vertex_connection_group=False,
+                           return_connected_components=False,
                         print_flag = False):
     """
     Pseudocode:
@@ -1047,6 +1048,8 @@ def mesh_list_connectivity(meshes,
     meshes_connectivity_edge_list = nu.sort_elements_in_every_row(meshes_connectivity_edge_list)
     if return_vertex_connection_groups:
         return meshes_connectivity_edge_list,meshes_connectivity_vertex_connection_groups
+    elif return_connected_components:
+        return xu.connected_components_from_nodes_edges(np.arange(len(meshes)),meshes_connectivity_edge_list)
     else:
         return meshes_connectivity_edge_list
 
@@ -2659,5 +2662,91 @@ def face_neighbors_by_vertices(mesh,faces_list,
 def face_neighbors_by_vertices_seperate(mesh,faces_list):
     f_verts = mesh.faces[faces_list]
     return [np.unique(k[k!=-1]) for k in mesh.vertex_faces[f_verts]]
+
+import compartment_utils as cu
+def skeleton_to_mesh_correspondence(mesh,
+                                    skeletons,
+                                    remove_inside_pieces_threshold = 100,
+                                    return_meshes=True,
+                                    distance_by_mesh_center=True,
+                                    connectivity="edges",
+                                    verbose=False):
+    """
+    Purpose: To get the first pass mesh 
+    correspondence of a skeleton or list of skeletons
+    in reference to a mesh
+
+    Pseudocode: 
+    1) If requested, remove the interior of the mesh (if this is set then can't return indices)
+    - if return indices is set then error if interior also set
+    2) for each skeleton:
+        a. Run the mesh correspondence adaptive function
+        b. check to see if got any output (if did not then return empty list or empty mesh)
+        c. If did add a submesh or indices to the return list
+
+
+    Example:
+    return_value = tu.skeleton_to_mesh_correspondence( mesh = debug_mesh,
+                                                skeletons = viable_end_node_skeletons
+                                   )
+
+    nviz.plot_objects(meshes=return_value,
+                      meshes_colors="random",
+                      skeletons=viable_end_node_skeletons,
+                     skeletons_colors="random")
+    """
+
+    if type(skeletons) != list:
+        skeletons = [skeletons]
+
+    return_indices = []
+
+    if remove_inside_pieces_threshold > 0:
+        curr_limb_mesh_indices = tu.remove_mesh_interior(mesh,
+                                                 size_threshold_to_remove=remove_inside_pieces_threshold,
+                                                 try_hole_close=False,
+                                                 return_face_indices=True,
+                                                )
+        curr_limb_mesh_indices = np.array(curr_limb_mesh_indices)
+        mesh = mesh.submesh([curr_limb_mesh_indices],append=True,repair=False)
+    else:
+        curr_limb_mesh_indices = np.arange(len(mesh.faces))
+
+
+    #1) Run the first pass mesh correspondence
+    for curr_sk in skeletons:
+        returned_data = cu.mesh_correspondence_adaptive_distance(curr_sk,
+                                  mesh,
+                                 skeleton_segment_width = 1000,
+                                 distance_by_mesh_center=distance_by_mesh_center,
+                                                            connectivity=connectivity)
+
+        if len(returned_data) == 0:
+            return_indices.append([])
+        else:
+
+            curr_branch_face_correspondence, width_from_skeleton = returned_data
+            return_indices.append(curr_limb_mesh_indices[curr_branch_face_correspondence])
+
+    if return_meshes:
+        return_value = []
+        for ind in return_indices:
+            if len(ind)>0:
+                return_value.append(mesh.submesh([ind],append=True,repair=False))
+            else:
+                return_value.append(trimesh.Trimesh(vertices=np.array([]),
+                                                   faces=np.array([])))
+    else:
+        return_value = return_indices
+
+    if verbose:
+        if not return_meshes:
+            ret_val_sizes = [len(k) for k in return_value]
+        else:
+            ret_val_sizes = [len(k.faces) for k in return_value]
+
+        print(f"Returned value sizes = {ret_val_sizes}")
+        
+    return return_value
     
     

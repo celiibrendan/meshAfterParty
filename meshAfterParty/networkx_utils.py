@@ -1382,5 +1382,20 @@ def move_node_from_exclusion_list(G,
     else:
         return int(winning_node)
     
+def connected_components_from_nodes_edges(nodes,edges):
+    """
+    Purpose: To return groups that should be connected
+    as defined by the total nodes and edges between nodes
+    
+    connected_components_from_nodes_edges([1,2,3,4,5,6],
+                                     [[1,3],
+                                     [3,5],
+                                     [5,6]])
+    """
+    G = nx.Graph()
+    G.add_nodes_from(nodes)
+    G.add_edges_from(edges)
+    return [list(k) for k in list(nx.connected_components(G))]
+    
 import networkx_utils as xu
     
