@@ -607,7 +607,7 @@ def extract_soma_center(segment_id,
                             volume_mulitplier=8,
                             #side_length_ratio_threshold=3
                             side_length_ratio_threshold=6,
-                            soma_size_threshold_max=192000, #this puts at 12000 once decimated, another possible is 256000
+                            soma_size_threshold_max=240000,#192000, #this puts at 12000 once decimated, another possible is 256000
                             delete_files=True,
                             backtrack_soma_mesh_to_original=True, #should either be None or 
                             boundary_vertices_threshold=None,#700 the previous threshold used
