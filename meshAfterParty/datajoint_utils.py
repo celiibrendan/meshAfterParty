@@ -313,6 +313,10 @@ def get_soma_mesh_list(seg_id):
     s_sdfs = np.array(soma_sdf)
     return [s_meshes,s_times,s_sdfs]
 
+import numpy as np
+def get_soma_mesh_list_ver(seg_id):
+    return np.unique((minnie.BaylorSegmentCentroid & dict(segment_id=seg_id)).fetch("ver"))[0]
+
 def get_soma_mesh_list(seg_id):
     key = dict(segment_id=seg_id)  
     soma_meshes,soma_run_time,soma_sdf = (minnie.BaylorSegmentCentroid() & key).fetch("mesh","run_time","sdf")

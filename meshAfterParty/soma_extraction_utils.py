@@ -1234,5 +1234,8 @@ def extract_soma_center(segment_id,
 
         filtered_soma_list_components = np.array([tu.combine_meshes(filtered_soma_list[k]) for k in connected_meshes_components])
         filtered_soma_list_sdf_components = np.array([np.mean(filtered_soma_list_sdf[k]) for k in connected_meshes_components])
+    else:
+        filtered_soma_list_components = []
+        filtered_soma_list_sdf_components = np.array([])
         
     return list(filtered_soma_list_components),run_time,filtered_soma_list_sdf_components 
