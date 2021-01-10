@@ -3063,6 +3063,7 @@ import time
 def remove_nuclei_and_glia_meshes(mesh,
                                   glia_volume_threshold = 2500*1000000000, #the volume of a large soma mesh is 800 billion
                                   glia_n_faces_threshold = 400000,
+                                  glia_n_faces_min = 50000,
                                   nucleus_min = 700,
                                   nucleus_max = None,
                                   connectivity="edges",
@@ -3125,7 +3126,8 @@ def remove_nuclei_and_glia_meshes(mesh,
         """
         curr_interior_mesh_volume = np.array([k.convex_hull.volume for k in curr_interior_mesh])
         
-        glia_pieces = curr_interior_mesh[ (curr_interior_mesh_volume >= glia_volume_threshold)]
+        glia_pieces = curr_interior_mesh[ (curr_interior_mesh_volume >= glia_volume_threshold) &
+                                           (curr_interior_mesh_len) >= glia_n_faces_min]
         nucleus_pieces = curr_interior_mesh[(curr_interior_mesh_len >= nucleus_min) & 
                                             (curr_interior_mesh_volume < glia_volume_threshold)]
         
