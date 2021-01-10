@@ -305,13 +305,13 @@ def get_seg_extracted_somas(seg_id):
     return [trimesh.Trimesh(vertices=v.vertices,faces=v.faces) for v in soma_meshes]
 
 
-def get_soma_mesh_list(seg_id):
-    key = dict(segment_id=seg_id)  
-    soma_vertices, soma_faces,soma_run_time,soma_sdf = (minnie.BaylorSegmentCentroid() & key).fetch("soma_vertices","soma_faces","run_time","sdf")
-    s_meshes = [trimesh.Trimesh(vertices=v,faces=f) for v,f in zip(soma_vertices, soma_faces)]
-    s_times = np.array(soma_run_time)
-    s_sdfs = np.array(soma_sdf)
-    return [s_meshes,s_times,s_sdfs]
+# def get_soma_mesh_list(seg_id):
+#     key = dict(segment_id=seg_id)  
+#     soma_vertices, soma_faces,soma_run_time,soma_sdf = (minnie.BaylorSegmentCentroid() & key).fetch("soma_vertices","soma_faces","run_time","sdf")
+#     s_meshes = [trimesh.Trimesh(vertices=v,faces=f) for v,f in zip(soma_vertices, soma_faces)]
+#     s_times = np.array(soma_run_time)
+#     s_sdfs = np.array(soma_sdf)
+#     return [s_meshes,s_times,s_sdfs]
 
 import numpy as np
 def get_soma_mesh_list_ver(seg_id):
@@ -324,6 +324,11 @@ def get_soma_mesh_list(seg_id):
     s_times = np.array(soma_run_time)
     s_sdfs = np.array(soma_sdf)
     return [s_meshes,s_times,s_sdfs]
+
+def get_segment_glia_nuclei_faces(seg_id):
+    key = dict(segment_id=seg_id)  
+    glia_faces,nuclei_faces = (minnie.NeuronGliaNuclei() & key).fetch1("glia_faces","nuclei_faces")
+    return glia_faces,nuclei_faces
 
 def nucleus_id_to_seg_id(nucleus_id):
     """
@@ -361,26 +366,53 @@ def fetch_nucleus_id_mesh(nucleus_id,verbose=False):
 
 
 import skeleton_utils as sk
-def plot_decimated_mesh_with_somas(seg_id):
+def plot_decimated_mesh_with_somas(seg_id,
+                                   plot_glia_nuclei=False,
+                                   subtract_glia_nuclei=True,
+                                  soma_color="red",
+                                  glia_color = "brown",
+                                  nuclei_color = "black"):
     """
     To visualize a decimated mesh with the somas
     """
     print(f"Segment_id = {seg_id}")
-#     multi_soma_seg_ids = np.unique(multi_soma_seg_ids)
-#     seg_id_idx = -2
-#     seg_id = multi_soma_seg_ids[seg_id_idx]
-
 
     dec_mesh = get_decimated_mesh(seg_id)
     print(f"vertices = {len(dec_mesh.vertices)}, faces= = {len(dec_mesh.faces)}")
-    curr_soma_meshes = get_seg_extracted_somas(seg_id)
-    curr_soma_mesh_list = get_soma_mesh_list(seg_id)
+    curr_soma_meshes = list(get_seg_extracted_somas(seg_id))
+    
+    curr_colors = [soma_color]*len(curr_soma_meshes)
+    
+    
+    other_meshes_to_plot = []
+    
+    glia_faces,nuclei_faces = get_segment_glia_nuclei_faces(seg_id)
 
-    import skeleton_utils as sk
-    sk.graph_skeleton_and_mesh(main_mesh_verts=dec_mesh.vertices,
-                               main_mesh_faces=dec_mesh.faces,
-                            other_meshes=curr_soma_meshes,
-                              other_meshes_colors="red")
+    if glia_faces is not None and len(glia_faces)>0:
+        glia_mesh = dec_mesh.submesh([glia_faces],append=True)
+        other_meshes_to_plot.append(glia_mesh)
+        curr_colors.append(glia_color)
+    else:
+        print("No glia to plot")
+
+    if nuclei_faces is not None and len(nuclei_faces)>0:
+        nuclei_mesh = dec_mesh.submesh([nuclei_faces],append=True)
+        other_meshes_to_plot.append(nuclei_mesh)
+        curr_colors.append(nuclei_color)
+    else:
+        print("No nuclei to plot")
+            
+    if subtract_glia_nuclei:
+        print("subtracting glia and nuclei")
+        dec_mesh = tu.subtract_mesh(dec_mesh,other_meshes_to_plot)
+        
+    if not plot_glia_nuclei:
+        other_meshes_to_plot = []
+        curr_colors = [soma_color]*len(curr_soma_meshes)
+
+    nviz.plot_objects(main_mesh = dec_mesh,
+                              meshes=curr_soma_meshes + other_meshes_to_plot,
+                              meshes_colors=curr_colors)
     
 import trimesh_utils as tu
 import neuron_visualizations as nviz

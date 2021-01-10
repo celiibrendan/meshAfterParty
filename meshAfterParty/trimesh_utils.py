@@ -658,7 +658,8 @@ def subtract_mesh(original_mesh,subtract_mesh,
                     return_mesh=True,
                     exact_match=True
                    ):
-    
+    if nu.is_array_like(subtract_mesh) and len(subtract_mesh) == 0:
+        return original_mesh
     if nu.is_array_like(subtract_mesh):
         subtract_mesh = combine_meshes(subtract_mesh)
         
@@ -2331,6 +2332,7 @@ def convert_o3d_to_trimesh(mesh):
 def mesh_volume_o3d(mesh):
     mesh_o3d = convert_trimesh_to_o3d(mesh)
     return mesh_o3d.get_volume()
+
     
 def is_manifold(mesh):
     mesh_o3d = convert_trimesh_to_o3d(mesh)  
@@ -2469,12 +2471,26 @@ def fill_holes_trimesh(mesh):
     return mesh_copy
 
 import system_utils as su
-def mesh_volume(mesh,watertight_method="trimesh",
+
+def mesh_volume_convex_hull(mesh):
+    return mesh.convex_hull.volume
+
+def mesh_volume(mesh,
+                #watertight_method="trimesh",
+                watertight_method="convex_hull",
                 return_closed_mesh=False,
                 zero_out_not_closed_meshes=True,
                 poisson_obj=None,
                 fill_holes_obj=None,
                verbose=False):
+    
+    # -------------- 1/10 Addition: just adds the quick convex hull calculation ------ #
+    if watertight_method == "convex_hull":
+        if return_closed_mesh:
+            return mesh.convex_hull.volume,mesh.convex_hull
+        else:
+            return mesh.convex_hull.volume
+
     """
     Purpose: To try and compute the volume of spines 
     with an optional argumet to try and close the mesh beforehand
@@ -2915,7 +2931,7 @@ import numpy as np
 def find_large_dense_submesh(mesh,
                              glia_pieces=None, #the glia pieces we already want removed
                             verbose = True,
-                            large_dense_size_threshold = 600000,
+                            large_dense_size_threshold = 400000,
                             large_mesh_cancellation_distance = 3000,
                             filter_away_floating_pieces = True,
                             bbox_filter_away_ratio = 1.7,
@@ -3045,7 +3061,8 @@ def empty_mesh():
     
 import time
 def remove_nuclei_and_glia_meshes(mesh,
-                                  glia_threshold = 600000,
+                                  glia_volume_threshold = 2500*1000000000, #the volume of a large soma mesh is 800 billion
+                                  glia_n_faces_threshold = 400000,
                                   nucleus_min = 700,
                                   nucleus_max = None,
                                   connectivity="edges",
@@ -3086,18 +3103,36 @@ def remove_nuclei_and_glia_meshes(mesh,
     
     
     
-    #2) Divide all of the interior meshes into glia (those above the threshold) and nuclei (those below)
-    if nucleus_max is None:
-        nucleus_max = glia_threshold
-        
-    nucleus_pieces = curr_interior_mesh[(curr_interior_mesh_len >= nucleus_min) & (curr_interior_mesh_len< nucleus_max)]
-    glia_pieces = curr_interior_mesh[ (curr_interior_mesh_len >= glia_threshold)]
-    
-    
     if verbose:
         print(f"There were {len(curr_interior_mesh)} total interior meshes")
-        print(f"Pieces satisfying nucleus requirements ({nucleus_min} <= x < {nucleus_max}): {len(nucleus_pieces)}")
-        print(f"Pieces satisfying nucleus requirements (x >= {glia_threshold}): {len(glia_pieces)}")
+    
+    #2) Divide all of the interior meshes into glia (those above the threshold) and nuclei (those below)
+    if glia_volume_threshold is None:
+        if nucleus_max is None:
+            nucleus_max = glia_n_faces_threshold
+        
+        
+
+        nucleus_pieces = curr_interior_mesh[(curr_interior_mesh_len >= nucleus_min) & (curr_interior_mesh_len< nucleus_max)]
+        glia_pieces = curr_interior_mesh[ (curr_interior_mesh_len >= glia_n_faces_threshold)]
+        
+        if verbose:
+            print(f"Pieces satisfying glia requirements (n_faces) (x >= {glia_n_faces_threshold}): {len(glia_pieces)}")
+            print(f"Pieces satisfying nuclie requirements (n_faces) ({nucleus_min} <= x < {nucleus_max}): {len(nucleus_pieces)}")
+    else:
+        """
+        Psuedocode:
+        """
+        curr_interior_mesh_volume = np.array([k.convex_hull.volume for k in curr_interior_mesh])
+        
+        glia_pieces = curr_interior_mesh[ (curr_interior_mesh_volume >= glia_volume_threshold)]
+        nucleus_pieces = curr_interior_mesh[(curr_interior_mesh_len >= nucleus_min) & 
+                                            (curr_interior_mesh_volume < glia_volume_threshold)]
+        
+        if verbose:
+            print(f"Pieces satisfying glia requirements (volume) (x >= {glia_volume_threshold}): {len(glia_pieces)}")
+            print(f"Pieces satisfying nuclie requirements: n_faces ({nucleus_min} <= x)"
+                  f" and volume (x < {glia_volume_threshold}) : {len(nucleus_pieces)}")
         
         
     #3) Do the Glia removal process
@@ -3107,6 +3142,10 @@ def remove_nuclei_and_glia_meshes(mesh,
                                                                         connectivity=connectivity,
                                                                             verbose=verbose,
                                                                             **kwargs)
+        if glia_submesh is None:
+            glia_submesh = []
+        else:
+            glia_submesh = [glia_submesh]
     else:
         mesh_removed_glia = mesh
         glia_submesh = []

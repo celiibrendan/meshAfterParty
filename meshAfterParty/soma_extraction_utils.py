@@ -633,7 +633,7 @@ def extract_soma_center(segment_id,
                         verbose=False,
                         
                         return_glia_nuclei_pieces = True,
-                        backtrack_soma_size_threshold=4000
+                        backtrack_soma_size_threshold=13000,
                             ):
 
     global_start_time = time.time()
@@ -1280,12 +1280,19 @@ def extract_soma_center(segment_id,
         Now was to stitch the somas together if they are touching
 
         """
-        connected_meshes_components = tu.mesh_list_connectivity(meshes=filtered_soma_list,
-                                 main_mesh=recov_orig_mesh_no_interior,
-                                                    return_connected_components=True)
+        if len(filtered_soma_list)>1:
+            connected_meshes_components = tu.mesh_list_connectivity(meshes=filtered_soma_list,
+                                     main_mesh=recov_orig_mesh_no_interior,
+                                                        return_connected_components=True)
 
-        filtered_soma_list_components = np.array([tu.combine_meshes(filtered_soma_list[k]) for k in connected_meshes_components])
-        filtered_soma_list_sdf_components = np.array([np.mean(filtered_soma_list_sdf[k]) for k in connected_meshes_components])
+            filtered_soma_list_components = np.array([tu.combine_meshes(filtered_soma_list[k]) for k in connected_meshes_components])
+            filtered_soma_list_sdf_components = np.array([np.mean(filtered_soma_list_sdf[k]) for k in connected_meshes_components])
+        elif len(filtered_soma_list)==1:
+            filtered_soma_list_components = filtered_soma_list
+            filtered_soma_list_sdf_components = filtered_soma_list_sdf
+        else:
+            filtered_soma_list_components = []
+            filtered_soma_list_sdf_components = np.array([])
     else:
         filtered_soma_list_components = []
         filtered_soma_list_sdf_components = np.array([])
