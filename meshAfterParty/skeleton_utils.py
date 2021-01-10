@@ -5532,14 +5532,21 @@ def endpoint_connectivity(endpoints_1,endpoints_2,
     
     return connections_dict
 
-def shared_endpoint(skeleton_1,skeleton_2):
+def shared_endpoint(skeleton_1,skeleton_2,return_possibly_two=False):
     """
     Will return the endpoint that joins two branches
     """
     end_1 = find_branch_endpoints(skeleton_1)
     end_2 = find_branch_endpoints(skeleton_2)
-    node_connectivity = endpoint_connectivity(end_1,end_2,print_flag=False,return_coordinate=True)
-    return node_connectivity
+    try:
+        node_connectivity = endpoint_connectivity(end_1,end_2,print_flag=False,return_coordinate=True)
+    except:
+        if return_possibly_two:
+            return np.unique(np.vstack([end_1,end_2]),axis=0)
+        else:
+            raise Exception("Not exactly one shared endpoint")
+    else:
+        return node_connectivity
     
 
 def flip_skeleton(current_skeleton):
@@ -5765,6 +5772,7 @@ def offset_skeletons_aligned_at_shared_endpoint(skeletons,
                                             comparison_distance=2000,
                                                 min_comparison_distance=1000,
                                             verbose=True,
+                                                common_endpoint=None,
                                                ):
 
     """
@@ -5809,8 +5817,11 @@ def offset_skeletons_aligned_at_shared_endpoint(skeletons,
     edge_skeletons = skeletons
     seg_size = 100
 
-
-    common_endpoint = sk.shared_endpoint(edge_skeletons[0],edge_skeletons[1])
+    if common_endpoint is None:
+        common_endpoint = sk.shared_endpoint(edge_skeletons[0],edge_skeletons[1],return_possibly_two=True)
+        if common_endpoint.ndim > 1:
+            print("More than one common endpoint so just choosing the first")
+            common_endpoint = common_endpoint[0]
     
     edge_skeletons_ordered = [sk.order_skeleton(sk.resize_skeleton_branch(e,seg_size),common_endpoint) for e in edge_skeletons]
     

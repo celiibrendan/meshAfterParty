@@ -452,6 +452,9 @@ def plot_graph(title,
     else:
         plt.show()
 
+import matplotlib
+def color_to_hex(color):
+    return matplotlib.colors.to_hex(color, keep_alpha=False)
         
 from IPython.display import display
 def display_figure(fig):

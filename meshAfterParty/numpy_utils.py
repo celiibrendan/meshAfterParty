@@ -301,7 +301,16 @@ def setdiff1d(arr1,arr2,assume_unique=False,return_indices=True):
         return arr1[arr_1_indices_sorted]
     
 def setdiff2d(arr1,arr2):
-    return np.array([k for k in arr1 if len(nu.matching_rows(arr2,k))==0])
+    try:
+        return np.array([k for k in arr1 if len(nu.matching_rows(arr2,k))==0])
+    except:
+        return np.array([k for k in arr1 if len(nu.matching_rows_old(arr2,k))==0])
+    
+def intersect2d(arr1,arr2):
+    try:
+        return np.array([k for k in arr1 if len(nu.matching_rows(arr2,k))>0])
+    except:
+        return np.array([k for k in arr1 if len(nu.matching_rows_old(arr2,k))>0])
     
 def divide_into_label_indexes(mapping):
     """
@@ -401,5 +410,46 @@ def intersecting_array_components(arrays,sort_components=True,verbose=False,perf
 def array_split(array,n_groups):
     return np.array_split(array,n_groups)
 
+
+def unique_non_self_pairings(array):
+    """
+    Purpose: Will take a list of pairings and 
+    then filter the list to only unique pairings where ther is no self
+    pairing
+    
+    
+    """
+    array = np.unique(np.sort(np.array(array),axis=1),axis=0)
+    array = array[array[:,0] != array[:,1]]
+    return array
+
+import itertools
+def all_unique_choose_2_combinations(array):
+    """
+    Given a list of numbers  or labels, will 
+    determine all the possible unique pariings
+    
+    """
+    starting_node_combinations = list(itertools.combinations(array,2))
+    return nu.unique_non_self_pairings(starting_node_combinations)
+
+def unique_pairings_between_2_arrays(array1,array2):
+    """
+    Turns 2 seperate array into all possible comibnations of elements
+    
+    [1,2], [3,4]
+    
+    into 
+    
+    array([[1, 3],
+       [1, 4],
+       [2, 3],
+       [2, 4]])
+    
+    
+    """
+    mesh = np.array(np.meshgrid(array1, array2))
+    combinations = mesh.T.reshape(-1, 2)
+    return combinations
 
 import numpy_utils as nu

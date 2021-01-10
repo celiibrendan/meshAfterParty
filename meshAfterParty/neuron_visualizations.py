@@ -1788,7 +1788,7 @@ def plot_objects(main_mesh=None,
     
     if (subtract_from_main_mesh and (not main_mesh is None) and (len(meshes)>0)):
         main_mesh = tu.subtract_mesh(original_mesh=main_mesh,
-                                  subtract_mesh=meshes)
+                                  subtract_mesh=meshes,exact_match=False)
         
     
     if main_mesh is None:
@@ -1824,7 +1824,7 @@ def plot_branch_spines(curr_branch):
     """
     Purpose: To plot a branch with certain spines
     """
-    shaft_mesh = tu.subtract_mesh(curr_branch.mesh,curr_branch.spines)
+    shaft_mesh = tu.subtract_mesh(curr_branch.mesh,curr_branch.spines,exact_match=False)
     nviz.plot_objects(main_mesh=shaft_mesh,
                      meshes=curr_branch.spines,
                       meshes_colors="red",

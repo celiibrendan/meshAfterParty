@@ -3,6 +3,7 @@ import copy
 import neuron
 import neuron_utils as nru
 from tqdm_utils import tqdm
+import itertools
 
 def width_jump_edges(limb,
                     width_type = "no_spine_median_mesh_center",
@@ -328,6 +329,7 @@ def resolving_crossovers(limb_obj,
                          offset=1000,
                          comparison_distance = 1000,
                          best_singular_match=True,
+                         return_existing_edges = True,
                         **kwargs):
     
     """
@@ -398,7 +400,8 @@ def resolving_crossovers(limb_obj,
             edge_skeletons = [sk_branches[e] for e in edge]
             aligned_sk_parts = sk.offset_skeletons_aligned_at_shared_endpoint(edge_skeletons,
                                                                              offset=offset,
-                                                                             comparison_distance=comparison_distance)
+                                                                             comparison_distance=comparison_distance,
+                                                                             common_endpoint=coordinate)
             
 
             curr_angle = sk.parent_child_skeletal_angle(aligned_sk_parts[0],aligned_sk_parts[1])
@@ -471,7 +474,9 @@ def resolving_crossovers(limb_obj,
         nx.draw(limb_subgraph,with_labels=True)
         plt.show()
     
+    print(f"match_branches = {match_branches}")
     
+    """ Older way of doing that just accounted for edges in current graph
     sorted_edges = np.sort(limb_subgraph.edges(),axis=1)
     if len(match_branches)>0:
         
@@ -481,17 +486,31 @@ def resolving_crossovers(limb_obj,
         edges_to_delete = []
 
         for ed in sorted_edges:
-            if len(nu.matching_rows_old(sorted_confirmed_edges,ed))==0:
+            if not return_existing_edges:
+                if len(nu.matching_rows_old(sorted_confirmed_edges,ed))==0:
+                    edges_to_delete.append(ed)
+            else:
                 edges_to_delete.append(ed)
 
         edges_to_create = []
 
         for ed in sorted_confirmed_edges:
-            if len(nu.matching_rows_old(sorted_edges,ed))==0:
+            if not return_existing_edges:
+                if len(nu.matching_rows_old(sorted_edges,ed))==0:
+                    edges_to_create.append(ed)
+            else:
                 edges_to_create.append(ed)
     else:
         edges_to_delete = sorted_edges
         edges_to_create = []
+    """
+    
+    # ----------- 1/8/21 New iteration that just says what edges should be there and what shouldn't
+    edges_to_create = np.array(match_branches).tolist()
+    possible_edges = np.sort(np.array(list(itertools.combinations(coordinate_branches, 2))),axis=1)
+    edges_to_delete = nu.setdiff2d(possible_edges,match_branches).tolist()
+    
+    
             
     if verbose: 
         print(f"edges_to_delete (resolve crossover) = {edges_to_delete}")

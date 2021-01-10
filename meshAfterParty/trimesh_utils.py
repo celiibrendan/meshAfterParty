@@ -655,7 +655,8 @@ def original_mesh_vertices_map(original_mesh, submesh=None,
     return closest_node
     
 def subtract_mesh(original_mesh,subtract_mesh,
-                    return_mesh=True
+                    return_mesh=True,
+                    exact_match=True
                    ):
     
     if nu.is_array_like(subtract_mesh):
@@ -664,7 +665,8 @@ def subtract_mesh(original_mesh,subtract_mesh,
     return original_mesh_faces_map(original_mesh=original_mesh,
                                    submesh=subtract_mesh,
                                    matching=False,
-                                   return_mesh=return_mesh
+                                   return_mesh=return_mesh,
+                                   exact_match=exact_match,
                                   )
 
 def restrict_mesh(original_mesh,restrict_meshes,
@@ -767,6 +769,8 @@ def original_mesh_faces_map(original_mesh, submesh,
         
         if matching:
             return_faces = closest_node
+        else:
+            return_faces = np.setdiff1d(np.arange(len(original_mesh_midpoints)),closest_node)
 
     if return_mesh:
         return original_mesh.submesh([return_faces],append=True)
@@ -959,12 +963,16 @@ def mesh_pieces_connectivity(
 #             raise Exception("Soething messed up with return in mesh connectivity")
             
 
-
+def two_mesh_list_connectivity(mesh_list_1,mesh_list_2):
+    pass
+    
     
 def mesh_list_connectivity(meshes,
                         main_mesh,
                            connectivity="edges",
+                           pairs_to_test=None,
                            min_common_vertices=1,
+                           weighted_edges=False,
                            return_vertex_connection_groups=False,
                            return_largest_vertex_connection_group=False,
                            return_connected_components=False,
@@ -983,6 +991,7 @@ def mesh_list_connectivity(meshes,
 
     periphery_pieces = meshes
     meshes_connectivity_edge_list = []
+    meshes_connectivity_edge_weights = []
     meshes_connectivity_vertex_connection_groups = []
     
     vertex_graph = None
@@ -1011,49 +1020,56 @@ def mesh_list_connectivity(meshes,
         
         
         """
+    if pairs_to_test is None:
+        pairs_to_test = nu.all_unique_choose_2_combinations(np.arange(len(periphery_pieces_faces)))
     
-    for j,central_p_faces in enumerate(periphery_pieces_faces):
+    for i,j in pairs_to_test:
+        central_p_faces = periphery_pieces_faces[j]
+        
         if connectivity!="edges":
             central_p_verts = np.unique(main_mesh.faces[central_p_faces].ravel())
-        
-        for i in range(0,j):
-            curr_p_faces = periphery_pieces_faces[i]
-            if connectivity=="edges": #will do connectivity based on edges
-                intersecting_vertices = shared_edges_between_faces_on_mesh(main_mesh,
-                                                                           faces_a=central_p_faces,
-                                                                           faces_b=curr_p_faces,
-                                                                           return_vertices_idx=True)
+
+        curr_p_faces = periphery_pieces_faces[i]
+        if connectivity=="edges": #will do connectivity based on edges
+            intersecting_vertices = shared_edges_between_faces_on_mesh(main_mesh,
+                                                                       faces_a=central_p_faces,
+                                                                       faces_b=curr_p_faces,
+                                                                       return_vertices_idx=True)
+
+        else: #then do the vertex way
+
+            curr_p_verts = np.unique(main_mesh.faces[curr_p_faces].ravel())
+
+            intersecting_vertices = np.intersect1d(central_p_verts,curr_p_verts)
+
+        if print_flag:
+            print(f"intersecting_vertices = {intersecting_vertices}")
+
+
+        if len(intersecting_vertices) >= min_common_vertices:
+            if return_vertex_connection_groups:
+
+                if vertex_graph is None:
+                    vertex_graph = mesh_vertex_graph(main_mesh)
+
+                curr_vertex_connection_groups = split_vertex_list_into_connected_components(
+                                                vertex_indices_list=intersecting_vertices,
+                                                mesh=main_mesh,
+                                                vertex_graph=vertex_graph,
+                                                return_coordinates=True,
+                                               )
+                if return_largest_vertex_connection_group:
+                    curr_vertex_connection_groups_len = [len(k) for k in curr_vertex_connection_groups]
+                    largest_group = np.argmax(curr_vertex_connection_groups_len)
+                    curr_vertex_connection_groups = curr_vertex_connection_groups[largest_group]
+
+                meshes_connectivity_vertex_connection_groups.append(curr_vertex_connection_groups)
+
+
+            meshes_connectivity_edge_list.append((i,j))
+            meshes_connectivity_edge_weights.append(len(intersecting_vertices))
                 
-            else: #then do the vertex way
-                
-                curr_p_verts = np.unique(main_mesh.faces[curr_p_faces].ravel())
-
-                intersecting_vertices = np.intersect1d(central_p_verts,curr_p_verts)
-                
-            if print_flag:
-                print(f"intersecting_vertices = {intersecting_vertices}")
-
-
-            if len(intersecting_vertices) >= min_common_vertices:
-                if return_vertex_connection_groups:
-
-                    if vertex_graph is None:
-                        vertex_graph = mesh_vertex_graph(main_mesh)
-
-                    curr_vertex_connection_groups = split_vertex_list_into_connected_components(
-                                                    vertex_indices_list=intersecting_vertices,
-                                                    mesh=main_mesh,
-                                                    vertex_graph=vertex_graph,
-                                                    return_coordinates=True,
-                                                   )
-                    if return_largest_vertex_connection_group:
-                        curr_vertex_connection_groups_len = [len(k) for k in curr_vertex_connection_groups]
-                        largest_group = np.argmax(curr_vertex_connection_groups_len)
-                        curr_vertex_connection_groups = curr_vertex_connection_groups[largest_group]
-
-                    meshes_connectivity_vertex_connection_groups.append(curr_vertex_connection_groups)
-
-                meshes_connectivity_edge_list.append((j,i))
+                    
 
     meshes_connectivity_edge_list = nu.sort_elements_in_every_row(meshes_connectivity_edge_list)
     if return_vertex_connection_groups:
@@ -1061,7 +1077,10 @@ def mesh_list_connectivity(meshes,
     elif return_connected_components:
         return xu.connected_components_from_nodes_edges(np.arange(len(meshes)),meshes_connectivity_edge_list)
     else:
-        return meshes_connectivity_edge_list
+        if weighted_edges:
+            return meshes_connectivity_edge_list,meshes_connectivity_edge_weights
+        else:
+            return meshes_connectivity_edge_list
 
 '''
 Saved method before added in vertex options
@@ -2363,6 +2382,7 @@ def mesh_interior(mesh,
     return mesh_remove_interior
 
 def remove_mesh_interior(mesh,
+                         inside_pieces=None,
                          size_threshold_to_remove=700,
                          verbose=True,
                          return_removed_pieces=False,
@@ -2374,9 +2394,17 @@ def remove_mesh_interior(mesh,
     Will remove interior faces of a mesh with a certain significant size
     
     """
-    curr_interior_mesh = mesh_interior(mesh,return_interior=True,
+    if inside_pieces is None:
+        curr_interior_mesh = mesh_interior(mesh,return_interior=True,
                                        try_hole_close=try_hole_close,
                                        **kwargs)
+    else:
+        print("inside remove_mesh_interior and using precomputed inside_pieces")
+        if nu.is_array_like(inside_pieces):
+            curr_interior_mesh = tu.combine_meshes(inside_pieces)
+        else:
+            curr_interior_mesh = inside_pieces
+        
     
     sig_inside = tu.split_significant_pieces(curr_interior_mesh,significance_threshold=size_threshold_to_remove,
                                             connectivity=connectivity)
@@ -2397,17 +2425,19 @@ def remove_mesh_interior(mesh,
         
         if return_face_indices:
             return_mesh= subtract_mesh(mesh,sig_inside,
-                    return_mesh=False
+                    return_mesh=False,
+                    exact_match=False
                    )
         else:
-            return_mesh= subtract_mesh(mesh,sig_inside)
+            return_mesh= subtract_mesh(mesh,sig_inside,
+                                      exact_match=False)
         
         
     if return_removed_pieces:
         # --- 11/15: Need to only return inside pieces that are mapped to the original face ---
         sig_inside_remapped = [tu.original_mesh_faces_map(mesh,jj,
                                                           return_mesh=True) for jj in sig_inside]
-        sig_inside_remapped = [k for k in sig_inside_remapped if len(k.faces) >= 1] 
+        sig_inside_remapped = [k for k in sig_inside_remapped if (type(k) == type(trimesh.Trimesh())) and len(k.faces) >= 1] 
         return return_mesh,sig_inside_remapped
     else:
         return return_mesh
@@ -2759,5 +2789,355 @@ def skeleton_to_mesh_correspondence(mesh,
         print(f"Returned value sizes = {ret_val_sizes}")
         
     return return_value
+
+
+
+import numpy as np
+'''def find_large_dense_submesh(mesh,
+                             glia_pieces=None, #the glia pieces we already want removed
+                            verbose = True,
+                            large_dense_size_threshold = 600000,
+                            large_mesh_cancellation_distance = 3000,
+                            filter_away_floating_pieces = True,
+                            bbox_filter_away_ratio = 1.7,
+                            connectivity="vertices",
+                            floating_piece_size_threshold = 130000,
+                            remove_large_dense_submesh=True):
+
+    """
+    Purpose: Getting all of the points close to glia and removing them
+
+    1) Get the inner glia mesh
+    2) Build a KDTree fo the inner glia
+    3) Query the faces of the remainingn mesh
+    4) Get all the faces beyond a certain distance and get the submesh
+    5) Filter away all floating pieces in a certain region of the bounding box
+    """
+    current_neuron_mesh = mesh
+
+    #1) Get the inner glia mesh
+
+    all_large_dense_pieces = []
+
+    if glia_pieces is None:
+        mesh_removed_glia,inside_pieces = tu.remove_mesh_interior(current_neuron_mesh,
+                               size_threshold_to_remove=large_dense_size_threshold,
+                                connectivity=connectivity,
+                                try_hole_close=False,
+                                return_removed_pieces =True,
+                                 **kwargs
+                               )
+    else:
+        print("using precomputed glia pieces")
+        inside_pieces = list(glia_pieces)
+        mesh_removed_glia = tu.subtract_mesh(mesh,inside_pieces,
+                                            exact_match=False)
+
+    all_large_dense_pieces+= inside_pieces
+
+
+    for j,inside_glia in enumerate(inside_pieces):
+        if verbose:
+            print(f"\n ---- Working on inside piece {j} ------")
+
+        #2) Build a KDTree fo the inner glia
+        glia_kd = KDTree(inside_glia.triangles_center.reshape(-1,3))
+
+
+        #3) Query the faces of the remainingn mesh
+        dist, _ = glia_kd.query(mesh_removed_glia.triangles_center)
+
+        #4) Get all the faces beyond a certain distance and get the submesh
+        within_threshold_faces = np.where(dist>= large_mesh_cancellation_distance)[0]
+        removed_threshold_faces = np.where(dist< large_mesh_cancellation_distance)[0]
+
+
+        if len(within_threshold_faces)>0:
+            #gathering pieces to return that were removed
+            close_pieces_removed = mesh_removed_glia.submesh([removed_threshold_faces],append=True,repair=False)
+            all_large_dense_pieces.append(close_pieces_removed)
+            
+            mesh_removed_glia = mesh_removed_glia.submesh([within_threshold_faces],append=True,repair=False)
+
+
+            if verbose:
+                print(f"For glia mesh {j} there were {len(within_threshold_faces)} faces within {large_mesh_cancellation_distance} distane")
+                print(f"New mesh size is {mesh_removed_glia}")
+
+
+            if filter_away_floating_pieces:
+                floating_sig_pieces, floating_insig_pieces = tu.split_significant_pieces(mesh_removed_glia,
+                                                                  significance_threshold = floating_piece_size_threshold,
+                                                                  return_insignificant_pieces=True,
+                                                                  connectivity=connectivity)
+
+                if len(floating_insig_pieces)>0:
+                    #get the 
+                    floating_pieces_to_remove = tu.check_meshes_inside_mesh_bbox(inside_glia,floating_insig_pieces,bbox_multiply_ratio=bbox_filter_away_ratio)
+
+                    if verbose:
+                        print(f"Found {len(floating_insig_pieces)} and going to remove {len(floating_pieces_to_remove)} that were inside bounding box")
+
+                    if len(floating_pieces_to_remove)>0:
+
+                        mesh_removed_glia = tu.subtract_mesh(mesh_removed_glia,floating_pieces_to_remove,
+                                                            exact_match=False)
+
+                        all_large_dense_pieces += floating_pieces_to_remove
+
+                        if verbose:
+                            print(f"After removal of floating pieces the mesh is {mesh_removed_glia}")
+            """
+            To help visualize the floating pieces that were removed
+
+            nviz.plot_objects(mesh_removed_glia,
+                          meshes=floating_insig_pieces,
+                         meshes_colors="red")
+
+            """
+            
+    #compiling the large dense submesh
+    if len(all_large_dense_pieces) > 0:
+        total_dense_submesh = tu.combine_meshes(all_large_dense_pieces)
+    else:
+        if verbose: 
+            print("There was no large dense submesh")
+        total_dense_submesh = trimesh.Trimesh(vertices = np.array([]),
+                                             faces=np.array([]))
+
+    if remove_large_dense_submesh:
+        return mesh_removed_glia,total_dense_submesh
+    else:
+        return total_dense_submesh
+    '''
+    
+
+def find_large_dense_submesh(mesh,
+                             glia_pieces=None, #the glia pieces we already want removed
+                            verbose = True,
+                            large_dense_size_threshold = 600000,
+                            large_mesh_cancellation_distance = 3000,
+                            filter_away_floating_pieces = True,
+                            bbox_filter_away_ratio = 1.7,
+                            connectivity="vertices",
+                            floating_piece_size_threshold = 130000,
+                            remove_large_dense_submesh=True):
+
+    """
+    Purpose: Getting all of the points close to glia and removing them
+
+    1) Get the inner glia mesh
+    2) Build a KDTree fo the inner glia
+    3) Query the faces of the remainingn mesh
+    4) Get all the faces beyond a certain distance and get the submesh
+    5) Filter away all floating pieces in a certain region of the bounding box
+    """
+    current_neuron_mesh = mesh
+
+    #1) Get the inner glia mesh
+
+    all_large_dense_pieces = []
+
+    if glia_pieces is None:
+        mesh_removed_glia,inside_pieces = tu.remove_mesh_interior(current_neuron_mesh,
+                               size_threshold_to_remove=large_dense_size_threshold,
+                                connectivity=connectivity,
+                                try_hole_close=False,
+                                return_removed_pieces =True,
+                                 **kwargs
+                               )
+    else:
+        print("using precomputed glia pieces")
+        inside_pieces = list(glia_pieces)
+        mesh_removed_glia = tu.subtract_mesh(mesh,inside_pieces,
+                                            exact_match=False)
+
+    all_large_dense_pieces+= inside_pieces
+
     
     
+    for j,inside_glia in enumerate(inside_pieces):
+        if verbose:
+            print(f"\n ---- Working on inside piece {j} ------")
+
+        #2) Build a KDTree fo the inner glia
+        glia_kd = KDTree(inside_glia.triangles_center.reshape(-1,3))
+
+
+        #3) Query the faces of the remainingn mesh
+        dist, _ = glia_kd.query(mesh_removed_glia.triangles_center)
+
+        #4) Get all the faces beyond a certain distance and get the submesh
+        within_threshold_faces = np.where(dist>= large_mesh_cancellation_distance)[0]
+        removed_threshold_faces = np.where(dist< large_mesh_cancellation_distance)[0]
+
+
+        if len(within_threshold_faces)>0:
+            #gathering pieces to return that were removed
+            close_pieces_removed = mesh_removed_glia.submesh([removed_threshold_faces],append=True,repair=False)
+            all_large_dense_pieces.append(close_pieces_removed)
+            
+            mesh_removed_glia = mesh_removed_glia.submesh([within_threshold_faces],append=True,repair=False)
+
+
+            if verbose:
+                print(f"For glia mesh {j} there were {len(within_threshold_faces)} faces within {large_mesh_cancellation_distance} distane")
+                print(f"New mesh size is {mesh_removed_glia}")
+
+
+                
+                
+                
+                
+    if filter_away_floating_pieces:
+        
+        floating_sig_pieces, floating_insig_pieces = tu.split_significant_pieces(mesh_removed_glia,
+                                                              significance_threshold = floating_piece_size_threshold,
+                                                              return_insignificant_pieces=True,
+                                                              connectivity=connectivity)
+        
+        for j,inside_glia in enumerate(inside_pieces):
+    
+            if len(floating_insig_pieces)>0:
+                
+                floating_pieces_to_remove = tu.check_meshes_inside_mesh_bbox(inside_glia,floating_insig_pieces,bbox_multiply_ratio=bbox_filter_away_ratio)
+
+                if verbose:
+                    print(f"Found {len(floating_insig_pieces)} and going to remove {len(floating_pieces_to_remove)} that were inside bounding box")
+
+                if len(floating_pieces_to_remove)>0:
+
+                    mesh_removed_glia = tu.subtract_mesh(mesh_removed_glia,floating_pieces_to_remove,
+                                                        exact_match=False)
+
+                    all_large_dense_pieces += floating_pieces_to_remove
+
+                    if verbose:
+                        print(f"After removal of floating pieces the mesh is {mesh_removed_glia}")
+            """
+            To help visualize the floating pieces that were removed
+
+            nviz.plot_objects(mesh_removed_glia,
+                          meshes=floating_insig_pieces,
+                         meshes_colors="red")
+
+            """
+            
+    #compiling the large dense submesh
+    if len(all_large_dense_pieces) > 0:
+        total_dense_submesh = tu.combine_meshes(all_large_dense_pieces)
+    else:
+        if verbose: 
+            print("There was no large dense submesh")
+        total_dense_submesh = None
+
+    if remove_large_dense_submesh:
+        return mesh_removed_glia,total_dense_submesh
+    else:
+        return total_dense_submesh
+    
+    
+    
+def empty_mesh():
+    return trimesh.Trimesh(vertices=np.array([]),
+                          faces=np.array([]))
+    
+    
+import time
+def remove_nuclei_and_glia_meshes(mesh,
+                                  glia_threshold = 600000,
+                                  nucleus_min = 700,
+                                  nucleus_max = None,
+                                  connectivity="edges",
+                                  try_hole_close=False,
+                                  verbose=False,
+                                  return_glia_nucleus_pieces=True,
+                                 **kwargs):
+    """
+    Will remove interior faces of a mesh with a certain significant size
+    
+    Pseudocode: 
+    1) Run the mesh interior
+    2) Divide all of the interior meshes into glia (those above the threshold) and nuclei (those below)
+    For Glia:
+    3) Do all of the removal process and get resulting neuron
+    
+    For nuclei:
+    4) Do removal process from mesh that already has glia removed (use subtraction with exact_match = False )
+    
+    
+    
+    
+    """
+    st = time.time()
+    original_mesh_size = len(mesh.faces)
+    
+    #1) Run the mesh interior
+    curr_interior_mesh_non_split = mesh_interior(mesh,return_interior=True,
+                                       try_hole_close=False,
+                                       **kwargs)
+    
+    curr_interior_mesh = tu.split_significant_pieces(curr_interior_mesh_non_split,significance_threshold=nucleus_min,
+                                            connectivity=connectivity)
+    
+    
+    curr_interior_mesh = np.array(curr_interior_mesh)
+    curr_interior_mesh_len = np.array([len(k.faces) for k in curr_interior_mesh])
+    
+    
+    
+    #2) Divide all of the interior meshes into glia (those above the threshold) and nuclei (those below)
+    if nucleus_max is None:
+        nucleus_max = glia_threshold
+        
+    nucleus_pieces = curr_interior_mesh[(curr_interior_mesh_len >= nucleus_min) & (curr_interior_mesh_len< nucleus_max)]
+    glia_pieces = curr_interior_mesh[ (curr_interior_mesh_len >= glia_threshold)]
+    
+    
+    if verbose:
+        print(f"There were {len(curr_interior_mesh)} total interior meshes")
+        print(f"Pieces satisfying nucleus requirements ({nucleus_min} <= x < {nucleus_max}): {len(nucleus_pieces)}")
+        print(f"Pieces satisfying nucleus requirements (x >= {glia_threshold}): {len(glia_pieces)}")
+        
+        
+    #3) Do the Glia removal process
+    if len(glia_pieces) > 0:
+        mesh_removed_glia,glia_submesh = tu.find_large_dense_submesh(mesh,
+                                                                        glia_pieces=glia_pieces,
+                                                                        connectivity=connectivity,
+                                                                            verbose=verbose,
+                                                                            **kwargs)
+    else:
+        mesh_removed_glia = mesh
+        glia_submesh = []
+        
+    
+    #4) Do the Nucleus removal process
+    
+    if len(nucleus_pieces) > 0:
+        main_mesh_total,inside_nucleus_pieces = tu.remove_mesh_interior(mesh_removed_glia,
+                                                                        inside_pieces=nucleus_pieces,
+                                                                        return_removed_pieces=True,
+                                                                        connectivity=connectivity,
+                                                                        size_threshold_to_remove = nucleus_min,
+                                                                   try_hole_close=False,
+                                                                        verbose=verbose,
+                                                                       **kwargs)
+    else:
+        main_mesh_total = mesh_removed_glia
+        inside_nucleus_pieces = []
+    
+    
+    if verbose:
+        print(f"\n\nOriginal Mesh size: {original_mesh_size}, Final mesh size: {len(main_mesh_total.faces)}")
+        print(f"Total time = {time.time() - st}")
+    
+    if return_glia_nucleus_pieces:
+        return main_mesh_total,glia_submesh,inside_nucleus_pieces
+    else:
+        return main_mesh_total
+        
+
+        
+    
+import trimesh_utils as tu

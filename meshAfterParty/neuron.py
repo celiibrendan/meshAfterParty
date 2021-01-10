@@ -792,7 +792,7 @@ class Limb:
                                                                                                **kwargs)
         
         
-    def set_concept_network_edges_from_current_starting_data(self):
+    def set_concept_network_edges_from_current_starting_data(self,verbose=False):
         new_concept_network = nru.branches_to_concept_network(curr_branch_skeletons= self.divided_skeletons,
                                                                   starting_coordinate=self.current_starting_coordinate,
                                                                   starting_edge=self.current_starting_endpoints,
@@ -800,10 +800,12 @@ class Limb:
                                                                        soma_group_idx=self.current_soma_group_idx,
                                                                        verbose=False)
         
+        
+        
         self.concept_network.remove_edges_from(list(self.concept_network.edges()))
         self.concept_network.add_edges_from(list(new_concept_network.edges()))
         self.concept_network.remove_edges_from(self.deleted_edges)
-        self.concept_network.remove_edges_from(self.created_edges)
+        self.concept_network.add_edges_from(self.created_edges)
         
         
     def __init__(self,

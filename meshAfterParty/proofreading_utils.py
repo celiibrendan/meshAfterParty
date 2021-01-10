@@ -30,6 +30,7 @@ def get_best_cut_edge(curr_limb,
                       cut_path,
                       
                       remove_segment_threshold=1500,#the segments along path that should be combined
+                      consider_path_neighbors_for_removal = True,
                       
                       #paraeters for high degree nodes
                       high_degree_offset = 1500,
@@ -48,6 +49,8 @@ def get_best_cut_edge(curr_limb,
                       #parameters for the width threshold
                       width_jump_threshold = 200,
                       verbose=True,
+                      
+                      high_degree_endpoint_coordinates_tried = [], #is a list of high degree end_nodes that have already been tried
                     **kwargs):
     """
     Purpose: To choose the best path to cut to disconnect
@@ -75,9 +78,21 @@ def get_best_cut_edge(curr_limb,
     
     if (not remove_segment_threshold is None) and (remove_segment_threshold > 0):
         print(f"curr_limb.deleted_edges={curr_limb.deleted_edges}")
+        
         path_without_ends = cut_path[1:-1]
-        sk_lens = np.array([sk.calculate_skeleton_distance(curr_limb[k].skeleton) for k in path_without_ends ])
-        short_segments = path_without_ends[np.where(sk_lens<remove_segment_threshold)[0]]
+        
+        if consider_path_neighbors_for_removal:
+            curr_neighbors = np.unique(np.concatenate([xu.get_neighbors(curr_limb.concept_network,k) for k in cut_path]))
+            segments_to_consider = curr_neighbors[(curr_neighbors != cut_path[0]) & (curr_neighbors != cut_path[-1])]
+            print(f"consider_path_neighbors_for_removal is set so segments_to_consider = {segments_to_consider}")
+        else:
+            segments_to_consider = np.array(path_without_ends)
+        
+        
+        sk_lens = np.array([sk.calculate_skeleton_distance(curr_limb[k].skeleton) for k in segments_to_consider])
+        short_segments = segments_to_consider[np.where(sk_lens<remove_segment_threshold)[0]]
+        
+        
         if verbose:
             print(f"Short segments to combine = {short_segments}")
             
@@ -107,12 +122,13 @@ def get_best_cut_edge(curr_limb,
         
     
     high_degree_endpoint_coordinates = find_high_degree_coordinates_on_path(curr_limb,cut_path)
+    high_degree_endpoint_coordinates = nu.setdiff2d(high_degree_endpoint_coordinates,high_degree_endpoint_coordinates_tried)
     
     edges_to_create = None
     edges_to_delete = None
     
     resolve_crossover_at_end = True
-    
+    curr_high_degree_coord = None #will store what high degree end-node was tried
     if verbose:
         print(f"Found {len(high_degree_endpoint_coordinates)} high degree coordinates to cut")
         
@@ -300,10 +316,15 @@ def get_best_cut_edge(curr_limb,
         edges_to_create = list(edges_to_create)
     if nu.is_array_like(removed_branches):
         removed_branches = list(removed_branches)
-    return edges_to_delete,edges_to_create,curr_limb,removed_branches
+    return edges_to_delete,edges_to_create,curr_limb,removed_branches,curr_high_degree_coord
 
 def get_all_coordinate_suggestions(suggestions,concatenate=True,
                                   voxel_adjustment=True):
+    """
+    Getting all the coordinates where there should be cuts
+    
+    
+    """
     all_coord = []
     for limb_idx,sugg_v in suggestions.items():
         curr_coords = np.array(get_attribute_from_suggestion(suggestions,curr_limb_idx=limb_idx,
@@ -320,6 +341,49 @@ def get_all_coordinate_suggestions(suggestions,concatenate=True,
         return list(np.unique(np.vstack(all_coord),axis=0))
     else:
         return list(all_coord)
+    
+def get_all_cut_and_not_cut_path_coordinates(limb_results,voxel_adjustment=True):
+    """
+    Get all of the coordinates on the paths that will be cut
+    
+    
+    """
+    cut_path_coordinates = []
+    not_cut_path_coordinates = []
+
+    for limb_idx, limb_data in limb_results.items():
+        for path_cut_info in limb_data:
+            if len(path_cut_info["paths_cut"]) > 0:
+                cut_path_coordinates.append(np.vstack(path_cut_info["paths_cut"]))
+            if len(path_cut_info["paths_not_cut"]) > 0:
+                not_cut_path_coordinates.append(path_cut_info["paths_not_cut"])
+
+    if len(cut_path_coordinates)>0:
+        total_cut_path_coordinates = np.vstack(cut_path_coordinates)
+    else:
+        total_cut_path_coordinates = []
+
+    if len(not_cut_path_coordinates)>0:
+        total_not_cut_path_coordinates = list(np.vstack(not_cut_path_coordinates))
+    else:
+        total_not_cut_path_coordinates = []
+
+
+    if len(total_not_cut_path_coordinates)>0 and len(total_cut_path_coordinates)>0:
+        total_cut_path_coordinates_revised = list(nu.setdiff2d(total_cut_path_coordinates,total_not_cut_path_coordinates))
+    else:
+        total_cut_path_coordinates_revised = list(total_cut_path_coordinates)
+        
+    if voxel_adjustment:
+        voxel_divider = np.array([4,4,40])
+        total_cut_path_coordinates_revised = [k/voxel_divider for k in total_cut_path_coordinates_revised]
+        total_not_cut_path_coordinates = [k/voxel_divider for k in total_not_cut_path_coordinates]
+        
+    
+        
+    return list(total_cut_path_coordinates_revised),list(total_not_cut_path_coordinates)
+
+    
     
 def get_attribute_from_suggestion(suggestions,curr_limb_idx=None,
                                  attribute_name="edges_to_delete"):
@@ -367,6 +431,7 @@ def cut_limb_network_by_edges(curr_limb,
                                     edges_to_delete=None,
                                     edges_to_create=None,
                                     removed_branches=[],
+                                    perform_edge_rejection=False,
                                     return_accepted_edges_to_create=False,
                                     return_copy=True,
                                     verbose=False):
@@ -388,30 +453,33 @@ def cut_limb_network_by_edges(curr_limb,
     if not edges_to_create is None:
         if verbose:
             print(f"edges_to_create = {edges_to_create}")
-        for n1,n2 in edges_to_create:
-            curr_limb.concept_network.add_edge(n1,n2)
-            counter = 0
-            for d1,d2 in edges_to_delete:
-                try:
-                    ex_path = np.array(nx.shortest_path(curr_limb.concept_network,d1,d2))
-                except:
-                    pass
+            
+        if perform_edge_rejection:
+            for n1,n2 in edges_to_create:
+                curr_limb.concept_network.add_edge(n1,n2)
+                counter = 0
+                for d1,d2 in edges_to_delete:
+                    try:
+                        ex_path = np.array(nx.shortest_path(curr_limb.concept_network,d1,d2))
+                    except:
+                        pass
+                    else:
+                        counter += 1
+                        break
+                if counter > 0:
+                    curr_limb.concept_network.remove_edge(n1,n2)
+                    if verbose:
+                        print(f"Rejected edge ({n1,n2})")
                 else:
-                    counter += 1
-                    break
-            if counter > 0:
-                curr_limb.concept_network.remove_edge(n1,n2)
-                if verbose:
-                    print(f"Rejected edge ({n1,n2})")
-            else:
-                if verbose:
-                    print(f"Accepted edge ({n1,n2})")
-                accepted_edges_to_create.append([n1,n2])
-                
-                
+                    if verbose:
+                        print(f"Accepted edge ({n1,n2})")
+                    accepted_edges_to_create.append([n1,n2])
+        else:
+            accepted_edges_to_create = edges_to_create
+            curr_limb.concept_network.add_edges_from(accepted_edges_to_create)
+
         #add them to the properties
         curr_limb.created_edges += accepted_edges_to_create
-    
     
     if return_accepted_edges_to_create:
         return curr_limb,accepted_edges_to_create
@@ -467,6 +535,8 @@ def multi_soma_split_suggestions(neuron_obj,
         all_starting_nodes = [k["starting_node"] for k in curr_limb_copy.all_concept_network_data]
 
         starting_node_combinations = list(itertools.combinations(all_starting_nodes,2))
+        starting_node_combinations = nu.unique_non_self_pairings(starting_node_combinations)
+        
 
         if verbose:
             print(f"Starting combinations to process = {starting_node_combinations}")
@@ -493,35 +563,78 @@ def multi_soma_split_suggestions(neuron_obj,
             counter = 0
             success = False
             
+            high_degree_endpoint_coordinates_tried = []
+            local_paths_cut = []
+            local_paths_not_cut = []
+            
             while True:
                 if verbose:
                     print(f" Cut iteration {counter}")
+                seperated_graphs = list(nx.connected_components(curr_limb_copy.concept_network))
+                if verbose:
+                    print(f"Total number of graphs at the end of the split BEFORE DIRECTIONAL = {len(seperated_graphs)}")
+                    
+                    
                 curr_limb_copy.set_concept_network_directional(starting_node=st_n_1,suppress_disconnected_errors=True)
+                
+                
+                seperated_graphs = list(nx.connected_components(curr_limb_copy.concept_network))
+                if verbose:
+                    print(f"Total number of graphs at the end of the split AFTER DIRECTIONAL = {len(seperated_graphs)}")
                 try:
                     soma_to_soma_path = np.array(nx.shortest_path(curr_limb_copy.concept_network,st_n_1,st_n_2))
+                    
+                    
+                    
+                    
                 except:
                     if verbose:
                         print("No valid path so moving onto the next connection")
+                    
                     success = True
                     break
-
+                
+                #try and figure out the endpoints along the path
+                local_paths_cut.append(nru.skeleton_points_along_path(curr_limb_copy,soma_to_soma_path))
+                
                 if verbose:
                     print(f"Shortest path = {list(soma_to_soma_path)}")
 
                 # say we found the cut node to make
                 
-                cut_edges, added_edges, curr_limb_copy,removed_branches = pru.get_best_cut_edge(curr_limb_copy,soma_to_soma_path,
+                (cut_edges, 
+                added_edges, 
+                curr_limb_copy,
+                removed_branches,
+                curr_high_degree_coord) = pru.get_best_cut_edge(curr_limb_copy,soma_to_soma_path,
                                                                 remove_segment_threshold=remove_segment_threshold,
                                                                                verbose=verbose,
+                                      high_degree_endpoint_coordinates_tried=high_degree_endpoint_coordinates_tried,
                                                                               **kwargs)
+                
+                if curr_high_degree_coord is not None:
+                    high_degree_endpoint_coordinates_tried.append(curr_high_degree_coord) 
+                
+                print(f"curr_limb_copy.deleted_edges = {curr_limb_copy.deleted_edges}")
+                print(f"curr_limb_copy.created_edges = {curr_limb_copy.created_edges}")
+                
                 if verbose:
                     print(f"After get best cut: cut_edges = {cut_edges}, added_edges = {added_edges}")
+                
                 
                 if cut_edges is None:
                     print("***** there was no suggested cut for this limb even though it is still connnected***")
 
                     break
-
+                
+                
+                
+                #------ 1/8 Addition: check if any new edges cut and if not then break
+                if len(nu.intersect2d(cut_edges,total_soma_paths_to_cut)) == len(cut_edges):
+                    print("**** there were no NEW suggested cuts")
+                    break
+                
+                print(f"total_soma_paths_to_cut = {total_soma_paths_to_cut}")
                 if not cut_edges is None:
                     total_soma_paths_to_cut += cut_edges
                 if not added_edges is None:
@@ -534,23 +647,39 @@ def multi_soma_split_suggestions(neuron_obj,
 
                 if counter > max_iterations:
                     print(f"Breaking because hit max iterations {max_iterations}")
+                    
                     break
 
+            if not success:
+                local_paths_not_cut.append(nru.skeleton_points_along_path(curr_limb_copy,soma_to_soma_path))
+                   
             local_results["edges_to_delete"] = total_soma_paths_to_cut
             local_results["edges_to_create"] = total_soma_paths_to_add
             local_results["removed_branches"] = total_removed_branches
 
-            suggested_cut_points = [sk.shared_endpoint(curr_limb_copy[cut_e[0]].skeleton,
-                                                curr_limb_copy[cut_e[1]].skeleton)
-                                             for cut_e in total_soma_paths_to_cut]
+            suggested_cut_points = []
+            for cut_e in total_soma_paths_to_cut:
+                high_degree_endpoint_coordinates_tried
+                shared_endpoints = sk.shared_endpoint(curr_limb_copy[cut_e[0]].skeleton,
+                                                curr_limb_copy[cut_e[1]].skeleton,
+                                                     return_possibly_two=True)
+                if shared_endpoints.ndim == 1:
+                    suggested_cut_points.append(shared_endpoints)
+                else:
+                    for s_e in shared_endpoints:
+                        if len(nu.matching_rows(high_degree_endpoint_coordinates_tried,s_e)) > 0:
+                            suggested_cut_points.append(s_e)
 
             local_results["coordinate_suggestions"] =suggested_cut_points
             local_results["successful_disconnection"] = success
+            local_results["paths_not_cut"] = local_paths_not_cut
+            local_results["paths_cut"] = local_paths_cut
             results.append(local_results)
 
         seperated_graphs = list(nx.connected_components(curr_limb_copy.concept_network))
         if verbose:
-            print(f"Total number of graphs at the end of the split = {len(seperated_graphs)}")
+            print(f"Total number of graphs at the end of the split = {len(seperated_graphs)}: {[np.array(list(k)) for k in seperated_graphs]}")
+            
 
         limb_results[curr_limb_idx] = results
         
@@ -1244,8 +1373,12 @@ def remove_branches_from_limb(limb_obj,branch_list,
             curr_limb_cp[winning_branch].mesh = tu.combine_meshes([curr_limb_cp[winning_branch].mesh,
                                                                     curr_limb_cp[curr_short_seg_revised].mesh])
             if not curr_limb_cp[curr_short_seg_revised].spines is None:
-                curr_limb_cp[winning_branch].spines += curr_limb_cp[curr_short_seg_revised].spines
-                curr_limb_cp[winning_branch].spines_volume += curr_limb_cp[curr_short_seg_revised].spines_volume
+                if curr_limb_cp[winning_branch].spines is not None:
+                    curr_limb_cp[winning_branch].spines += curr_limb_cp[curr_short_seg_revised].spines
+                    curr_limb_cp[winning_branch].spines_volume += curr_limb_cp[curr_short_seg_revised].spines_volume
+                else:
+                    curr_limb_cp[winning_branch].spines = curr_limb_cp[curr_short_seg_revised].spines
+                    curr_limb_cp[winning_branch].spines_volume = curr_limb_cp[curr_short_seg_revised].spines_volume
             
 
         #1b) Alter the skeletons of those that were touching
@@ -1312,13 +1445,13 @@ import pandas as pd
 from annotationframeworkclient import FrameworkClient
 from nglui import statebuilder
 
-def set_state_builder():
+def set_state_builder(color='#FFFFFF'):
     client = FrameworkClient('minnie65_phase3_v1')
     # The following generates a statebuilder that can turn dataframes into neuroglancer states
     img_layer = statebuilder.ImageLayerConfig(client.info.image_source(), contrast_controls=True, black=0.35, white=0.65)
     seg_layer = statebuilder.SegmentationLayerConfig(client.info.segmentation_source(), selected_ids_column='root_id')
     pts = statebuilder.PointMapper('split_location', linked_segmentation_column='root_id', set_position=True)
-    anno_layer = statebuilder.AnnotationLayerConfig('split_cands', mapping_rules=pts, linked_segmentation_layer=seg_layer.name, color='#FFFFFF', active=True)
+    anno_layer = statebuilder.AnnotationLayerConfig('split_cands', mapping_rules=pts, linked_segmentation_layer=seg_layer.name, color=color, active=True)
     sb = statebuilder.StateBuilder([img_layer, seg_layer, anno_layer], state_server=client.state.state_service_endpoint)
     return sb
 
@@ -1342,8 +1475,10 @@ def set_edit_dataframe(split_locs,
                             'priority': priority})
     return edit_df
 
-def neuroglancer_split_link(split_locs,
-                      root_ids,
+def neuroglancer_split_link(split_locs=None,
+                      root_ids=None,
+                            sb=None,
+                            edit_df=None,
                       priority=None):
     """
     
@@ -1358,11 +1493,13 @@ def neuroglancer_split_link(split_locs,
     
     
     """
-    sb = set_state_builder()
-    edit_df = set_edit_dataframe(split_locs,
-                      root_ids,
-                      priority,
-                      )
+    if sb is None:
+        sb = set_state_builder()
+    if edit_df is None:
+        edit_df = set_edit_dataframe(split_locs,
+                          root_ids,
+                          priority,
+                          )
     
     return sb.render_state(edit_df.sort_values(by='priority'), return_as='html')
 

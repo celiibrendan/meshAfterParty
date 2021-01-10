@@ -3219,7 +3219,16 @@ def all_soma_connnecting_endpionts_from_starting_info(starting_info):
     
 import copy
 
-    
+def skeleton_points_along_path(limb_obj,branch_path,return_unique=True):
+    """
+    Purpose: Will give skeleton coordinates for the endpoints of the 
+    branches along the specified path
+    """
+    skeleton_coordinates = np.array([sk.find_branch_endpoints(limb_obj[k].skeleton) for k in branch_path]).reshape(-1,3)
+    if return_unique:
+        return np.unique(skeleton_coordinates,axis=0)
+    else:
+        return skeleton_coordinates
 
 import neuron_utils as nru
 import neuron #package where can use the Branches class to help do branch skeleton analysis

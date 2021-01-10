@@ -578,7 +578,7 @@ def original_mesh_soma(
         #How to seperate the mesh faces
         seperate_soma_meshes,soma_face_components = tu.split(soma_meshes,only_watertight=False)
         #take the top largest ones depending how many were originally in the soma list
-        su.compressed_pickle(seperate_soma_meshes,"seperate_soma_meshes")
+        
         seperate_soma_meshes = seperate_soma_meshes[:len(soma_mesh_list)]
         
         soma_face_components = soma_face_components[:len(soma_mesh_list)]
@@ -607,7 +607,7 @@ def extract_soma_center(segment_id,
                             volume_mulitplier=8,
                             #side_length_ratio_threshold=3
                             side_length_ratio_threshold=6,
-                            soma_size_threshold_max=240000,#192000, #this puts at 12000 once decimated, another possible is 256000
+                            soma_size_threshold_max=1200000,#240000,#192000, #this puts at 12000 once decimated, another possible is 256000
                             delete_files=True,
                             backtrack_soma_mesh_to_original=True, #should either be None or 
                             boundary_vertices_threshold=None,#700 the previous threshold used
@@ -631,6 +631,9 @@ def extract_soma_center(segment_id,
                             max_fail_loops = 10,#np.inf,
                         perform_pairing = False,
                         verbose=False,
+                        
+                        return_glia_nuclei_pieces = True,
+                        backtrack_soma_size_threshold=4000
                             ):
 
     global_start_time = time.time()
@@ -667,7 +670,9 @@ def extract_soma_center(segment_id,
 
 
     recov_orig_mesh = trimesh.Trimesh(vertices=current_mesh_verts,faces=current_mesh_faces)
-    recov_orig_mesh_no_interior = tu.remove_mesh_interior(recov_orig_mesh)
+    
+    recov_orig_mesh_no_interior, glia_pieces, nuclei_pieces  = tu.remove_nuclei_and_glia_meshes(recov_orig_mesh,verbose=True)
+    #recov_orig_mesh_no_interior = tu.remove_mesh_interior(recov_orig_mesh)
 
 
     #Step 1: Decimate the Mesh and then split into the seperate pieces
@@ -1276,7 +1281,7 @@ def extract_soma_center(segment_id,
 
         """
         connected_meshes_components = tu.mesh_list_connectivity(meshes=filtered_soma_list,
-                                 main_mesh=recov_orig_mesh,
+                                 main_mesh=recov_orig_mesh_no_interior,
                                                     return_connected_components=True)
 
         filtered_soma_list_components = np.array([tu.combine_meshes(filtered_soma_list[k]) for k in connected_meshes_components])
@@ -1284,5 +1289,30 @@ def extract_soma_center(segment_id,
     else:
         filtered_soma_list_components = []
         filtered_soma_list_sdf_components = np.array([])
-        
-    return list(filtered_soma_list_components),run_time,filtered_soma_list_sdf_components 
+    
+    
+    
+    #----------- 1/9 Addition: Final Size Threshold ------------- #
+    if backtrack_soma_mesh_to_original:
+
+        filtered_soma_list_components_new = []
+        filtered_soma_list_sdf_components_new = []
+
+        for soma_mesh, soma_mesh_sdf in zip(filtered_soma_list_components,filtered_soma_list_sdf_components):
+            # --------- 1/9: Extra Size Threshold For Somas ------------- #
+            if len(soma_mesh.faces) < backtrack_soma_size_threshold:
+                print(f"--->This soma mesh with size {len(soma_mesh.faces)} was not bigger than the threshold {backtrack_soma_size_threshold}")
+                continue
+            else:
+                filtered_soma_list_components_new.append(soma_mesh)
+                filtered_soma_list_sdf_components_new.append(soma_mesh_sdf)
+
+        filtered_soma_list_components = filtered_soma_list_components_new
+        filtered_soma_list_sdf_components = np.array(filtered_soma_list_sdf_components_new)
+
+
+    
+    if return_glia_nuclei_pieces:
+        return list(filtered_soma_list_components),run_time,filtered_soma_list_sdf_components,glia_pieces, nuclei_pieces
+    else:
+        return list(filtered_soma_list_components),run_time,filtered_soma_list_sdf_components
