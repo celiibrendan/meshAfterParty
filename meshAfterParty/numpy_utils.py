@@ -429,7 +429,9 @@ def unique_non_self_pairings(array):
     
     
     """
-    if array.ndim != 2 or len(array) == 0 or (0 in array.shape) :
+    array = np.array(array)
+    
+    if len(array) == 0 or (0 in array.shape) :
         return []
     
     array = np.unique(np.sort(np.array(array),axis=1),axis=0)

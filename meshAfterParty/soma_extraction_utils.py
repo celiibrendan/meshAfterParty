@@ -267,7 +267,7 @@ def subtract_soma(current_soma,main_mesh,
 
 def subtract_soma(current_soma_list,main_mesh,
                  significance_threshold=200,
-                 distance_threshold = 550,
+                 distance_threshold = 1500,
                   connectivity="edges",
                  ):
     if type(current_soma_list) == type(trimesh.Trimesh()):
@@ -431,8 +431,92 @@ import time
 
 def original_mesh_soma(
     mesh,
+    original_mesh,
+    bbox_restriction_multiplying_ratio = 1.7,
+    match_distance_threshold = 1500,
+    mesh_significance_threshold = 1000,
+    return_inside_pieces = True,
+    ):
+    """
+    Purpose: To take an approximation of the soma mesh (usually from a poisson surface reconstruction)
+    and map it to faces on the original mesh
+
+    Pseudocode: 
+    1) restrict the larger mesh with a bounding box or current
+    2) Remove all interior pieces
+    3) Save the interior pieces if asked for a pass-back
+    4) Split the Main Mesh
+    5) Find the Meshes that contain the soma
+    6) Map to the original with a high distance threshold
+    7) Split the new mesh and take the largest
+    """
+
+    soma_mesh_list = [mesh]
+
+    #1) restrict the larger mesh with a bounding box or current
+    restricted_big_mesh,_ = tu.bbox_mesh_restriction(original_mesh,mesh,mult_ratio=bbox_restriction_multiplying_ratio)
+
+    # -- Split into largest piece -- #
+    restr_split = tu.split_significant_pieces(restricted_big_mesh,
+                                              significance_threshold=mesh_significance_threshold,connectivity="edges")
+    restr_mesh_to_test = restr_split[0]
+
+
+    #nviz.plot_objects(restricted_big_mesh)
+
+    #2) Remove all interior pieces
+    restr_without_interior,inside_pieces = tu.remove_mesh_interior(restr_mesh_to_test,return_removed_pieces=True,size_threshold_to_remove=300)
+
+    #nviz.plot_objects(restr_without_interior)
+    split_meshes = tu.split_significant_pieces(restr_without_interior,
+                                               significance_threshold=mesh_significance_threshold,connectivity="edges")
+
+    #nviz.plot_objects(meshes=split_meshes)
+
+    #5) Find the Meshes that contain the soma
+    containing_mesh_indices = find_soma_centroid_containing_meshes(soma_mesh_list,
+                                                split_meshes,
+                                                verbose=True)
+
+    soma_containing_meshes = grouping_containing_mesh_indices(containing_mesh_indices)
+
+    soma_touching_meshes = [split_meshes[k] for k in soma_containing_meshes.keys()]
+
+    if len(soma_touching_meshes) != 1:
+        raise Exception(f"soma_touching_meshes not of size 1 {soma_touching_meshes}")
+
+    orig_mesh_to_map = soma_touching_meshes[0]
+
+    #6) Map to the original with a high distance threshold
+    prelim_soma_mesh = tu.original_mesh_faces_map(original_mesh=orig_mesh_to_map,
+                              submesh=mesh,
+                              matching=True,
+                              exact_match=False,
+                              match_threshold = match_distance_threshold,
+                              return_mesh=True)
+
+    #nviz.plot_objects(prelim_soma_mesh)
+
+    #7) Split the new mesh and take the largest
+    split_meshes_after_backtrack = tu.split_significant_pieces(prelim_soma_mesh,
+                                significance_threshold=mesh_significance_threshold,connectivity="edges")
+
+    if len(split_meshes_after_backtrack) == 0:
+        return_mesh = None
+    else:
+        return_mesh = split_meshes_after_backtrack[0]
+
+    if return_inside_pieces:
+        return return_mesh,inside_pieces
+    else:
+        return return_mesh
+
+
+def original_mesh_soma_old(
+    mesh,
     soma_meshes,
     sig_th_initial_split=100,
+    subtract_soma_distance_threshold=550,
     split_meshes=None):
     
     """
@@ -466,7 +550,9 @@ def original_mesh_soma(
     
     
     """
-
+    
+    if not nu.is_array_like(soma_meshes):
+        soma_meshes = [soma_meshes]
     
     main_mesh_total = mesh
     soma_mesh_list_centers = [tu.mesh_center_vertex_average(k) for k in soma_meshes]
@@ -550,7 +636,9 @@ def original_mesh_soma(
         print(f"current_soma_mesh_list = {current_soma_mesh_list}")
         print(f"current_mesh = {current_mesh}")
         mesh_pieces_without_soma = subtract_soma(current_soma_mesh_list,current_mesh,
+                                                 distance_threshold=subtract_soma_distance_threshold,
                                                     significance_threshold=250)
+        
         print(f"mesh_pieces_without_soma = {mesh_pieces_without_soma}")
         
         if len(mesh_pieces_without_soma) == 0:
@@ -637,6 +725,7 @@ def extract_soma_center(segment_id,
                         return_glia_nuclei_pieces = True,
                         backtrack_soma_size_threshold=13000,
                         
+                        filter_inside_meshes = True,
                         filter_inside_somas=True,
                             ):
 
@@ -703,6 +792,13 @@ def extract_soma_center(segment_id,
     list_of_largest_mesh = [k for k in ordered_mesh_splits if len(k.faces) > large_mesh_threshold]
 
     print(f"Total found significant pieces before Poisson = {list_of_largest_mesh}")
+    
+    # --------- 1/11 Addition: Filtering away large meshes that are inside another --------- #
+    if filter_inside_meshes:
+        print(f"Filtering away larger meshes that are inside others, before # of meshes = {len(list_of_largest_mesh)}")
+        list_of_largest_mesh = tu.filter_away_inside_meshes(list_of_largest_mesh,verbose=True,return_meshes=True)
+        print(f"After # of meshes = {len(list_of_largest_mesh)}")
+
 
     #if no significant pieces were found then will use smaller threshold
     if len(list_of_largest_mesh)<=0:
@@ -723,7 +819,9 @@ def extract_soma_center(segment_id,
 
         if remove_inside_pieces:
             print("remove_inside_pieces requested ")
-            largest_mesh = tu.remove_mesh_interior(largest_mesh,size_threshold_to_remove=size_threshold_to_remove)
+            largest_mesh = tu.remove_mesh_interior(largest_mesh,
+                                                   size_threshold_to_remove=size_threshold_to_remove,
+                                                  try_hole_close=False)
 
 
         if pymeshfix_clean:
@@ -1073,32 +1171,24 @@ def extract_soma_center(segment_id,
     filtered_soma_list = []
     filtered_soma_list_sdf = []
     
-    print("Splitting the mesh")
-    split_meshes = tu.split_significant_pieces(
-                                    recov_orig_mesh_no_interior,
-                                    significance_threshold=200,
-                                    print_flag=False)
-    
     for soma_mesh,curr_soma_sdf in zip(total_soma_list_revised,total_soma_list_revised_sdf):
         if backtrack_soma_mesh_to_original:
             print("Performing Soma Mesh Backtracking to original mesh")
             soma_mesh_poisson = deepcopy(soma_mesh)
-            try:
                 #print("About to find original mesh")
-                soma_mesh = original_mesh_soma(
-                                                mesh = recov_orig_mesh_no_interior,
-                                                soma_meshes=[soma_mesh_poisson],
-                                                sig_th_initial_split=200,
-                                                split_meshes=split_meshes)[0]
-            except:
-                import traceback
-                traceback.print_exc()
+                
+            soma_mesh,soma_mesh_inside_pieces = original_mesh_soma(
+                                            original_mesh = recov_orig_mesh_no_interior,
+                                            mesh=soma_mesh_poisson)
+#             except:
+#                 import traceback
+#                 traceback.print_exc()
+#                 print("--->This soma mesh was not added because Was not able to backtrack soma to mesh")
+#                 continue
+            
+            if soma_mesh is None:
                 print("--->This soma mesh was not added because Was not able to backtrack soma to mesh")
                 continue
-            else:
-                if soma_mesh is None:
-                    print("--->This soma mesh was not added because Was not able to backtrack soma to mesh")
-                    continue
 
 
 
@@ -1166,6 +1256,10 @@ def extract_soma_center(segment_id,
         #If made it through all the checks then add to final list
         filtered_soma_list.append(soma_mesh)
         filtered_soma_list_sdf.append(curr_soma_sdf)
+        
+        if len(soma_mesh_inside_pieces) > 0:
+            print(f"About to add the following inside nuclei pieces after soma backtrack: {nuclei_pieces}")
+            nuclei_pieces +=soma_mesh_inside_pieces
 
 
     """
@@ -1350,3 +1444,6 @@ def extract_soma_center(segment_id,
         return list(filtered_soma_list_components),run_time,filtered_soma_list_sdf_components,glia_pieces, nuclei_pieces
     else:
         return list(filtered_soma_list_components),run_time,filtered_soma_list_sdf_components
+    
+    
+import soma_extraction_utils as sm

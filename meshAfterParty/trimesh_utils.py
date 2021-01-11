@@ -169,7 +169,6 @@ def bbox_mesh_restriction(curr_mesh,bbox_upper_corners,
     
 """
 
-
 # New bounding box method able to accept multiple
 def bbox_mesh_restriction(curr_mesh,bbox_upper_corners,
                          mult_ratio = 1):
@@ -192,12 +191,15 @@ def bbox_mesh_restriction(curr_mesh,bbox_upper_corners,
     """
     
     
-    
+
     if type(bbox_upper_corners) != list:
         bbox_upper_corners = [bbox_upper_corners]
     
     sum_totals_list = []
     for bb_corners in bbox_upper_corners:
+        
+        if tu.is_mesh(bb_corners):
+            bb_corners = tu.bounding_box_corners(bb_corners)
     
         bbox_center = np.mean(bb_corners,axis=0)
         bbox_distance = np.max(bb_corners,axis=0)-bbox_center
@@ -3599,6 +3601,11 @@ def filter_away_inside_meshes(mesh_list,
 
     """
 
+    if len(mesh_list) < 2:
+        if return_meshes:
+            return mesh_list
+        else:
+            return np.arange(len(mesh_list))
 
     mesh_list = np.array(mesh_list)
 
@@ -3676,6 +3683,16 @@ def filter_away_inside_meshes(mesh_list,
         return viable_meshes
 
     
-        
+def is_mesh(obj):
+    if type(obj) == type(trimesh.Trimesh()):
+        return True
+    else:
+        return False
+
+import logging
+def turn_off_logging():
+    logging.getLogger("trimesh").setLevel(logging.ERROR)
+
+turn_off_logging()
     
 import trimesh_utils as tu
