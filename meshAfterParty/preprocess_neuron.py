@@ -621,7 +621,7 @@ def split_limb_on_soma(curr_limb,soma_idx,curr_soma_mesh,
 #     for i in range(0,40):
 #         final_faces = np.unique(np.concatenate([xu.get_neighbors(total_mesh_graph,k) for k in final_faces]))
 
-#     other_mesh_faces = np.setdiff1d(np.arange(0,len(curr_branch.mesh.faces)),final_faces)
+#     other_mesh_faces = np.delete(np.arange(0,len(curr_branch.mesh.faces)),final_faces)
     
 #     divided_submeshes_idx = [other_mesh_faces,final_faces]
 #     divided_submeshes = [curr_branch.mesh.submesh([k],append=True) for k in divided_submeshes_idx]
@@ -672,7 +672,7 @@ def split_limb_on_soma(curr_limb,soma_idx,curr_soma_mesh,
             counter+= 1
 
 
-        other_mesh_faces = np.setdiff1d(np.arange(0,len(curr_branch.mesh.faces)),final_faces)
+        other_mesh_faces = np.delete(np.arange(0,len(curr_branch.mesh.faces)),final_faces)
 
         
 

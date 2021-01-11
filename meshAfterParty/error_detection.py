@@ -764,7 +764,7 @@ def error_faces_by_axons(neuron_obj,error_branches = None,
         if verbose:
             print("Computing the axon and non-axonal faces")
         axon_faces = nru.limb_branch_dict_to_faces(neuron_obj,valid_axon_branches_by_limb)
-        non_axon_faces = np.setdiff1d(np.arange(len(neuron_obj.mesh.faces)),axon_faces)
+        non_axon_faces = np.delete(np.arange(len(neuron_obj.mesh.faces)),axon_faces)
         return error_faces_concat,axon_faces,non_axon_faces
         
     return error_faces_concat
@@ -952,7 +952,7 @@ def error_faces_by_axons(neuron_obj,verbose=False,visualize_errors_at_end=False,
         if verbose:
             print("Computing the axon and non-axonal faces")
         axon_faces = nru.limb_branch_dict_to_faces(neuron_obj,valid_axon_branches_by_limb)
-        non_axon_faces = np.setdiff1d(np.arange(len(neuron_obj.mesh.faces)),axon_faces)
+        non_axon_faces = np.delete(np.arange(len(neuron_obj.mesh.faces)),axon_faces)
         return error_faces_concat,axon_faces,non_axon_faces
         
     return error_faces_concat
@@ -1061,7 +1061,7 @@ def get_error_synapse_inserts(current_mesh,
     #4) Calculate the errored synapses
     closest_face_labels = neuron_mesh_labels[closest_face]
     errored_synapses_idx = np.where((closest_face_labels==1) & (dist<mapping_threshold))[0]
-    non_errored_synapses_idx = np.setdiff1d(np.arange(len(closest_face_labels)),errored_synapses_idx)
+    non_errored_synapses_idx = np.delete(np.arange(len(closest_face_labels)),errored_synapses_idx)
 
     if verbose:
         print(f"Number of errored synapses = {errored_synapses_idx.shape}")

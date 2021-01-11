@@ -233,7 +233,7 @@ def get_skeletal_distance_no_skipping(main_mesh,edges,
 
             """
             #-1) Cheuck that there were actually eliminated faces
-            eliminated_mesh_faces_idx = np.setdiff1d(np.arange(len(main_mesh.faces)),unique_removed_faces)
+            eliminated_mesh_faces_idx = np.delete(np.arange(len(main_mesh.faces)),unique_removed_faces)
             if len(eliminated_mesh_faces_idx)>0:
             
 
@@ -655,7 +655,7 @@ def get_skeletal_distance(main_mesh,edges,
             
             debug = False
             #-1) Cheuck that there were actually eliminated faces
-            eliminated_mesh_faces_idx = np.setdiff1d(np.arange(len(main_mesh.faces)),unique_removed_faces)
+            eliminated_mesh_faces_idx = np.delete(np.arange(len(main_mesh.faces)),unique_removed_faces)
             if len(eliminated_mesh_faces_idx)>0:
                 #print("Working in the skeletal_distance patches")
 

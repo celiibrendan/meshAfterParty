@@ -1132,7 +1132,7 @@ def preprocess_limb(mesh,
             """
             # --------------- Part 7: If Found MAP sublimbs, Get the meshes and mesh_idxs of the sublimbs ------------- #
             # ********* if there are no pieces leftover then will automatically make all the lists below just empty (don't need to if.. else.. the case)****
-            pieces_idx_MP = np.setdiff1d(np.arange(len(divided_submeshes_idx)),np.concatenate(filtered_pieces))
+            pieces_idx_MP = np.delete(np.arange(len(divided_submeshes_idx)),np.concatenate(filtered_pieces))
 
             skeleton_MP = [segment_branches[k] for k in pieces_idx_MP]
             skeleton_connectivity_MP = sk.skeleton_list_connectivity(

@@ -914,7 +914,7 @@ def skeleton_obj_to_branches(sk_meshparty_obj,
     #combine segments that are connected at the root if there are only 2
     if len(branches_touching_root) ==2:
         print("connecting at the root")
-        keep_ind = np.setdiff1d(np.arange(len(segments)),branches_touching_root).astype("int")
+        keep_ind = np.delete(np.arange(len(segments)),branches_touching_root).astype("int")
         
         #calculating the new segment
         b_touch_seg_1 = segments[branches_touching_root[0]]

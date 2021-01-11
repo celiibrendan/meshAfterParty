@@ -3127,7 +3127,7 @@ def filter_limbs_below_soma_percentile(neuron_obj,
                      return_color_dict=True)
             
     if verbose:
-        print(f"\n\nTotal removed Limbs = {np.setdiff1d(np.arange(len(neuron_obj.get_limb_node_names())),keep_limb_idx)}")
+        print(f"\n\nTotal removed Limbs = {np.delete(np.arange(len(neuron_obj.get_limb_node_names())),keep_limb_idx)}")
     if return_string_names:
         return convert_int_names_to_string_names(keep_limb_idx)
     else:

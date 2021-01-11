@@ -156,11 +156,7 @@ def filter_away_inside_soma_pieces(
         print("pieces_to_test was empty so returning empty list or pieces")
         return pieces_to_test
     
-    if len(pieces_to_test) == 0:
-        print("soma data passed was empty so returning empty original pieces")
-        return pieces_to_test
-    
-    significant_pieces = [m for m in pieces_to_test if len(m.faces) > significance_threshold]
+    significant_pieces = [m for m in pieces_to_test if len(m.faces) >= significance_threshold]
     
     print(f"There were {len(significant_pieces)} pieces found after size threshold")
     if len(significant_pieces) <=0:
@@ -238,7 +234,7 @@ def subtract_soma(current_soma,main_mesh,
     """
     
     #newer way: using numpy functions
-    faces_to_keep = np.setdiff1d(np.arange(len(main_mesh.faces)),
+    faces_to_keep = np.delete(np.arange(len(main_mesh.faces)),
                                     faces_bbox_inclusion[distance_passed_faces])
 
     """
@@ -306,7 +302,7 @@ def subtract_soma(current_soma_list,main_mesh,
     """
 
     #newer way: using numpy functions
-    faces_to_keep = np.setdiff1d(np.arange(len(main_mesh.faces)),
+    faces_to_keep = np.delete(np.arange(len(main_mesh.faces)),
                                     faces_bbox_inclusion[distance_passed_faces])
 
     """

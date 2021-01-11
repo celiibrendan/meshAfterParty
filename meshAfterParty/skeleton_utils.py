@@ -5669,7 +5669,7 @@ def restrict_skeleton_from_start(skeleton,
     if len(offset_idxs)>0:
         offset_idxs = offset_idxs[1:]
 
-    subtract_idxs = np.setdiff1d(np.arange(len(distance_of_segs)),offset_idxs)
+    subtract_idxs = np.delete(np.arange(len(distance_of_segs)),offset_idxs)
         
     subtract_sk = skeleton[subtract_idxs]
     subtract_sk_len = calculate_skeleton_distance(subtract_sk)
@@ -5680,7 +5680,7 @@ def restrict_skeleton_from_start(skeleton,
 
     #flip the indexes if want to keep the segment
     if not subtract_cutoff: 
-        keep_indexes = np.setdiff1d(np.arange(len(distance_of_segs)),offset_idxs)
+        keep_indexes = np.delete(np.arange(len(distance_of_segs)),offset_idxs)
     else:
         keep_indexes = offset_idxs
 

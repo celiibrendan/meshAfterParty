@@ -267,6 +267,16 @@ def sort_elements_in_every_row(current_array):
     return np.array([np.sort(yi) for yi in current_array])
 # --------- Functions pulled from trimesh.grouping ---------- #
 
+def sort_rows_by_column(array,column_idx,largest_to_smallest=True):
+    """
+    Will sort the rows based on the values of 1 column
+    
+    """
+    order = array[:,column_idx].argsort()
+    if largest_to_smallest:
+        order = np.flip(order)
+    return array[order]
+
 
 def intersect1d(arr1,arr2,assume_unique=False,return_indices=False):
     """
@@ -451,5 +461,10 @@ def unique_pairings_between_2_arrays(array1,array2):
     mesh = np.array(np.meshgrid(array1, array2))
     combinations = mesh.T.reshape(-1, 2)
     return combinations
+
+def remove_indexes(arr1,arr2):
+    return np.delete(arr1,arr2)
+
+
 
 import numpy_utils as nu

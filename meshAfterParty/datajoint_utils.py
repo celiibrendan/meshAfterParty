@@ -410,6 +410,9 @@ def plot_decimated_mesh_with_somas(seg_id,
         other_meshes_to_plot = []
         curr_colors = [soma_color]*len(curr_soma_meshes)
 
+    print(f"curr_colors = {curr_colors}")
+    print(f"curr_soma_meshes = {curr_soma_meshes}")
+    print(f"other_meshes_to_plot = {other_meshes_to_plot}")
     nviz.plot_objects(main_mesh = dec_mesh,
                               meshes=curr_soma_meshes + other_meshes_to_plot,
                               meshes_colors=curr_colors)

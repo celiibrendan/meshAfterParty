@@ -275,7 +275,7 @@ def check_meshes_inside_mesh_bbox(main_mesh,test_meshes,
     
     #3) Set the return values
     if not return_inside:
-        return_idx = np.setdiff1d(np.arange(len(test_meshes)),inside_meshes_idx)
+        return_idx = np.delete(np.arange(len(test_meshes)),inside_meshes_idx)
     else:
         return_idx = np.array(inside_meshes_idx)
     
@@ -351,7 +351,7 @@ def check_meshes_inside_multiple_mesh_bbox(main_meshes,test_meshes,
 import numpy as  np
 import system_utils as su
 # --------------- 12/3 Addition: Made the connectivity matrix from the vertices by default ------------- #
-def split_significant_pieces(new_submesh,
+def split_significant_pieces_old(new_submesh,
                             significance_threshold=100,
                             print_flag=False,
                             return_insignificant_pieces=False,
@@ -410,6 +410,128 @@ def split_significant_pieces(new_submesh,
         return sorted_significant_pieces,sorted_significant_pieces_insig
     else:
         return sorted_significant_pieces
+    
+def split_significant_pieces(new_submesh,
+                            significance_threshold=100,
+                            print_flag=False,
+                            return_insignificant_pieces=False,
+                             return_face_indices = False,
+                            connectivity="vertices"):
+    """
+    Will split a mesh based on connectivity of edges or vertices
+    (can return insiginifcant pieces and their face indices)
+    
+    Ex: 
+    (split_meshes,split_meshes_face_idx,
+    split_meshes_insig,split_meshes_face_idx_insig) = tu.split_significant_pieces(main_mesh_total,connectivity="edges",
+                                                                                  return_insignificant_pieces=True,
+                                                                     return_face_indices=True)
+    
+    
+    
+    """
+    
+    if type(new_submesh) != type(trimesh.Trimesh()):
+        print("Inside split_significant_pieces and was passed empty mesh so retruning empty list")
+        if return_insignificant_pieces:
+            return [],[]
+        else:
+            return []
+    
+    if print_flag:
+        print("------Starting the mesh filter for significant outside pieces-------")
+#     import system_utils as su
+#     su.compressed_pickle(new_submesh,f"new_submesh_{np.random.randint(10,1000)}")
+    if connectivity=="edges":
+        """ Old way that did not have options for the indices 
+        mesh_pieces = new_submesh.split(only_watertight=False,repair=False)
+        """
+        
+        mesh_pieces,mesh_pieces_idx = tu.split(new_submesh,connectivity="edges") 
+    else:
+        mesh_pieces,mesh_pieces_idx = split_by_vertices(new_submesh,return_components=True)
+        
+    if print_flag:
+        print(f"Finished splitting mesh_pieces into = {mesh_pieces}")
+    if type(mesh_pieces) not in [type(np.ndarray([])),type(np.array([])),list]:
+        mesh_pieces = [mesh_pieces]
+    
+    if print_flag:
+        print(f"There were {len(mesh_pieces)} pieces after mesh split")
+
+    mesh_pieces = np.array(mesh_pieces)
+    mesh_pieces_idx = np.array(mesh_pieces_idx)
+    
+    pieces_len = np.array([len(m.faces) for m in mesh_pieces])
+    significant_pieces_idx = np.where(pieces_len >= significance_threshold)[0]
+    insignificant_pieces_idx = np.where(pieces_len < significance_threshold)[0]
+    
+    significant_pieces = mesh_pieces[significant_pieces_idx]
+    significant_pieces_face_idx = mesh_pieces_idx[significant_pieces_idx]
+    
+    if return_insignificant_pieces:
+        insignificant_pieces = mesh_pieces[insignificant_pieces_idx]
+        insignificant_pieces_face_idx = mesh_pieces_idx[insignificant_pieces_idx]
+
+    if print_flag:
+        print(f"There were {len(significant_pieces)} pieces found after size threshold")
+        
+        
+    if len(significant_pieces) <=0:
+        print("THERE WERE NO MESH PIECES GREATER THAN THE significance_threshold")
+        if return_insignificant_pieces:
+            if return_face_indices:
+                return [],[],[],[]
+            else:
+                return [],[]
+        else:
+            if return_face_indices:
+                return [],[]
+            else:
+                return []
+    
+    #arrange the significant pieces from largest to smallest
+    sorted_significant_meshes,sorted_significant_meshes_idx = tu.sort_meshes_largest_to_smallest(significant_pieces,
+                                                                                                sort_attribute="vertices",
+                                                                                                return_idx=True)
+    sorted_significant_meshes_face_idx = significant_pieces_face_idx[sorted_significant_meshes_idx]
+    
+    sorted_significant_meshes = list(sorted_significant_meshes)
+    sorted_significant_meshes_face_idx = list(sorted_significant_meshes_face_idx)
+    
+#     x = [len(k.vertices) for k in significant_pieces]
+#     sorted_indexes = sorted(range(len(x)), key=lambda k: x[k])
+#     sorted_indexes = sorted_indexes[::-1]
+#     sorted_significant_pieces = [significant_pieces[k] for k in sorted_indexes]
+    
+    if return_insignificant_pieces:
+        sorted_insignificant_meshes,sorted_insignificant_meshes_idx = tu.sort_meshes_largest_to_smallest(insignificant_pieces,
+                                                                                                sort_attribute="vertices",
+                                                                                                return_idx=True)
+        sorted_insignificant_meshes_face_idx = insignificant_pieces_face_idx[sorted_insignificant_meshes_idx]
+        
+        sorted_insignificant_meshes = list(sorted_insignificant_meshes)
+        sorted_insignificant_meshes_face_idx = list(sorted_insignificant_meshes_face_idx)
+        
+#         #arrange the significant pieces from largest to smallest
+#         x = [len(k.vertices) for k in insignificant_pieces]
+#         sorted_indexes = sorted(range(len(x)), key=lambda k: x[k])
+#         sorted_indexes = sorted_indexes[::-1]
+#         sorted_significant_pieces_insig = [insignificant_pieces[k] for k in sorted_indexes]
+        
+        
+    if return_insignificant_pieces:
+        if return_face_indices:
+            return (sorted_significant_meshes,sorted_significant_meshes_face_idx,
+                sorted_insignificant_meshes,sorted_insignificant_meshes_face_idx)
+        else:
+            return (sorted_significant_meshes,
+                sorted_insignificant_meshes)
+    else:
+        if return_face_indices:
+            return (sorted_significant_meshes,sorted_significant_meshes_face_idx)
+        else:
+            return sorted_significant_meshes
 
 
 """
@@ -688,7 +810,8 @@ def original_mesh_faces_map(original_mesh, submesh,
                            print_flag=False,
                            match_threshold = 0.001,
                             exact_match=False,
-                           return_mesh=False):
+                           return_mesh=False,
+                           original_mesh_kdtree=None):
     """
     PUrpose: Given a base mesh and mesh that was a submesh of that base mesh
     - find the original face indices of the submesh
@@ -757,7 +880,9 @@ def original_mesh_faces_map(original_mesh, submesh,
             return_faces = (np.arange(len(original_mesh_midpoints)))[distances >= match_threshold]
     else:        
         #1) Put the submesh face midpoints into a KDTree
-        original_mesh_kdtree = KDTree(original_mesh_midpoints)
+        if original_mesh_kdtree is None:
+            original_mesh_kdtree = KDTree(original_mesh_midpoints)
+            
         #2) Query the fae midpoints of submesh against KDTree
         distances,closest_node = original_mesh_kdtree.query(submesh_midpoints)
         
@@ -771,7 +896,7 @@ def original_mesh_faces_map(original_mesh, submesh,
         if matching:
             return_faces = closest_node
         else:
-            return_faces = np.setdiff1d(np.arange(len(original_mesh_midpoints)),closest_node)
+            return_faces = nu.remove_indexes(np.arange(len(original_mesh_midpoints)),closest_node)
 
     if return_mesh:
         return original_mesh.submesh([return_faces],append=True)
@@ -964,10 +1089,94 @@ def mesh_pieces_connectivity(
 #             raise Exception("Soething messed up with return in mesh connectivity")
             
 
-def two_mesh_list_connectivity(mesh_list_1,mesh_list_2):
-    pass
+def two_mesh_list_connectivity(mesh_list_1,mesh_list_2,
+                               main_mesh,
+                              return_weighted_edges = True,
+                              verbose=False):
+    """
+    Purpose: To find the connectivity between two sets of 
+    mesh lists (and possibly return the number of vertices that are connecting them)
+    
+    Pseudocode:
+    1) Stack the somas meshes and other meshes
+    2) Create a connectivity pairing to test
+    3) Run the mesh connectivity to get the correct pairings and the weights
+    4) Return the edges with the weights optionally attached
+
+    **stacked meshes could be faces indices or meshes themselves
+
+    """
+    print_optimize = verbose
+    main_mesh_total = main_mesh
+    
+    optimize_time = time.time()
+
+    mesh_list_1_face_idx = tu.convert_meshes_to_face_idxes(mesh_list_1,main_mesh_total)
+    mesh_list_2_face_idx = tu.convert_meshes_to_face_idxes(mesh_list_2,main_mesh_total)
+
+    if print_optimize:
+        print(f" Converting {time.time()-optimize_time}")
+    optimize_time = time.time()
+
+    #1) Stack the somas meshes and other meshes
+    stacked_meshes = list(mesh_list_1_face_idx) + list(mesh_list_2_face_idx)
+
+    #2) Create a connectivity pairing to test
+    n_list_1 = len(mesh_list_1)
+    pais_to_test = nu.unique_pairings_between_2_arrays(np.arange(n_list_1),np.arange(len(mesh_list_2)) + n_list_1)
+
+    if print_optimize:
+        print(f" Unique pairing {time.time()-optimize_time}")
+    optimize_time = time.time()
+
+    #3) Run the mesh connectivity to get the correct pairings and the weights
+    optimize_time = time.time()
+    mesh_conn_edges,conn_weights = tu.mesh_list_connectivity(meshes=stacked_meshes,
+                             main_mesh = main_mesh_total,
+                             pairs_to_test=pais_to_test,
+                             weighted_edges=True)
+
+    mesh_conn_edges[:,1] = mesh_conn_edges[:,1]-n_list_1
+    if print_optimize:
+        print(f" Mesh connectivity {time.time()-optimize_time}")
+    optimize_time = time.time()
+
+    if return_weighted_edges:
+        return np.vstack([mesh_conn_edges.T,conn_weights]).T
+    else:
+        return mesh_conn_edges
     
     
+    
+def convert_meshes_to_face_idxes(mesh_list,
+                              main_mesh,
+                              exact_match=True,
+                                original_mesh_kd=None):
+    """
+    Purpose: Will convert a list of 
+    
+    
+    """
+    
+    if original_mesh_kd is None:
+        original_mesh_midpoints = main_mesh.triangles_center
+        original_mesh_kd = KDTree(original_mesh_midpoints)
+    
+    
+    periphery_pieces_faces = []
+    for k in mesh_list:
+        if type(k) == type(trimesh.Trimesh()):
+            #print("using trimesh pieces")
+            periphery_pieces_faces.append(original_mesh_faces_map(main_mesh,k,
+                                                                 exact_match=exact_match,
+                                                                 original_mesh_kdtree=original_mesh_kd))
+        else:
+            #print("just using face idxs")
+            periphery_pieces_faces.append(k)
+    
+    return periphery_pieces_faces
+    
+            
 def mesh_list_connectivity(meshes,
                         main_mesh,
                            connectivity="edges",
@@ -1751,7 +1960,7 @@ def mesh_with_ends_cutoff(mesh,n_iterations=5,
     #2) Get a submesh without the border faces
     if verbose:
         print(f"Removing {len(curr_border_faces)} border meshes of sizes: {[len(k) for k in curr_border_faces]} ")
-    faces_to_keep = np.setdiff1d(np.arange(len(mesh.faces)),np.concatenate(curr_border_faces))
+    faces_to_keep = np.delete(np.arange(len(mesh.faces)),np.concatenate(curr_border_faces))
     leftover_submesh = mesh.submesh([faces_to_keep],append=True,repair=False)
 
     if verbose:
@@ -3063,7 +3272,7 @@ import time
 def remove_nuclei_and_glia_meshes(mesh,
                                   glia_volume_threshold = 2500*1000000000, #the volume of a large soma mesh is 800 billion
                                   glia_n_faces_threshold = 400000,
-                                  glia_n_faces_min = 50000,
+                                  glia_n_faces_min = 100000,
                                   nucleus_min = 700,
                                   nucleus_max = None,
                                   connectivity="edges",
@@ -3098,6 +3307,7 @@ def remove_nuclei_and_glia_meshes(mesh,
     curr_interior_mesh = tu.split_significant_pieces(curr_interior_mesh_non_split,significance_threshold=nucleus_min,
                                             connectivity=connectivity)
     
+    #su.compressed_pickle(curr_interior_mesh,"curr_interior_mesh")
     
     curr_interior_mesh = np.array(curr_interior_mesh)
     curr_interior_mesh_len = np.array([len(k.faces) for k in curr_interior_mesh])
@@ -3127,7 +3337,7 @@ def remove_nuclei_and_glia_meshes(mesh,
         curr_interior_mesh_volume = np.array([k.convex_hull.volume for k in curr_interior_mesh])
         
         glia_pieces = curr_interior_mesh[ (curr_interior_mesh_volume >= glia_volume_threshold) &
-                                           (curr_interior_mesh_len) >= glia_n_faces_min]
+                                           (curr_interior_mesh_len >= glia_n_faces_min)]
         nucleus_pieces = curr_interior_mesh[(curr_interior_mesh_len >= nucleus_min) & 
                                             (curr_interior_mesh_volume < glia_volume_threshold)]
         

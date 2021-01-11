@@ -296,7 +296,7 @@ def get_spine_meshes_unfiltered_from_mesh(current_mesh,
 
         final_shaft_mesh_names = np.unique(final_shaft_mesh_names)
 
-        final_spine_faces_idx = np.setdiff1d(np.arange(0,len(current_mesh.faces)), final_shaft_meshes_idx)
+        final_spine_faces_idx = np.delete(np.arange(0,len(current_mesh.faces)), final_shaft_meshes_idx)
 
         """
         #Old way of getting all of the spines: by just dividing the mesh using disconnected components
