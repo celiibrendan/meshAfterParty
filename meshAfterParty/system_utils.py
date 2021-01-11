@@ -199,7 +199,7 @@ def load_object(filename):
 # Pickle a file and then compress it into a file with extension 
 import bz2
 import _pickle as cPickle
-def compressed_pickle(obj,filename,return_size=False):
+def compressed_pickle(obj,filename,return_size=False,verbose=True):
     """
     compressed_pickle(data,'example_cp') 
     """
@@ -211,9 +211,11 @@ def compressed_pickle(obj,filename,return_size=False):
     with bz2.BZ2File(filename, 'w') as f: 
         cPickle.dump(obj, f)
         
-    print(f"Saved object at {Path(filename).absolute()}")
     file_size = get_file_size(filename)/1000000
-    print(f"File size is {file_size} MB")
+    
+    if verbose:
+        print(f"Saved object at {Path(filename).absolute()}")
+        print(f"File size is {file_size} MB")
     
     if return_size:
         return file_size

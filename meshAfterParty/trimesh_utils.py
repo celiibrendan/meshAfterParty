@@ -3388,7 +3388,294 @@ def remove_nuclei_and_glia_meshes(mesh,
     else:
         return main_mesh_total
         
+def percentage_vertices_inside(
+                                main_mesh,
+                                test_mesh,
+                                n_sample_points = 1000,
+                                use_convex_hull = True,
+                                verbose = False):
+    """
+    Purpose: Function that will determine the percentage of vertices
+    of one mesh being inside of another
+    
+    Ex:
+    tu.percentage_vertices_inside(
+                    main_mesh = soma_meshes[3],
+                    test_mesh = soma_meshes[1],
+                    n_sample_points = 1000,
+                    use_convex_hull = True,
+                    verbose = True)
 
+    """
+
+    if use_convex_hull:
+        main_mesh = main_mesh.convex_hull
+
+    mesh = test_mesh
+
+    if n_sample_points > len(mesh.vertices):
+        n_sample_points = len(mesh.vertices)
+
+    #gets the number of samples on the mesh to test (only the indexes)
+    idx = np.random.choice(len(mesh.vertices),n_sample_points , replace=False)
+    #gets the sample's vertices
+    points = mesh.vertices[idx,:]
+
+    #find the signed distance from the sampled vertices to the main mesh
+    # Points outside the mesh will be negative
+    # Points inside the mesh will be positive
+    signed_distance = trimesh.proximity.signed_distance(main_mesh,points)
+
+    #gets the 
+    inside_percentage = sum(signed_distance >= 0)/n_sample_points
+
+    if verbose:
+        print(f"Inside Percentage = {inside_percentage}")
+        
+    return inside_percentage
+
+
+def test_inside_meshes(main_mesh,
+                        test_meshes,
+                        n_sample_points = 10,
+                        use_convex_hull = True,
+                       inside_percentage_threshold = 0.9,
+                        return_outside=False,
+                        return_meshes=False,
+                       verbose=False,
+    ):
+    """
+    To determine which of the test meshes
+    are inside the main mesh
+    
+    Ex:
+    tu.test_inside_meshes(
+                    main_mesh = soma_meshes[3],
+                    test_meshes = soma_meshes[1],
+                    n_sample_points = 1000,
+                    use_convex_hull = True,
+                    inside_percentage_threshold=0.9,
+                    verbose = True)
+
+    
+    """
+    if not nu.is_array_like(test_meshes):
+        test_meshes = [test_meshes]
+    
+    test_meshes = np.array(test_meshes)
+    inside_indices = []
+    
+    for i,t_mesh in enumerate(test_meshes):
+        perc_inside = percentage_vertices_inside(
+                                main_mesh,
+                                t_mesh,
+                                n_sample_points = n_sample_points,
+                                use_convex_hull = use_convex_hull,
+                                verbose = False)
+        
+        if perc_inside > inside_percentage_threshold:
+            if verbose:
+                print(f"Mesh {i} was inside because inside percentage was {perc_inside}")
+            inside_indices.append(i)
+        else:
+            if verbose:
+                print(f"Mesh {i} was OUTSIDE because inside percentage was {perc_inside}")
+    
+    inside_indices = np.array(inside_indices)
+    
+    if return_outside:
+        return_indices = np.delete(np.arange(len(test_meshes)),inside_indices)
+    else:
+        return_indices = inside_indices
+    
+    
+    if return_meshes:
+        return test_meshes[return_indices]
+    else:
+        return return_indices
+        
+        
+def meshes_distance_matrix(mesh_list,
+                                distance_type="shortest_vertex_distance",
+                          verbose=False):
+    """
+    Purpose: To determine the pairwise distance between meshes
+    """
+    
+    if verbose:
+        print(f"Using distance_type = {distance_type}")
+        
+    if distance_type == "shortest_vertex_distance":
+       
+        dist_matrix_adj = []
+        for i,m1 in enumerate(mesh_list):
+            
+            local_distance = []
+            m1_kd = KDTree(m1.vertices)
+            
+            for j,m2 in enumerate(mesh_list):
+                
+                if j == i:
+                    local_distance.append(np.inf)
+                    continue
+                    
+                dist, _ = m1_kd.query(m2.vertices)
+                local_distance.append(np.min(dist))
+                
+            dist_matrix_adj.append(local_distance)
+            
+        dist_matrix_adj = np.array(dist_matrix_adj)
+        
+    elif distance_type == "mesh_center":
+        dist_matrix = nu.get_coordinate_distance_matrix([tu.mesh_center_vertex_average(k)
+                                                         for k in mesh_list])
+        dist_matrix_adj = dist_matrix + np.diag([np.inf]*len(dist_matrix))
+        
+    else:
+        raise Exception("Unimplemented distance_type")
+    
+    return dist_matrix_adj
+    
+def meshes_within_close_proximity(mesh_list,
+                                distance_type="shortest_vertex_distance",
+                                  distance_threshold = 20000,
+                                  return_distances = True,
+                                verbose=False):
+    """
+    Purpose: To Get the meshes that are within close proximity of each other
+    as defined by mesh centers or the absolute shortest vertex distance
+    
+    """
+    if len(mesh_list)<2:
+        return [],[]
+    
+    dist_matrix_adj = meshes_distance_matrix(mesh_list,
+                                distance_type=distance_type,
+                          verbose=verbose)
+    if verbose:
+        print(f"dist_matrix_adj = {dist_matrix_adj}")
+        
+    soma_pairings_to_check = nu.unique_non_self_pairings(np.array(np.where(dist_matrix_adj<=distance_threshold)))
+    
+    if len(soma_pairings_to_check) > 0:
+        distances_per_pair = np.array([dist_matrix_adj[k1][k2] for k1,k2 in soma_pairings_to_check])
+    else:
+        distances_per_pair = []
+    
+    if return_distances:
+        return soma_pairings_to_check,distances_per_pair
+    else:
+        return soma_pairings_to_check
+    
+    
+    
+def filter_away_inside_meshes(mesh_list,
+                                distance_type="shortest_vertex_distance",
+                                distance_threshold = 2000,
+                                inside_percentage_threshold = 0.15,
+                                verbose = False,
+                                return_meshes = False,
+                                ):
+
+    """
+    Purpose: To filter out any meshes
+    that are inside of another mesh in the list
+
+    1) Get all the pairings of meshes to check and the distances between
+    2) Find the order of pairs to check 1st by distance
+    3) Create a viable meshes index list with initially all indexes present
+
+    For each pair (in the order pre-determined in 2)
+    a) If both indexes are not in the viable meshes list --> continue
+    b) check the percentage that each is inside of the other
+    c) Get the ones that are above a threshold
+    d1) If none are above threshold then continue
+    d2) If one is above threshold then that is the losing index
+    d3) If both are above the threshold then pick the smallest one as the losing index
+    e) remove the losing index from the viable meshes index list
+
+    4) Return either the viables meshes indexes or the meshes themselves
+
+
+    """
+
+
+    mesh_list = np.array(mesh_list)
+
+    #1) Get all the pairings of meshes to check and the distances between
+    return_pairings,pair_distances = tu.meshes_within_close_proximity(mesh_list,
+                                    distance_type=distance_type,
+                                    distance_threshold = distance_threshold,
+                                                      verbose=verbose)
+
+    if verbose:
+        print(f"return_pairings = {return_pairings}")
+        print(f"pair_distances = {pair_distances}")
+
+    #2) Find the order of pairs to check 1st by distance
+    pair_to_check_order = np.argsort(pair_distances)
+
+
+    #3) Create a viable meshes index list with initially all indexes present
+    viable_meshes = np.arange(len(mesh_list))
+
+    #For each pair (in the order pre-determined in 2)
+    for pair_idx in pair_to_check_order:
+
+        curr_pair = return_pairings[pair_idx]
+        mesh_1_idx,mesh_2_idx = curr_pair
+
+        if verbose:
+            print(f"\n-- working on pair: {curr_pair} --")
+
+        #a) If both indexes are not in the viable meshes list --> continue
+        if (mesh_1_idx not in viable_meshes) or (mesh_2_idx not in viable_meshes):
+            print("Continuing because both meshes not in viable mesh list")
+            continue
+
+        #b) check the percentage that each is inside of the other
+        
+        
+        inside_percentages = np.array([percentage_vertices_inside(
+                                    main_mesh = mesh_list[curr_pair[1-i]],
+                                    test_mesh = mesh_list[curr_pair[i]]) for i in range(0,2)])
+
+        if verbose:
+            print(f"inside_percentages = {inside_percentages}")
+
+        #c) Get the ones that are above a threshold
+        above_inside_threshold_meshes = np.where(inside_percentages > inside_percentage_threshold)[0]
+
+        #d1) If none are above threshold then continue
+        if len(above_inside_threshold_meshes) == 0:
+            if verbose:
+                print(f"None above the threshold {inside_percentage_threshold} so continuing")
+            continue
+
+        elif len(above_inside_threshold_meshes) == 1:
+            losing_index = curr_pair[above_inside_threshold_meshes[0]]
+
+            if verbose:
+                print(f"Only 1 above the threshold: mesh {losing_index}")
+
+        elif len(above_inside_threshold_meshes) == 2:
+            sizes = np.array([len(mesh_list[k].faces) for k in curr_pair])
+            losing_index = curr_pair[np.argmin(sizes)]
+
+            if verbose:
+                print(f"2 above the threshold so picking the smallest of the size {sizes}: mesh {losing_index}")
+        else:
+            raise Exception("More than 2 above threshold")
+
+        #e) remove the losing index from the viable meshes index list
+        viable_meshes = viable_meshes[viable_meshes!=losing_index]
+
+    if return_meshes:
+        return [k for i,k in enumerate(mesh_list) if i in viable_meshes]
+    else:
+        return viable_meshes
+
+    
         
     
 import trimesh_utils as tu

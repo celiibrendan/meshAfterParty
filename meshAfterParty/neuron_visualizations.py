@@ -815,7 +815,8 @@ def visualize_neuron(
     soma_border_vertices = False,
     soma_border_vertices_color="random",
     
-    verbose=True
+    verbose=True,
+    subtract_glia = True
     
     ):
     
@@ -1203,12 +1204,24 @@ def visualize_neuron(
                 whole_neuron_colors_list = mu.process_non_dict_color_input(configuration_dict["whole_neuron_color"])
                 whole_neuron_colors_list_alpha = mu.apply_alpha_to_color_list(whole_neuron_colors_list,alpha=configuration_dict["whole_neuron_alpha"])
                 
+                if subtract_glia:
+                    if (current_neuron.glia_faces is not None) and (len(current_neuron.glia_faces) > 0):
+                        whole_mesh = main_mesh_to_plot.submesh([np.delete(np.arange(len(current_neuron.mesh.faces)),
+                                                                                 current_neuron.glia_faces)],append=True,repair=False)
+                    else:
+                        whole_mesh = current_neuron.mesh
+                else:
+                    whole_mesh = current_neuron.mesh
+                    
+                    
                 # Will do the erroring of the mesh
                 if (subtract_from_main_mesh and (len(plot_items)>0)):
-                    main_mesh_to_plot = tu.subtract_mesh(original_mesh=current_neuron.mesh,
+                    main_mesh_to_plot = tu.subtract_mesh(original_mesh=whole_mesh,
                                               subtract_mesh=plot_items)
                 else:
-                    main_mesh_to_plot = current_neuron.mesh
+                    main_mesh_to_plot = whole_mesh
+                    
+                
         
                 
                 # will do the plotting

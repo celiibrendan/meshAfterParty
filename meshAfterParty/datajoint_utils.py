@@ -27,6 +27,7 @@ How to clear the external
 
 schema.external['decomposition'].delete(delete_external_files=True)
 schema.external['somas'].delete(delete_external_files=True)
+schema.external['faces'].delete(delete_external_files=True)
 """
 decomposition_folder = "decomposition"
 
@@ -215,8 +216,39 @@ adapter_somas_obj = {
 
 
 
-# ----------- DONE Soma Adapter
+# ----------- DONE Soma Adapter ------ #
 
+# ---------- Adapter for glia and nuclei arrays --- #
+import system_utils as su
+class FacesAdapter(dj.AttributeAdapter):
+    # Initialize the correct attribute type (allows for use with multiple stores)
+    def __init__(self, attribute_type):
+        self.attribute_type = attribute_type
+        super().__init__()
+
+    attribute_type = '' # this is how the attribute will be declared
+
+    def put(self, filepath):
+        # save the filepath to the mesh
+        filepath = os.path.abspath(filepath)
+        assert os.path.exists(filepath)
+        return filepath
+
+    def get(self, filepath):
+        # access the h5 file and return a mesh
+        assert os.path.exists(filepath)
+
+        return su.decompress_pickle(filepath)
+    
+faces = FacesAdapter('filepath@faces')
+
+adapter_faces_obj = {
+    'faces':faces
+}
+
+
+
+# ----------- Done with glia and nuclei adapater ---- #
 
 from minfig import adapter_objects
 def get_adapter_object():
@@ -224,14 +256,35 @@ def get_adapter_object():
         adapter_objects.update(adapter_decomp_obj)
     if "somas" not in adapter_objects.keys():
         adapter_objects.update(adapter_somas_obj)
+    if "faces" not in adapter_objects.keys():
+        adapter_objects.update(adapter_faces_obj)
     return adapter_objects
 
 import datajoint as dj
 import minfig
+from pathlib import Path
+
 def get_decomposition_path():
     return minfig.minnie65_config.external_segmentation_path / Path(f"{decomposition_folder}/")
 def get_somas_path():
     return minfig.minnie65_config.external_segmentation_path / Path("somas/")
+def get_faces_path():
+    return minfig.minnie65_config.external_segmentation_path / Path("glia_nuclei_faces/")
+
+def save_glia_nuclei_files(glia_faces,nuclei_faces,segment_id):
+    """
+    Purpose: Will save off the glia and nuclei faces
+    in the correct external storage and return the paths
+    
+    """
+    curr_faces_path = get_faces_path()
+    glia_path = curr_faces_path / Path(f"{segment_id}_glia.pbz2")
+    nuclei_path = curr_faces_path / Path(f"{segment_id}_nuclei.pbz2")
+    
+    su.compressed_pickle(glia_faces,glia_path)
+    su.compressed_pickle(nuclei_faces,nuclei_path)
+    
+    return glia_path,nuclei_path
 
 def get_decimated_mesh_path_from_decomposition_path(filepath):
     filepath = Path(filepath)
@@ -258,9 +311,11 @@ def configure_minnie_vm():
     #confiugre the storage
     decomp_path = get_decomposition_path()
     somas_path = get_somas_path()
+    faces_path = get_faces_path()
     
     assert decomp_path.exists()
     assert somas_path.exists()
+    assert faces_path.exists()
     
 #     if not decomp_path.exists():
 #         raise Exception("The decomposition path does not exist")
@@ -275,7 +330,12 @@ def configure_minnie_vm():
                 'protocol': 'file',
                 'location': str(somas_path),
                 'stage': str(somas_path)
-            }       
+            }      ,
+            'faces': {
+                'protocol': 'file',
+                'location': str(faces_path),
+                'stage': str(faces_path)
+            }    
                     
                     }    
 

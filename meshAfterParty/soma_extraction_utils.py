@@ -185,6 +185,10 @@ def filter_away_inside_soma_pieces(
 
             #gets the 
             outside_percentage = sum(signed_distance <= 0)/n_sample_points
+            
+            if print_flag:
+                print(f"Mesh piece {i} has outside_percentage {outside_percentage}")
+            
             if outside_percentage < required_outside_percentage:
                 if print_flag: 
                     print(f"Mesh piece {i} inside mesh {j} :( ")
@@ -428,7 +432,8 @@ import time
 def original_mesh_soma(
     mesh,
     soma_meshes,
-    sig_th_initial_split=15):
+    sig_th_initial_split=100,
+    split_meshes=None):
     
     """
     Purpose: Will help backtrack the Poisson surface reconstruction soma 
@@ -474,10 +479,11 @@ def original_mesh_soma(
     #finding the mesh pieces that contain the soma
     #splitting the current neuron into distinct pieces
     
-    split_meshes = tu.split_significant_pieces(
-                                main_mesh_total,
-                                significance_threshold=sig_th_initial_split,
-                                print_flag=False)
+    if split_meshes is None:
+        split_meshes = tu.split_significant_pieces(
+                                    main_mesh_total,
+                                    significance_threshold=sig_th_initial_split,
+                                    print_flag=False)
 
     print(f"# total split meshes = {len(split_meshes)}")
 
@@ -630,6 +636,8 @@ def extract_soma_center(segment_id,
                         
                         return_glia_nuclei_pieces = True,
                         backtrack_soma_size_threshold=13000,
+                        
+                        filter_inside_somas=True,
                             ):
 
     global_start_time = time.time()
@@ -1064,6 +1072,13 @@ def extract_soma_center(segment_id,
     """
     filtered_soma_list = []
     filtered_soma_list_sdf = []
+    
+    print("Splitting the mesh")
+    split_meshes = tu.split_significant_pieces(
+                                    recov_orig_mesh_no_interior,
+                                    significance_threshold=200,
+                                    print_flag=False)
+    
     for soma_mesh,curr_soma_sdf in zip(total_soma_list_revised,total_soma_list_revised_sdf):
         if backtrack_soma_mesh_to_original:
             print("Performing Soma Mesh Backtracking to original mesh")
@@ -1073,7 +1088,8 @@ def extract_soma_center(segment_id,
                 soma_mesh = original_mesh_soma(
                                                 mesh = recov_orig_mesh_no_interior,
                                                 soma_meshes=[soma_mesh_poisson],
-                                                sig_th_initial_split=15)[0]
+                                                sig_th_initial_split=200,
+                                                split_meshes=split_meshes)[0]
             except:
                 import traceback
                 traceback.print_exc()
@@ -1312,6 +1328,21 @@ def extract_soma_center(segment_id,
 
         filtered_soma_list_components = filtered_soma_list_components_new
         filtered_soma_list_sdf_components = np.array(filtered_soma_list_sdf_components_new)
+
+    if filter_inside_somas:
+        if len(filtered_soma_list_components)>1:
+            keep_indices = tu.filter_away_inside_meshes(mesh_list = filtered_soma_list_components,
+                                        distance_type="shortest_vertex_distance",
+                                        distance_threshold = 2000,
+                                        inside_percentage_threshold = 0.20,
+                                        verbose = False,
+                                        return_meshes = False,
+                                        )
+        else:
+            keep_indices = np.arange(len(filtered_soma_list_components))
+
+        filtered_soma_list_components = [k for i,k in enumerate(filtered_soma_list_components) if i in keep_indices]
+        filtered_soma_list_sdf_components = filtered_soma_list_sdf_components[keep_indices]
 
 
     

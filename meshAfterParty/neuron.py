@@ -1701,6 +1701,7 @@ class Neuron:
                 self.inside_pieces = dc(mesh.inside_pieces)
                 self.insignificant_limbs = dc(mesh.insignificant_limbs)
                 self.not_processed_soma_containing_meshes = dc(mesh.not_processed_soma_containing_meshes)
+                self.glia_faces = dc(mesh.glia_faces)
                 self.non_soma_touching_meshes = dc(mesh.non_soma_touching_meshes)
                 
                 if hasattr(mesh,"decomposition_type"):
@@ -1820,6 +1821,8 @@ class Neuron:
 
             self.insignificant_limbs = preprocessed_data["insignificant_limbs"]
             self.not_processed_soma_containing_meshes = preprocessed_data["not_processed_soma_containing_meshes"]
+            self.glia_faces = preprocessed_data["glia_faces"]
+            
             self.non_soma_touching_meshes = preprocessed_data["non_soma_touching_meshes"]
             self.inside_pieces = preprocessed_data["inside_pieces"]
 

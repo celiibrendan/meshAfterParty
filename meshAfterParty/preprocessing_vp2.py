@@ -3126,7 +3126,11 @@ def preprocess_neuron(
 
 
 
-
+    #------ 1/11/ getting the glia faces --------------
+    if glia_meshes is not None and len(glia_meshes)>0:
+            glia_faces = tu.original_mesh_faces_map(current_neuron,tu.combine_meshes(glia_pieces))
+    else:
+        glia_faces = np.array([])
 
     preprocessed_data= dict(
         soma_meshes = current_mesh_data[0]["soma_meshes"],
@@ -3134,6 +3138,7 @@ def preprocess_neuron(
         soma_sdfs = total_soma_list_sdf,
         insignificant_limbs=insignificant_limbs,
         not_processed_soma_containing_meshes=not_processed_soma_containing_meshes,
+        glia_faces = glia_faces,
         non_soma_touching_meshes=non_soma_touching_meshes,
         inside_pieces=inside_pieces,
         limb_correspondence=limb_correspondence_with_floating_pieces,
