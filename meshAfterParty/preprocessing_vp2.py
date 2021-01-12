@@ -3466,14 +3466,24 @@ def preprocess_neuron(
 
 
         current_time = time.time()
+        
+        """Old Way
         seperate_soma_meshes = current_soma_mesh_list
-
         non_soma_stacked_mesh_face_idx = tu.original_mesh_faces_map(original_mesh=current_mesh,
                                       submesh=tu.combine_meshes(current_soma_mesh_list),
                                       exact_match = True,
                                     matching=False)
 
         non_soma_stacked_mesh = current_mesh.submesh([non_soma_stacked_mesh_face_idx],append=True,repair=False)
+        """
+        
+        seperate_soma_meshes_idx = [tu.original_mesh_faces_map(original_mesh=current_mesh,
+                                  submesh=k,
+                                  exact_match = False,
+                                matching=True) for k in current_soma_mesh_list]
+        seperate_soma_meshes = [current_mesh.submesh([k],append=True,repair=False) for k in seperate_soma_meshes_idx]
+
+        non_soma_stacked_mesh = current_mesh.submesh([np.delete(np.arange(len(current_mesh.faces)),np.concatenate(seperate_soma_meshes_idx))],append=True,repair=False)
 
         soma_touching_mesh_data[z]["soma_meshes"] = seperate_soma_meshes
 
