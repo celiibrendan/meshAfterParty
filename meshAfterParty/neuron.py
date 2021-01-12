@@ -225,10 +225,7 @@ class Branch:
         if self.spines is None:
             self.spines_volume = None
         else:
-            #with meshlab.FillHoles(max_hole_size=max_hole_size,self_itersect_faces=self_itersect_faces) as fill_hole_obj:
-            self.spines_volume = [tu.mesh_volume(sp,verbose=False,
-                                                 #fill_holes_obj=fill_hole_obj
-                                                ) for sp in self.spines]
+            self.spines_volume = [tu.mesh_volume(sp,verbose=False) for sp in self.spines]
     
     def __eq__(self,other):
         #print("inside equality function")
@@ -1665,6 +1662,9 @@ class Neuron:
                  
                  preprocessing_version=2,
                  limb_to_branch_objects=None,
+                 
+                 glia_faces=None,
+                 nuclei_faces = None,
                 ):
 #                  concept_network=None,
 #                  non_graph_meshes=dict(),
@@ -1797,7 +1797,9 @@ class Neuron:
                                         combine_close_skeleton_nodes = combine_close_skeleton_nodes,
                                         combine_close_skeleton_nodes_threshold=combine_close_skeleton_nodes_threshold,
                         
-                                        use_meshafterparty=use_meshafterparty)
+                                        use_meshafterparty=use_meshafterparty,
+                                        glia_faces=glia_faces,
+                                         nuclei_faces = nuclei_faces)
                         
                     
                     
@@ -2801,6 +2803,7 @@ class Neuron:
     
     def neuron_stats(self):
         stats_dict = dict(
+                        n_not_processed_soma_containing_meshes = len(self.not_processed_soma_containing_meshes),
                         n_error_limbs=self.n_error_limbs,
                         n_same_soma_multi_touching_limbs=len(self.same_soma_multi_touching_limbs),
                         n_multi_soma_touching_limbs = len(self.multi_soma_touching_limbs),
