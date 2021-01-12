@@ -1624,7 +1624,13 @@ def decompress_neuron(filepath,original_mesh,
         
         recovered_preprocessed_data["not_processed_soma_containing_meshes"] = [original_mesh.submesh([k],append=True,repair=False) for k in loaded_compression["not_processed_soma_containing_meshes_face_idx"]]
         
-        recovered_preprocessed_data["glia_faces"] = loaded_compression["glia_faces"]
+        
+        if "glia_faces" in loaded_compression.keys():
+            curr_glia = loaded_compression["glia_faces"]
+        else:
+            curr_glia = np.array([])
+        
+        recovered_preprocessed_data["glia_faces"] = curr_glia
         
 
         recovered_preprocessed_data["non_soma_touching_meshes"] = [original_mesh.submesh([k],append=True,repair=False) for k in loaded_compression["non_soma_touching_meshes_face_idx"]]

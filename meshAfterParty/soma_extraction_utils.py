@@ -436,6 +436,8 @@ def original_mesh_soma(
     match_distance_threshold = 1500,
     mesh_significance_threshold = 1000,
     return_inside_pieces = True,
+    return_multiple_pieces_above_threshold = True,
+    soma_size_threshold = 13000
     ):
     """
     Purpose: To take an approximation of the soma mesh (usually from a poisson surface reconstruction)
@@ -457,35 +459,42 @@ def original_mesh_soma(
     restricted_big_mesh,_ = tu.bbox_mesh_restriction(original_mesh,mesh,mult_ratio=bbox_restriction_multiplying_ratio)
 
     # -- Split into largest piece -- #
-    restr_split = tu.split_significant_pieces(restricted_big_mesh,
-                                              significance_threshold=mesh_significance_threshold,connectivity="edges")
-    restr_mesh_to_test = restr_split[0]
+#     restr_split = tu.split_significant_pieces(restricted_big_mesh,
+#                                               significance_threshold=mesh_significance_threshold,connectivity="edges")
+#     restr_mesh_to_test = restr_split[0]
+
+    restr_mesh_to_test = restricted_big_mesh
 
 
     #nviz.plot_objects(restricted_big_mesh)
 
     #2) Remove all interior pieces
-    restr_without_interior,inside_pieces = tu.remove_mesh_interior(restr_mesh_to_test,return_removed_pieces=True,size_threshold_to_remove=300)
+    orig_mesh_to_map,inside_pieces = tu.remove_mesh_interior(restr_mesh_to_test,return_removed_pieces=True,size_threshold_to_remove=300)
 
-    #nviz.plot_objects(restr_without_interior)
-    split_meshes = tu.split_significant_pieces(restr_without_interior,
-                                               significance_threshold=mesh_significance_threshold,connectivity="edges")
+    """ Old way that did a lot of splits: but not doing splits anymore
+#     #nviz.plot_objects(restr_without_interior)
+#     split_meshes = tu.split_significant_pieces(restr_without_interior,
+#                                                significance_threshold=mesh_significance_threshold,connectivity="edges")
 
-    #nviz.plot_objects(meshes=split_meshes)
+#     split_meshes = [restr_without_interior]
 
-    #5) Find the Meshes that contain the soma
-    containing_mesh_indices = find_soma_centroid_containing_meshes(soma_mesh_list,
-                                                split_meshes,
-                                                verbose=True)
+#     #nviz.plot_objects(meshes=split_meshes)
 
-    soma_containing_meshes = grouping_containing_mesh_indices(containing_mesh_indices)
+#     #5) Find the Meshes that contain the soma
+#     containing_mesh_indices = find_soma_centroid_containing_meshes(soma_mesh_list,
+#                                                 split_meshes,
+#                                                 verbose=True)
 
-    soma_touching_meshes = [split_meshes[k] for k in soma_containing_meshes.keys()]
+#     soma_containing_meshes = grouping_containing_mesh_indices(containing_mesh_indices)
 
-    if len(soma_touching_meshes) != 1:
-        raise Exception(f"soma_touching_meshes not of size 1 {soma_touching_meshes}")
+#     soma_touching_meshes = [split_meshes[k] for k in soma_containing_meshes.keys()]
 
-    orig_mesh_to_map = soma_touching_meshes[0]
+#     if len(soma_touching_meshes) != 1:
+#         raise Exception(f"soma_touching_meshes not of size 1 {soma_touching_meshes}")
+
+#     orig_mesh_to_map = soma_touching_meshes[0]
+    """
+
 
     #6) Map to the original with a high distance threshold
     prelim_soma_mesh = tu.original_mesh_faces_map(original_mesh=orig_mesh_to_map,
@@ -504,7 +513,8 @@ def original_mesh_soma(
     if len(split_meshes_after_backtrack) == 0:
         return_mesh = None
     else:
-        return_mesh = split_meshes_after_backtrack[0]
+        if return_multiple_pieces_above_threshold:
+            return_mesh = [k for k in split_meshes_after_backtrack if len(k.faces)>soma_size_threshold]
 
     if return_inside_pieces:
         return return_mesh,inside_pieces
@@ -764,7 +774,13 @@ def extract_soma_center(segment_id,
 
     recov_orig_mesh = trimesh.Trimesh(vertices=current_mesh_verts,faces=current_mesh_faces)
     
-    recov_orig_mesh_no_interior, glia_pieces, nuclei_pieces  = tu.remove_nuclei_and_glia_meshes(recov_orig_mesh,verbose=True)
+    try:
+        recov_orig_mesh_no_interior, glia_pieces, nuclei_pieces  = tu.remove_nuclei_and_glia_meshes(recov_orig_mesh,verbose=True)
+    except:
+        print("**Unable to remove_nuclei_and_glia_meshes: so just continuing without doing so **")
+        recov_orig_mesh_no_interior = recov_orig_mesh
+        glia_pieces = []
+        nuclei_pieces = []
     #recov_orig_mesh_no_interior = tu.remove_mesh_interior(recov_orig_mesh)
 
 
@@ -819,9 +835,13 @@ def extract_soma_center(segment_id,
 
         if remove_inside_pieces:
             print("remove_inside_pieces requested ")
-            largest_mesh = tu.remove_mesh_interior(largest_mesh,
-                                                   size_threshold_to_remove=size_threshold_to_remove,
-                                                  try_hole_close=False)
+            try:
+                largest_mesh = tu.remove_mesh_interior(largest_mesh,
+                                                       size_threshold_to_remove=size_threshold_to_remove,
+                                                      try_hole_close=False)
+            except:
+                print("Unable to remove inside pieces in list_of_largest_mesh")
+                largest_mesh = largest_mesh
 
 
         if pymeshfix_clean:
@@ -972,7 +992,10 @@ def extract_soma_center(segment_id,
 
                         if curr_side_len_check and curr_volume_check:
                             #check if we can split this into two
+                            to_add_list.append(soma_mesh)
+                            to_add_list_sdf.append(sdf)
                             
+                            """  -----------Removed 1/12: When trying to force a split between them 
                             possible_smoothness = [0.2,0.05,0.01]
                             for smooth_value in possible_smoothness:
                                 #1) Run th esegmentation algorithm again to segment the mesh (had to run the higher smoothing to seperate some)
@@ -1017,6 +1040,7 @@ def extract_soma_center(segment_id,
                             else:
                                 to_add_list.append(soma_mesh)
                                 to_add_list_sdf.append(sdf)
+                            """
                         
                         else:
                             # ---------- 1/7 Addition: Trying one more additional cgal segmentation to see if there is actually a soma ---
@@ -1171,16 +1195,19 @@ def extract_soma_center(segment_id,
     filtered_soma_list = []
     filtered_soma_list_sdf = []
     
-    for soma_mesh,curr_soma_sdf in zip(total_soma_list_revised,total_soma_list_revised_sdf):
+    for yy,(soma_mesh,curr_soma_sdf) in enumerate(zip(total_soma_list_revised,total_soma_list_revised_sdf)):
+        add_inside_pieces_flag = False
         if backtrack_soma_mesh_to_original:
-            print("Performing Soma Mesh Backtracking to original mesh")
+            if verbose:
+                print(f"\n---Performing Soma Mesh Backtracking to original mesh for poisson soma {yy}")
             soma_mesh_poisson = deepcopy(soma_mesh)
                 #print("About to find original mesh")
                 
             try:
-                soma_mesh,soma_mesh_inside_pieces = sm.original_mesh_soma(
+                soma_mesh_list,soma_mesh_inside_pieces = sm.original_mesh_soma(
                                                 original_mesh = recov_orig_mesh_no_interior,
-                                                mesh=soma_mesh_poisson)
+                                                mesh=soma_mesh_poisson,
+                                                soma_size_threshold=backtrack_soma_size_threshold)
 
             except:
                 import traceback
@@ -1188,78 +1215,83 @@ def extract_soma_center(segment_id,
                 print("--->This soma mesh was not added because Was not able to backtrack soma to mesh")
                 continue
             
-            if soma_mesh is None:
-                print("--->This soma mesh was not added because Was not able to backtrack soma to mesh")
-                continue
+            if soma_mesh_list is None:
+                    print("--->This soma mesh was not added because Was not able to backtrack soma to mesh")
+                    continue
+            
+            
+            
+            if verbose: 
+                print(f"After backtrack the found {len(soma_mesh_list)} possible somas: {soma_mesh_list} ")
+            
+            for rr,soma_mesh in enumerate(soma_mesh_list):
+                if verbose:
+                    print(f"\n--- workin on backtrack soma {rr}: {soma_mesh}")
+                
+                print(f"poisson_backtrack_distance_threshold = {poisson_backtrack_distance_threshold}")
+                #do the check that tests if there is a max distance between poisson and backtrack:
+                if not poisson_backtrack_distance_threshold is None and poisson_backtrack_distance_threshold > 0:
+
+                    #soma_mesh.export("soma_mesh.off")
+                    if close_holes: 
+                        print("Using the close holes feature")
+                        fill_hole_obj = meshlab.FillHoles(max_hole_size=2000,
+                                                         self_itersect_faces=False)
+
+                        soma_mesh_filled_holes,output_subprocess_obj = fill_hole_obj(   
+                                                            vertices=soma_mesh.vertices,
+                                                             faces=soma_mesh.faces,
+                                                             return_mesh=True,
+                                                             delete_temp_files=True,
+                                                            )
+                    else:
+                        soma_mesh_filled_holes = soma_mesh
+
+
+                    #soma_mesh_filled_holes.export("soma_mesh_filled_holes.off")
 
 
 
+                    print("APPLYING poisson_backtrack_distance_threshold CHECKS")
+                    mesh_1 = soma_mesh_filled_holes
+                    mesh_2 = soma_mesh_poisson
 
-            print(f"poisson_backtrack_distance_threshold = {poisson_backtrack_distance_threshold}")
-            #do the check that tests if there is a max distance between poisson and backtrack:
-            if not poisson_backtrack_distance_threshold is None and poisson_backtrack_distance_threshold > 0:
-
-                #soma_mesh.export("soma_mesh.off")
-                if close_holes: 
-                    print("Using the close holes feature")
-                    fill_hole_obj = meshlab.FillHoles(max_hole_size=2000,
-                                                     self_itersect_faces=False)
-
-                    soma_mesh_filled_holes,output_subprocess_obj = fill_hole_obj(   
-                                                        vertices=soma_mesh.vertices,
-                                                         faces=soma_mesh.faces,
-                                                         return_mesh=True,
-                                                         delete_temp_files=True,
-                                                        )
-                else:
-                    soma_mesh_filled_holes = soma_mesh
+                    poisson_max_distance = tu.max_distance_betwee_mesh_vertices(mesh_1,mesh_2,
+                                                                      verbose=True)
+                    print(f"poisson_max_distance = {poisson_max_distance}")
+                    if poisson_max_distance > poisson_backtrack_distance_threshold:
+                        print(f"--->This soma mesh was not added because it did not pass the poisson_backtrack_distance check:\n"
+                          f" poisson_max_distance = {poisson_max_distance}")
+                        continue
 
 
-                #soma_mesh_filled_holes.export("soma_mesh_filled_holes.off")
+                #do the boundary check:
+                if not boundary_vertices_threshold is None:
+                    print("USING boundary_vertices_threshold CHECK")
+                    soma_boundary_groups_sizes = np.array([len(k) for k in tu.find_border_face_groups(soma_mesh)])
+                    print(f"soma_boundary_groups_sizes = {soma_boundary_groups_sizes}")
+                    large_boundary_groups = soma_boundary_groups_sizes[soma_boundary_groups_sizes>boundary_vertices_threshold]
+                    print(f"large_boundary_groups = {large_boundary_groups} with boundary_vertices_threshold = {boundary_vertices_threshold}")
+                    if len(large_boundary_groups)>0:
+                        print(f"--->This soma mesh was not added because it did not pass the boundary vertices validation:\n"
+                              f" large_boundary_groups = {large_boundary_groups}")
+                        continue
 
-
-
-                print("APPLYING poisson_backtrack_distance_threshold CHECKS")
-                mesh_1 = soma_mesh_filled_holes
-                mesh_2 = soma_mesh_poisson
-
-                poisson_max_distance = tu.max_distance_betwee_mesh_vertices(mesh_1,mesh_2,
-                                                                  verbose=True)
-                print(f"poisson_max_distance = {poisson_max_distance}")
-                if poisson_max_distance > poisson_backtrack_distance_threshold:
-                    print(f"--->This soma mesh was not added because it did not pass the poisson_backtrack_distance check:\n"
-                      f" poisson_max_distance = {poisson_max_distance}")
+                curr_side_len_check = side_length_check(soma_mesh,side_length_ratio_threshold)
+                curr_volume_check = soma_volume_check(soma_mesh,volume_mulitplier)
+                if (not curr_side_len_check) or (not curr_volume_check):
+                    print(f"--->This soma mesh was not added because it did not pass the sphere validation:\n "
+                         f"soma_mesh = {soma_mesh}, curr_side_len_check = {curr_side_len_check}, curr_volume_check = {curr_volume_check}")
                     continue
 
-        if len(soma_mesh.faces) < 5:
-            print(f"--> soma had very few faces ({soma_mesh}) so continuing")
-            continue
-
-        #do the boundary check:
-        if not boundary_vertices_threshold is None:
-            print("USING boundary_vertices_threshold CHECK")
-            soma_boundary_groups_sizes = np.array([len(k) for k in tu.find_border_face_groups(soma_mesh)])
-            print(f"soma_boundary_groups_sizes = {soma_boundary_groups_sizes}")
-            large_boundary_groups = soma_boundary_groups_sizes[soma_boundary_groups_sizes>boundary_vertices_threshold]
-            print(f"large_boundary_groups = {large_boundary_groups} with boundary_vertices_threshold = {boundary_vertices_threshold}")
-            if len(large_boundary_groups)>0:
-                print(f"--->This soma mesh was not added because it did not pass the boundary vertices validation:\n"
-                      f" large_boundary_groups = {large_boundary_groups}")
-                continue
-
-        curr_side_len_check = side_length_check(soma_mesh,side_length_ratio_threshold)
-        curr_volume_check = soma_volume_check(soma_mesh,volume_mulitplier)
-        if (not curr_side_len_check) or (not curr_volume_check):
-            print(f"--->This soma mesh was not added because it did not pass the sphere validation:\n "
-                 f"soma_mesh = {soma_mesh}, curr_side_len_check = {curr_side_len_check}, curr_volume_check = {curr_volume_check}")
-            continue
-
-        #tu.write_neuron_off(soma_mesh_poisson,"original_poisson.off")
-        #If made it through all the checks then add to final list
-        filtered_soma_list.append(soma_mesh)
-        filtered_soma_list_sdf.append(curr_soma_sdf)
+                #tu.write_neuron_off(soma_mesh_poisson,"original_poisson.off")
+                #If made it through all the checks then add to final list
+                filtered_soma_list.append(soma_mesh)
+                filtered_soma_list_sdf.append(curr_soma_sdf)
+                add_inside_pieces_flag = True #setting flag so will add inside pieces
+            
         
-        if len(soma_mesh_inside_pieces) > 0:
+        if len(soma_mesh_inside_pieces) > 0 and add_inside_pieces_flag:
             print(f"About to add the following inside nuclei pieces after soma backtrack: {nuclei_pieces}")
             nuclei_pieces +=soma_mesh_inside_pieces
 

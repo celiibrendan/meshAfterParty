@@ -325,15 +325,18 @@ def get_all_coordinate_suggestions(suggestions,concatenate=True,
     
     
     """
+    if len(suggestions) == 0:
+        return []
+    
     all_coord = []
     for limb_idx,sugg_v in suggestions.items():
         curr_coords = np.array(get_attribute_from_suggestion(suggestions,curr_limb_idx=limb_idx,
                                  attribute_name="coordinate_suggestions"))
-        if voxel_adjustment:
+        if voxel_adjustment and len(curr_coords)>0:
             curr_coords = curr_coords/np.array([4,4,40])
                 
-        
-        all_coord.append(curr_coords)
+        if len(curr_coords) > 0:
+            all_coord.append(curr_coords)
     
     if voxel_adjustment:
         all_coord
@@ -342,12 +345,35 @@ def get_all_coordinate_suggestions(suggestions,concatenate=True,
     else:
         return list(all_coord)
     
-def get_all_cut_and_not_cut_path_coordinates(limb_results,voxel_adjustment=True):
+    
+def get_n_paths_not_cut(limb_results):
     """
     Get all of the coordinates on the paths that will be cut
     
     
     """
+    if len(limb_results) == 0:
+        return 0
+    
+    n_paths_not_cut = 0
+
+    for limb_idx, limb_data in limb_results.items():
+        for path_cut_info in limb_data:
+            if len(path_cut_info["paths_not_cut"]) > 0:
+                n_paths_not_cut += 1   
+                
+    return n_paths_not_cut
+
+def get_all_cut_and_not_cut_path_coordinates(limb_results,voxel_adjustment=True,
+                                            ):
+    """
+    Get all of the coordinates on the paths that will be cut
+    
+    
+    """
+    if len(limb_results) == 0:
+        return [],[]
+    
     cut_path_coordinates = []
     not_cut_path_coordinates = []
 
@@ -356,7 +382,7 @@ def get_all_cut_and_not_cut_path_coordinates(limb_results,voxel_adjustment=True)
             if len(path_cut_info["paths_cut"]) > 0:
                 cut_path_coordinates.append(np.vstack(path_cut_info["paths_cut"]))
             if len(path_cut_info["paths_not_cut"]) > 0:
-                not_cut_path_coordinates.append(path_cut_info["paths_not_cut"])
+                not_cut_path_coordinates.append(np.vstack(path_cut_info["paths_not_cut"]))
 
     if len(cut_path_coordinates)>0:
         total_cut_path_coordinates = np.vstack(cut_path_coordinates)
@@ -376,8 +402,8 @@ def get_all_cut_and_not_cut_path_coordinates(limb_results,voxel_adjustment=True)
         
     if voxel_adjustment:
         voxel_divider = np.array([4,4,40])
-        total_cut_path_coordinates_revised = [k/voxel_divider for k in total_cut_path_coordinates_revised]
-        total_not_cut_path_coordinates = [k/voxel_divider for k in total_not_cut_path_coordinates]
+        total_cut_path_coordinates_revised = [k/voxel_divider for k in total_cut_path_coordinates_revised if len(k)>0]
+        total_not_cut_path_coordinates = [k/voxel_divider for k in total_not_cut_path_coordinates if len(k)>0]
         
     
         
@@ -1518,7 +1544,7 @@ def split_info_to_neuroglancer_link(segment_id,
                                     cut_path_coordinates = None,
                                     not_cut_path_coordinates = None,
                                    other_annotations = dict(),
-                                    output_type = "local_html",
+                                    output_type = "local",
                                     split_coordinates_color = "red",
                                     split_coordinates_name = "split_location",
                                     cut_path_coordinates_color = "white",
@@ -1569,7 +1595,7 @@ def split_info_to_neuroglancer_link(segment_id,
     # building the chained state
     chained_sb = statebuilder.ChainedStateBuilder(states_list)
 
-    if output_type=="local_html":
+    if output_type=="local":
         return_value= chained_sb.render_state(df_list, return_as='html')
     elif output_type == "server":
         # To upload to the state server for a shortened URL:
