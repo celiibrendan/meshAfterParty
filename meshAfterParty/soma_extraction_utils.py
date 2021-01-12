@@ -1177,14 +1177,16 @@ def extract_soma_center(segment_id,
             soma_mesh_poisson = deepcopy(soma_mesh)
                 #print("About to find original mesh")
                 
-            soma_mesh,soma_mesh_inside_pieces = original_mesh_soma(
-                                            original_mesh = recov_orig_mesh_no_interior,
-                                            mesh=soma_mesh_poisson)
-#             except:
-#                 import traceback
-#                 traceback.print_exc()
-#                 print("--->This soma mesh was not added because Was not able to backtrack soma to mesh")
-#                 continue
+            try:
+                soma_mesh,soma_mesh_inside_pieces = sm.original_mesh_soma(
+                                                original_mesh = recov_orig_mesh_no_interior,
+                                                mesh=soma_mesh_poisson)
+
+            except:
+                import traceback
+                traceback.print_exc()
+                print("--->This soma mesh was not added because Was not able to backtrack soma to mesh")
+                continue
             
             if soma_mesh is None:
                 print("--->This soma mesh was not added because Was not able to backtrack soma to mesh")

@@ -385,9 +385,13 @@ def get_soma_mesh_list(seg_id):
     s_sdfs = np.array(soma_sdf)
     return [s_meshes,s_times,s_sdfs]
 
-def get_segment_glia_nuclei_faces(seg_id):
+def get_segment_glia_nuclei_faces(seg_id,return_empty_list=False):
     key = dict(segment_id=seg_id)  
     glia_faces,nuclei_faces = (minnie.NeuronGliaNuclei() & key).fetch1("glia_faces","nuclei_faces")
+    if glia_faces is None:
+        glia_faces = []
+    if nuclei_faces is None:
+        nuclei_faces = []
     return glia_faces,nuclei_faces
 
 def nucleus_id_to_seg_id(nucleus_id):

@@ -2630,7 +2630,7 @@ def preprocess_neuron(
                 mesh_file=None,
                 segment_id=None,
                  description=None,
-                sig_th_initial_split=15, #for significant splitting meshes in the intial mesh split
+                sig_th_initial_split=100, #for significant splitting meshes in the intial mesh split
                 limb_threshold = 2000, #the mesh faces threshold for a mesh to be qualified as a limb (otherwise too small)
     
                 filter_end_node_length=4000, #used in cleaning the skeleton during skeletonizations
