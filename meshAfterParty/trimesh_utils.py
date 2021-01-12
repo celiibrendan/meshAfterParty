@@ -3557,9 +3557,9 @@ def meshes_within_close_proximity(mesh_list,
     if verbose:
         print(f"dist_matrix_adj = {dist_matrix_adj}")
         
-    soma_pairings_to_check = nu.unique_non_self_pairings(np.array(np.where(dist_matrix_adj<=distance_threshold)))
+    soma_pairings_to_check = np.array(nu.unique_non_self_pairings(np.array(np.where(dist_matrix_adj<=distance_threshold)).T))
     
-    if len(soma_pairings_to_check) > 0:
+    if len(soma_pairings_to_check) > 0 and (0 not in soma_pairings_to_check.shape):
         distances_per_pair = np.array([dist_matrix_adj[k1][k2] for k1,k2 in soma_pairings_to_check])
     else:
         distances_per_pair = []
