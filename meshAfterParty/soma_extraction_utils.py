@@ -1300,8 +1300,6 @@ def extract_soma_center(segment_id,
 
 
     #filtered_soma_list_saved = copy.deepcopy(filtered_soma_list)
-    import system_utils as su
-    su.compressed_pickle(filtered_soma_list,"filtered_soma_list")
 
     if len(filtered_soma_list) > 0:
         filtered_soma_list_revised = []

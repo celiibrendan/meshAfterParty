@@ -158,7 +158,9 @@ def random_dataframe():
 def random_dataframe_with_missing_data():
     util.testing.makeMissingDataframe()
     
-    
+def dataframe_to_row_dicts(df):
+    return df.to_dict(orient='records')
+
 def n_nans_per_column(df):
     return df.isnull().sum()
 

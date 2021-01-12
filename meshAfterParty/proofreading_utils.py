@@ -1445,13 +1445,16 @@ import pandas as pd
 from annotationframeworkclient import FrameworkClient
 from nglui import statebuilder
 
-def set_state_builder(color='#FFFFFF'):
+def get_client():
+    return FrameworkClient('minnie65_phase3_v1')
+def set_state_builder(layer_name = 'split_cands',
+                      color='#FFFFFF'):
     client = FrameworkClient('minnie65_phase3_v1')
     # The following generates a statebuilder that can turn dataframes into neuroglancer states
     img_layer = statebuilder.ImageLayerConfig(client.info.image_source(), contrast_controls=True, black=0.35, white=0.65)
     seg_layer = statebuilder.SegmentationLayerConfig(client.info.segmentation_source(), selected_ids_column='root_id')
     pts = statebuilder.PointMapper('split_location', linked_segmentation_column='root_id', set_position=True)
-    anno_layer = statebuilder.AnnotationLayerConfig('split_cands', mapping_rules=pts, linked_segmentation_layer=seg_layer.name, color=color, active=True)
+    anno_layer = statebuilder.AnnotationLayerConfig(layer_name, mapping_rules=pts, linked_segmentation_layer=seg_layer.name, color=color, active=True)
     sb = statebuilder.StateBuilder([img_layer, seg_layer, anno_layer], state_server=client.state.state_service_endpoint)
     return sb
 
@@ -1475,7 +1478,7 @@ def set_edit_dataframe(split_locs,
                             'priority': priority})
     return edit_df
 
-def neuroglancer_split_link(split_locs=None,
+def split_coordinates_to_neuroglancer_link(split_locs=None,
                       root_ids=None,
                             sb=None,
                             edit_df=None,
@@ -1502,6 +1505,83 @@ def neuroglancer_split_link(split_locs=None,
                           )
     
     return sb.render_state(edit_df.sort_values(by='priority'), return_as='html')
+
+import matplotlib_utils as mu
+import pandas as pd
+from annotationframeworkclient import FrameworkClient
+from nglui import statebuilder
+import copy
+
+def split_info_to_neuroglancer_link(segment_id,
+                                   split_info=None,
+                                    split_coordinates = None,
+                                    cut_path_coordinates = None,
+                                    not_cut_path_coordinates = None,
+                                   other_annotations = dict(),
+                                    output_type = "local_html",
+                                    split_coordinates_color = "red",
+                                    split_coordinates_name = "split_location",
+                                    cut_path_coordinates_color = "white",
+                                    cut_path_coordinates_name = "cut_path",
+                                    not_cut_path_coordinates_color = "green",
+                                    not_cut_path_coordinates_name = "not_cut_path",
+                                    verbose = True):
+    """
+    Purpose: To take the split suggestions output from the 
+    pru.multi_soma_split_suggestions and then to turn it into a neuroglancer link
+    to be rendered locally or uploaded to the server
+    
+    
+    """
+    if split_coordinates is None:
+        split_coordinates = pru.get_all_coordinate_suggestions(split_info)
+
+    if cut_path_coordinates is None or not_cut_path_coordinates is None:
+        cut_path_coordinates,not_cut_path_coordinates = pru.get_all_cut_and_not_cut_path_coordinates(split_info)
+
+
+    annotations_info = {
+                        cut_path_coordinates_name:dict(coordinates=cut_path_coordinates,
+                                                   color=cut_path_coordinates_color),
+                        not_cut_path_coordinates_name:dict(coordinates=not_cut_path_coordinates,
+                                                   color=not_cut_path_coordinates_color),
+                        split_coordinates_name:dict(coordinates=split_coordinates,
+                                                   color=split_coordinates_color),
+
+                       }
+
+    annotations_info.update(other_annotations)
+
+    df_list = []
+    states_list = []
+
+    for ann_name,ann_dict in annotations_info.items():
+        sb = pru.set_state_builder(layer_name=ann_name,
+                                         color=mu.color_to_hex(ann_dict["color"]))
+        df = pru.set_edit_dataframe(ann_dict["coordinates"],segment_id)
+
+        states_list.append(sb)
+        df_list.append(df)
+
+    if verbose:
+        print(f"Number of different layers = {len(states_list)}")
+
+    # building the chained state
+    chained_sb = statebuilder.ChainedStateBuilder(states_list)
+
+    if output_type=="local_html":
+        return_value= chained_sb.render_state(df_list, return_as='html')
+    elif output_type == "server":
+        # To upload to the state server for a shortened URL:
+        client = pru.get_client()
+        state = chained_sb.render_state(edit_df.sort_values(by='priority'), return_as='dict')
+        state_id = client.state.upload_state_json(state)
+        short_url = client.state.build_neuroglancer_url(state_id, ngl_url=client.info.viewer_site())
+        return_value = short_url
+    else:
+        raise Exception("Not implemented")
+
+    return return_value
 
 
 
