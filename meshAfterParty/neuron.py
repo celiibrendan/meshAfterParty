@@ -1823,7 +1823,11 @@ class Neuron:
 
             self.insignificant_limbs = preprocessed_data["insignificant_limbs"]
             self.not_processed_soma_containing_meshes = preprocessed_data["not_processed_soma_containing_meshes"]
-            self.glia_faces = preprocessed_data["glia_faces"]
+            
+            if "glia_faces" in preprocessed_data.keys():
+                self.glia_faces = preprocessed_data["glia_faces"]
+            else:
+                self.glia_faces = []
             
             self.non_soma_touching_meshes = preprocessed_data["non_soma_touching_meshes"]
             self.inside_pieces = preprocessed_data["inside_pieces"]

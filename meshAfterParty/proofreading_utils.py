@@ -341,7 +341,10 @@ def get_all_coordinate_suggestions(suggestions,concatenate=True,
     if voxel_adjustment:
         all_coord
     if concatenate:
-        return list(np.unique(np.vstack(all_coord),axis=0))
+        if len(all_coord) > 0:
+            return list(np.unique(np.vstack(all_coord),axis=0))
+        else:
+            return list(all_coord)
     else:
         return list(all_coord)
     
@@ -1206,6 +1209,7 @@ def split_disconnected_neuron(neuron_obj,
                 # the other mesh pieces that will not be included
                 insignificant_limbs=[],
                 not_processed_soma_containing_meshes=[],
+                glia_faces = [],
                 non_soma_touching_meshes=local_floating_meshes,
                 inside_pieces=[],
 
@@ -1255,6 +1259,7 @@ def split_disconnected_neuron(neuron_obj,
 
 
 def split_neuron(neuron_obj,
+                 limb_results=None,
                  plot_soma_limb_network=False,
                  plot_seperated_neurons=False,
                 verbose=False):
@@ -1273,8 +1278,9 @@ def split_neuron(neuron_obj,
     neuron_obj = copy.deepcopy(neuron_obj)
     
     #1) Get all of the split suggestions
-    limb_results = pru.multi_soma_split_suggestions(neuron_obj,plot_intermediates=False,
-                                               verbose = verbose)
+    if limb_results is None:
+        limb_results = pru.multi_soma_split_suggestions(neuron_obj,plot_intermediates=False,
+                                                   verbose = verbose)
     
     #2) Split all of the limbs that need splitting
     split_neuron_obj = pru.split_neuron_limbs_by_suggestions(neuron_obj,
@@ -1473,14 +1479,16 @@ from nglui import statebuilder
 
 def get_client():
     return FrameworkClient('minnie65_phase3_v1')
+
 def set_state_builder(layer_name = 'split_cands',
                       color='#FFFFFF'):
     client = FrameworkClient('minnie65_phase3_v1')
     # The following generates a statebuilder that can turn dataframes into neuroglancer states
     img_layer = statebuilder.ImageLayerConfig(client.info.image_source(), contrast_controls=True, black=0.35, white=0.65)
     seg_layer = statebuilder.SegmentationLayerConfig(client.info.segmentation_source(), selected_ids_column='root_id')
-    pts = statebuilder.PointMapper('split_location', linked_segmentation_column='root_id', set_position=True)
-    anno_layer = statebuilder.AnnotationLayerConfig(layer_name, mapping_rules=pts, linked_segmentation_layer=seg_layer.name, color=color, active=True)
+    pts = statebuilder.PointMapper('split_location', set_position=True)
+    anno_layer = statebuilder.AnnotationLayerConfig(layer_name, mapping_rules=pts, linked_segmentation_layer=seg_layer.name, color=color, active=True,
+                                                   tags=['valid', 'not_valid','proof'])
     sb = statebuilder.StateBuilder([img_layer, seg_layer, anno_layer], state_server=client.state.state_service_endpoint)
     return sb
 

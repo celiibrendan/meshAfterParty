@@ -1809,11 +1809,12 @@ def find_border_vertex_groups(mesh,return_coordinates=False,
     """
     Will return all borders as faces and grouped together
     """
-    if len(mesh.faces) < 3:
-        return []
+    if len(mesh.faces) < 3 or mesh.is_watertight:
+        if return_sizes:
+            return [[]],[0]
+        else:
+            return [[]]
 
-    if mesh.is_watertight:
-        return []
 
     # we know that in a watertight mesh every edge will be included twice
     # thus every edge which appears only once is part of a hole boundary
@@ -1915,11 +1916,16 @@ def largest_hole_length(mesh,euclidean_length=True):
     of the largest hole in a mesh
     
     """
+
     border_vert_groups,border_vert_sizes = find_border_vertex_groups(mesh,
                                 return_coordinates=True,
                                  return_cycles=True,
                                 return_sizes=True,
-                                                                       )
+                                                                   )
+    #accounting for if found no holes
+    if border_vert_sizes[0] == 0:
+        return 0
+
     if euclidean_length:
         border_lengths = [border_euclidean_length(k) for k in border_vert_groups]
         largest_border_idx = np.argmax(border_lengths)

@@ -1451,8 +1451,9 @@ def extract_soma_center(segment_id,
                     largest_hole_before_seg = tu.largest_hole_length(f_soma)
                     largest_hole_after_seg = tu.largest_hole_length(meshes_split_filtered[top_candidate])
 
-                    print(f"Largest hole before segmentation = {largest_hole_before_seg}, after = {largest_hole_after_seg},"
-                          f"\nratio = {largest_hole_after_seg/largest_hole_before_seg}, difference = {largest_hole_after_seg - largest_hole_before_seg}")
+                    print(f"Largest hole before segmentation = {largest_hole_before_seg}, after = {largest_hole_after_seg},")
+                    if largest_hole_before_seg > 0:
+                          print(f"\nratio = {largest_hole_after_seg/largest_hole_before_seg}, difference = {largest_hole_after_seg - largest_hole_before_seg}")
 
                     if largest_hole_after_seg < largest_hole_threshold:
                         f_soma_final = meshes_split_filtered[top_candidate]
