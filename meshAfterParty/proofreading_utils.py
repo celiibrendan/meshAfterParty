@@ -1551,7 +1551,7 @@ def split_info_to_neuroglancer_link(segment_id,
                                     cut_path_coordinates_name = "cut_path",
                                     not_cut_path_coordinates_color = "green",
                                     not_cut_path_coordinates_name = "not_cut_path",
-                                    verbose = True):
+                                    verbose = False):
     """
     Purpose: To take the split suggestions output from the 
     pru.multi_soma_split_suggestions and then to turn it into a neuroglancer link
@@ -1609,6 +1609,46 @@ def split_info_to_neuroglancer_link(segment_id,
 
     return return_value
 
+
+import re
+import pandas as pd
+from pathlib import Path
+
+def ipython_html_object_to_link(html_obj):
+    links = re.findall("href=[\"\'](.*?)[\"\']", html_obj.data)
+    return links[0]
+
+from tqdm_utils import tqdm
+def split_suggestions_datajoint_dicts_to_neuroglancer_dataframe(split_suggestions_data,
+                                                               output_type="local",
+                                                               verbose=False):
+    """
+    Purpose: To turn the splt dictionaries into a datframe with neuroglancer links
+    
+    """
+    spreadsheet_data = []
+    for curr_data in tqdm(split_suggestions_data):
+        curr_link = pru.split_info_to_neuroglancer_link(segment_id=curr_data["segment_id"],
+                                            split_info = curr_data["split_results"],
+                                            output_type=output_type
+                                           )
+
+        curr_link_html = ipython_html_object_to_link(curr_link)
+
+        n_suggested_cuts = len(pru.get_all_coordinate_suggestions(curr_data["split_results"]))
+        n_paths_not_cut = pru.get_n_paths_not_cut(curr_data["split_results"])
+
+        if verbose:
+            print(f"n_suggested_cuts = {n_suggested_cuts}, n_paths_not_cut = {n_paths_not_cut}")
+
+        local_dict = dict(segment_id=curr_data["segment_id"],
+                         n_suggested_cuts=n_suggested_cuts,
+                         n_paths_not_cut=n_paths_not_cut,
+                         link=curr_link_html)
+
+        spreadsheet_data.append(local_dict)
+
+    return  pd.DataFrame.from_dict(spreadsheet_data)
 
 
 

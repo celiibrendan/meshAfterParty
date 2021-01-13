@@ -1218,7 +1218,7 @@ def extract_branches_whole_neuron(import_Off_Flag,
     start_time = time.time()
     print(f"3) Staring: Generating Graph Structure and Identifying Soma using soma size threshold  = {size_multiplier*soma_size_threshold}")
     soma_index,soma_sdf_value = classifier.get_highest_sdf_part(size_multiplier*soma_size_threshold)
-    print("soma_index = " + str(soma_index))
+    print(f"soma_index = {soma_index}, soma_sdf_value = {soma_sdf_value}")
 
     #create a graph structure and stats for the whole neuron
     classifier.get_graph_structure()

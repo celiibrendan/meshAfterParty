@@ -14,7 +14,7 @@ import trimesh_utils as tu
 from trimesh_utils import split_significant_pieces,split
 #import numpy_utils as np
 
-
+soma_connectivity="edges"
 """
 Checking the new validation checks
 """
@@ -437,7 +437,7 @@ def original_mesh_soma(
     mesh_significance_threshold = 1000,
     return_inside_pieces = True,
     return_multiple_pieces_above_threshold = True,
-    soma_size_threshold = 13000
+    soma_size_threshold = 8000
     ):
     """
     Purpose: To take an approximation of the soma mesh (usually from a poisson surface reconstruction)
@@ -508,7 +508,8 @@ def original_mesh_soma(
 
     #7) Split the new mesh and take the largest
     split_meshes_after_backtrack = tu.split_significant_pieces(prelim_soma_mesh,
-                                significance_threshold=mesh_significance_threshold,connectivity="edges")
+                                significance_threshold=mesh_significance_threshold,
+                                                              connectivity=soma_connectivity,)
 
     if len(split_meshes_after_backtrack) == 0:
         return_mesh = None
@@ -579,6 +580,7 @@ def original_mesh_soma_old(
         split_meshes = tu.split_significant_pieces(
                                     main_mesh_total,
                                     significance_threshold=sig_th_initial_split,
+                                    connectivity=soma_connectivity,
                                     print_flag=False)
 
     print(f"# total split meshes = {len(split_meshes)}")
@@ -733,10 +735,15 @@ def extract_soma_center(segment_id,
                         verbose=False,
                         
                         return_glia_nuclei_pieces = True,
-                        backtrack_soma_size_threshold=13000,
+                        backtrack_soma_size_threshold=8000,
                         
-                        filter_inside_meshes = True,
+                        filter_inside_meshes_after_glia_removal = False,
+                        max_mesh_sized_filtered_away = 90000,
+                        
                         filter_inside_somas=True,
+                        backtrack_segmentation_on_fail = True,
+                        
+                        
                             ):
 
     global_start_time = time.time()
@@ -746,16 +753,19 @@ def extract_soma_center(segment_id,
     large_mesh_threshold_inner = large_mesh_threshold_inner*outer_decimation_ratio
     soma_size_threshold = soma_size_threshold*outer_decimation_ratio
     soma_size_threshold_max = soma_size_threshold_max*outer_decimation_ratio
+    max_mesh_sized_filtered_away = max_mesh_sized_filtered_away*outer_decimation_ratio
 
     #adjusting for inner decimation
     soma_size_threshold = soma_size_threshold*inner_decimation_ratio
     soma_size_threshold_max = soma_size_threshold_max*inner_decimation_ratio
+    
     print(f"Current Arguments Using (adjusted for decimation):\n large_mesh_threshold= {large_mesh_threshold}"
                  f" \nlarge_mesh_threshold_inner = {large_mesh_threshold_inner}"
                   f" \nsoma_size_threshold = {soma_size_threshold}"
                  f" \nsoma_size_threshold_max = {soma_size_threshold_max}"
                  f"\nouter_decimation_ratio = {outer_decimation_ratio}"
-                 f"\ninner_decimation_ratio = {inner_decimation_ratio}")
+                 f"\ninner_decimation_ratio = {inner_decimation_ratio}"
+         f"\nmax_mesh_sized_filtered_away = {max_mesh_sized_filtered_away}")
 
 
     # ------------------------------
@@ -810,9 +820,10 @@ def extract_soma_center(segment_id,
     print(f"Total found significant pieces before Poisson = {list_of_largest_mesh}")
     
     # --------- 1/11 Addition: Filtering away large meshes that are inside another --------- #
-    if filter_inside_meshes:
+    if filter_inside_meshes_after_glia_removal:
         print(f"Filtering away larger meshes that are inside others, before # of meshes = {len(list_of_largest_mesh)}")
-        list_of_largest_mesh = tu.filter_away_inside_meshes(list_of_largest_mesh,verbose=True,return_meshes=True)
+        list_of_largest_mesh = tu.filter_away_inside_meshes(list_of_largest_mesh,verbose=True,return_meshes=True,
+                                                           max_mesh_sized_filtered_away=max_mesh_sized_filtered_away)
         print(f"After # of meshes = {len(list_of_largest_mesh)}")
 
 
@@ -874,7 +885,7 @@ def extract_soma_center(segment_id,
         if second_poisson:
             print("Applying second poisson run")
             current_neuron_poisson = tu.poisson_surface_reconstruction(largest_mesh)
-            largest_mesh = tu.split_significant_pieces(current_neuron_poisson)[0]
+            largest_mesh = tu.split_significant_pieces(current_neuron_poisson,connectivity=soma_connectivity)[0]
 
         somas_found_in_big_loop = False
 
@@ -915,7 +926,8 @@ def extract_soma_center(segment_id,
                                  return_mesh=True,
                                  delete_temp_files=False)
             
-            dec_splits = tu.split_significant_pieces(largest_mesh_path_inner_decimated,significance_threshold=15)
+            dec_splits = tu.split_significant_pieces(largest_mesh_path_inner_decimated,significance_threshold=15,
+                                                    connectivity=soma_connectivity,)
             print(f"\n-------Splits after inner decimation len = {len(dec_splits)}--------\n")
             
             if len(dec_splits) == 0:
@@ -925,53 +937,69 @@ def extract_soma_center(segment_id,
                 print(f"done exporting decimated mesh: {largest_mesh_path_inner}")
 
                 largest_mesh_path_inner_decimated_clean = dec_splits[0]
-                print(f"largest_mesh_path_inner_decimated_clean = {largest_mesh_path_inner_decimated_clean}\n")
+                """ # ----------- 1/12: Addition that does the segmentation again -------------------- #"""
+        
+                for ii in range(3):
+                    print(f"\n    --- On segmentation loop {ii} --")
+                    print(f"largest_mesh_path_inner_decimated_clean = {largest_mesh_path_inner_decimated_clean}\n")
 
-                faces = np.array(largest_mesh_path_inner_decimated_clean.faces)
-                verts = np.array(largest_mesh_path_inner_decimated_clean.vertices)
+                    faces = np.array(largest_mesh_path_inner_decimated_clean.faces)
+                    verts = np.array(largest_mesh_path_inner_decimated_clean.vertices)
 
-                # may need to do some processing
+                    # may need to do some processing
 
 
-                segment_id_new = int(str(segment_id) + f"{i}{j}")
-                #print(f"Before the classifier the pymeshfix_clean = {pymeshfix_clean}")
-                verts_labels, faces_labels, soma_value,classifier = wcda.extract_branches_whole_neuron(
-                                        import_Off_Flag=False,
-                                        segment_id=segment_id_new,
-                                        vertices=verts,
-                                         triangles=faces,
-                                        pymeshfix_Flag=False,
-                                         import_CGAL_Flag=False,
-                                         return_Only_Labels=True,
-                                         clusters=3,
-                                         smoothness=0.2,
-                                        soma_only=True,
-                                        return_classifier = True
-                                        )
-                print(f"soma_sdf_value = {soma_value}")
+                    segment_id_new = int(str(segment_id) + f"{i}{j}")
+                    #print(f"Before the classifier the pymeshfix_clean = {pymeshfix_clean}")
+                    verts_labels, faces_labels, soma_value,classifier = wcda.extract_branches_whole_neuron(
+                                            import_Off_Flag=False,
+                                            segment_id=segment_id_new,
+                                            vertices=verts,
+                                             triangles=faces,
+                                            pymeshfix_Flag=False,
+                                             import_CGAL_Flag=False,
+                                             return_Only_Labels=True,
+                                             clusters=3,
+                                             smoothness=0.2,
+                                            soma_only=True,
+                                            return_classifier = True
+                                            )
+                    print(f"soma_sdf_value = {soma_value}")
 
-                total_classifier_list.append(classifier)
-                #total_poisson_list.append(largest_mesh_path_inner_decimated)
+                    total_classifier_list.append(classifier)
+                    #total_poisson_list.append(largest_mesh_path_inner_decimated)
 
-                # Save all of the portions that resemble a soma
-                median_values = np.array([v["median"] for k,v in classifier.sdf_final_dict.items()])
-                segmentation = np.array([k for k,v in classifier.sdf_final_dict.items()])
+                    # Save all of the portions that resemble a soma
+                    median_values = np.array([v["median"] for k,v in classifier.sdf_final_dict.items()])
+                    segmentation = np.array([k for k,v in classifier.sdf_final_dict.items()])
 
-                #order the compartments by greatest to smallest
-                sorted_medians = np.flip(np.argsort(median_values))
-                print(f"segmentation[sorted_medians],median_values[sorted_medians] = {(segmentation[sorted_medians],median_values[sorted_medians])}")
-                print(f"Sizes = {[classifier.sdf_final_dict[g]['n_faces'] for g in segmentation[sorted_medians]]}")
-                print(f"soma_size_threshold = {soma_size_threshold}")
-                print(f"soma_size_threshold_max={soma_size_threshold_max}")
+                    #order the compartments by greatest to smallest
+                    sorted_medians = np.flip(np.argsort(median_values))
+                    print(f"segmentation[sorted_medians],median_values[sorted_medians] = {(segmentation[sorted_medians],median_values[sorted_medians])}")
+                    print(f"Sizes = {[classifier.sdf_final_dict[g]['n_faces'] for g in segmentation[sorted_medians]]}")
+                    print(f"soma_size_threshold = {soma_size_threshold}")
+                    print(f"soma_size_threshold_max={soma_size_threshold_max}")
 
-                valid_soma_segments_width = [g for g,h in zip(segmentation[sorted_medians],median_values[sorted_medians]) if ((h > soma_width_threshold)
-                                                                    and (classifier.sdf_final_dict[g]["n_faces"] > soma_size_threshold)
-                                                                    and (classifier.sdf_final_dict[g]["n_faces"] < soma_size_threshold_max))]
-                valid_soma_segments_sdf = [h for g,h in zip(segmentation[sorted_medians],median_values[sorted_medians]) if ((h > soma_width_threshold)
-                                                                    and (classifier.sdf_final_dict[g]["n_faces"] > soma_size_threshold)
-                                                                    and (classifier.sdf_final_dict[g]["n_faces"] < soma_size_threshold_max))]
+                    valid_soma_segments_width = [g for g,h in zip(segmentation[sorted_medians],median_values[sorted_medians]) if ((h > soma_width_threshold)
+                                                                        and (classifier.sdf_final_dict[g]["n_faces"] > soma_size_threshold)
+                                                                        and (classifier.sdf_final_dict[g]["n_faces"] < soma_size_threshold_max))]
+                    valid_soma_segments_sdf = [h for g,h in zip(segmentation[sorted_medians],median_values[sorted_medians]) if ((h > soma_width_threshold)
+                                                                        and (classifier.sdf_final_dict[g]["n_faces"] > soma_size_threshold)
+                                                                        and (classifier.sdf_final_dict[g]["n_faces"] < soma_size_threshold_max))]
 
-                print("valid_soma_segments_width")
+                    print("valid_soma_segments_width")
+
+
+                    """# =------------- 1/12: Addition that will repeat this loop --------------"""
+                    if len(valid_soma_segments_width) > 0:
+                        break
+                    else:
+                        """
+                        Pseudocode: 
+                        Get the largest mesh segment
+                        """
+                        new_mesh_try_faces = np.where(classifier.labels_list == nu.mode_1d(classifier.labels_list))[0]
+                        largest_mesh_path_inner_decimated_clean = largest_mesh_path_inner_decimated_clean.submesh([new_mesh_try_faces],append=True)
 
                 if len(valid_soma_segments_width) > 0:
                     print(f"      ------ Found {len(valid_soma_segments_width)} viable somas: {valid_soma_segments_width}")
@@ -1279,15 +1307,49 @@ def extract_soma_center(segment_id,
 
                 curr_side_len_check = side_length_check(soma_mesh,side_length_ratio_threshold)
                 curr_volume_check = soma_volume_check(soma_mesh,volume_mulitplier)
+                
+                
+                # -------- 1/12 Addition: Does a second round of segmentation after to see if can split somas at all ---- #
                 if (not curr_side_len_check) or (not curr_volume_check):
-                    print(f"--->This soma mesh was not added because it did not pass the sphere validation:\n "
+
+                    if backtrack_segmentation_on_fail:
+                        print("Trying backtrack segmentation")
+                        mesh_tests,mesh_tests_sdf = tu.mesh_segmentation(soma_mesh,clusters=3,smoothness=0.2)
+
+                        soma_mesh_filtered = []
+                        soma_mesh_sdf_filtered = []
+
+                        for m_test,m_test_sdf in zip(mesh_tests,mesh_tests_sdf):
+
+                            if len(m_test.faces) >= backtrack_soma_size_threshold and m_test_sdf >=soma_width_threshold:
+
+                                if side_length_check(m_test,side_length_ratio_threshold) and soma_volume_check(m_test,volume_mulitplier):
+
+                                    soma_mesh_filtered.append(m_test)
+                                    soma_mesh_sdf_filtered.append(m_test_sdf)
+
+                        if len(soma_mesh_filtered) == 0:
+                            print(f"--->This soma mesh was not added because it did not pass the sphere validation EVEN AFTER SEGMENTATION:\n "
+                             f"soma_mesh = {soma_mesh}, curr_side_len_check = {curr_side_len_check}, curr_volume_check = {curr_volume_check}")
+                            continue
+
+
+                    else:
+                        print(f"--->This soma mesh was not added because it did not pass the sphere validation:\n "
                          f"soma_mesh = {soma_mesh}, curr_side_len_check = {curr_side_len_check}, curr_volume_check = {curr_volume_check}")
-                    continue
+                        continue
+                else:
+
+
+                    soma_mesh_filtered = [soma_mesh]
+                    soma_mesh_sdf_filtered = [curr_soma_sdf]
+
+
 
                 #tu.write_neuron_off(soma_mesh_poisson,"original_poisson.off")
                 #If made it through all the checks then add to final list
-                filtered_soma_list.append(soma_mesh)
-                filtered_soma_list_sdf.append(curr_soma_sdf)
+                filtered_soma_list += soma_mesh_filtered
+                filtered_soma_list_sdf += soma_mesh_sdf_filtered
                 add_inside_pieces_flag = True #setting flag so will add inside pieces
             
         

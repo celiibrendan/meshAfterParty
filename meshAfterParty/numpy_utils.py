@@ -470,6 +470,9 @@ def unique_pairings_between_2_arrays(array1,array2):
 def remove_indexes(arr1,arr2):
     return np.delete(arr1,arr2)
 
-
+from scipy import stats
+def mode_1d(array):
+    return stats.mode(array)[0][0]
+    
 
 import numpy_utils as nu

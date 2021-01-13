@@ -91,6 +91,91 @@ def set_minnie65_config_segmentation(minfig,
         
 # ------ Functions that will help decimate meshes ------------ #
 
+# ---------------------- Including Minfig Adapters ---------------- #
+    
+import datajoint as dj
+import numpy as np
+import h5py
+import os
+
+from collections import namedtuple
+
+
+class MeshAdapter(dj.AttributeAdapter):
+    # Initialize the correct attribute type (allows for use with multiple stores)
+    def __init__(self, attribute_type):
+        self.attribute_type = attribute_type
+        super().__init__()
+
+    attribute_type = '' # this is how the attribute will be declared
+
+    TriangularMesh = namedtuple('TriangularMesh', ['segment_id', 'vertices', 'faces'])
+    
+    def put(self, filepath):
+        # save the filepath to the mesh
+        filepath = os.path.abspath(filepath)
+        assert os.path.exists(filepath)
+        return filepath
+
+    def get(self, filepath):
+        # access the h5 file and return a mesh
+        assert os.path.exists(filepath)
+
+        with h5py.File(filepath, 'r') as hf:
+            vertices = hf['vertices'][()].astype(np.float64)
+            faces = hf['faces'][()].reshape(-1, 3).astype(np.uint32)
+        
+        segment_id = os.path.splitext(os.path.basename(filepath))[0]
+
+        return self.TriangularMesh(
+            segment_id=int(segment_id),
+            vertices=vertices,
+            faces=faces
+        )
+    
+
+class DecimatedMeshAdapter(dj.AttributeAdapter):
+    # Initialize the correct attribute type (allows for use with multiple stores)
+    def __init__(self, attribute_type):
+        self.attribute_type = attribute_type
+        super().__init__()
+
+    attribute_type = '' # this is how the attribute will be declared
+    has_version = False # used for file name recognition
+
+    TriangularMesh = namedtuple('TriangularMesh', ['segment_id', 'version', 'decimation_ratio', 'vertices', 'faces'])
+    
+    def put(self, filepath):
+        # save the filepath to the mesh
+        filepath = os.path.abspath(filepath)
+        assert os.path.exists(filepath)
+        return filepath
+
+    def get(self, filepath):
+        # access the h5 file and return a mesh
+        assert os.path.exists(filepath)
+
+        with h5py.File(filepath, 'r') as hf:
+            segment_id = hf['segment_id'][()].astype(np.uint64)
+            version = hf['version'][()].astype(np.uint8)
+            decimation_ratio = hf['decimation_ratio'][()].astype(np.float64)
+            vertices = hf['vertices'][()].astype(np.float64)
+            faces = hf['faces'][()].reshape(-1, 3).astype(np.uint32)
+        
+        return self.TriangularMesh(
+            segment_id=int(segment_id),
+            version=version,
+            decimation_ratio=decimation_ratio,
+            vertices=vertices,
+            faces=faces
+        )
+
+
+
+# instantiate for use as a datajoint type
+mesh = MeshAdapter('filepath@meshes')
+decimated_mesh = DecimatedMeshAdapter('filepath@decimated_meshes')
+
 # --------- Adapter that will be used for decomposition ----------- #
 import neuron_utils as nru
 import os
@@ -706,8 +791,74 @@ def download_and_insert_allen_meshes(segment_ids,n_threads=1,
     
     if insert_in_multi_soma_table:
         minnie.MultiSomaProofread.insert(insert_keys,skip_duplicates=True)
+        
+        
+        
+# ----------- 1/12/21: Generating Neuroglancer Link reports-----------------------------------#
+import numpy_utils as nu
+import proofreading_utils as pru
+def create_suggested_splits_neuroglancer_spreadsheet(segment_ids=None,
+    output_type="local", #other option is posting to the server
+    output_filepath = None,
+    output_folder = "./",
+    output_filename = "allen_spreadsheet.csv",
+    return_dataframe = False,
+    verbose=False,
+    ):
     
+    """
+    Purpose: To pull the split suggestions
+    and then generate a neuroglancer link spreadsheet
+
+    Pseudocode: 
+    1) Get the segment ids you want to pull (if none specified then assume whole table)
+    2) Pull down all the splitting information
+    3) Turn the splitting information into a dataframe
+    4) Export the dataframe to the specified location (default local directory)
+    """
+
+    if segment_ids is None:
+        segment_ids = minnie.NeuronSplitSuggestions.fetch("segment_id")
     
+    if segment_ids is int:
+        segment_ids = [segment_ids]
+        
+    #1) Get the segment ids you want to pull (if none specified then assume whole table)
+    if len(segment_ids) == 0:
+        curr_table = minnie.NeuronSplitSuggestions()
+    else:
+        curr_table = minnie.NeuronSplitSuggestions() & [dict(segment_id=k) for k in segment_ids]
+
+    if len(curr_table) == 0:
+        raise Exception("The current table restriction is empty")
+
+    #2) Pull down all the splitting information
+    split_suggestions_data = curr_table.fetch(as_dict=True)
+
+    #3) Turn the splitting information into a dataframe
+    allen_spreadsheet = pru.split_suggestions_datajoint_dicts_to_neuroglancer_dataframe(split_suggestions_data,
+                                                                                       output_type=output_type)
+
+    #4) Export the dataframe to the specified location (default local directory)
+    if output_filepath is None:
+        output_folder = Path(output_folder)
+        output_filename = Path(output_filename)
+
+        
+        if str(output_filename.suffix) != ".csv":
+            output_filename = Path(str(output_filename) + ".csv")
+
+        output_filepath = output_folder / output_filename
+
+    if verbose: 
+        print(f"Output path: {str(output_filepath.absolute())}")
+
+    allen_spreadsheet.to_csv(str(output_filepath.absolute()), sep=',')
+
+    if return_dataframe:
+        return allen_spreadsheet
+    
+
 #runs the configuration
 config_celii()
 minnie,_ = configure_minnie_vm()

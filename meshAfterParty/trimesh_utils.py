@@ -3577,6 +3577,7 @@ def filter_away_inside_meshes(mesh_list,
                                 inside_percentage_threshold = 0.15,
                                 verbose = False,
                                 return_meshes = False,
+                                max_mesh_sized_filtered_away=np.inf,
                                 ):
 
     """
@@ -3600,12 +3601,32 @@ def filter_away_inside_meshes(mesh_list,
 
 
     """
+    
 
     if len(mesh_list) < 2:
+        if verbose:
+            print("Mesh list was less than 2 object so returning")
+            
         if return_meshes:
             return mesh_list
         else:
             return np.arange(len(mesh_list))
+    
+    # May want to put a size threshold on what we filter away
+    mesh_list_len = np.array([len(k.faces) for k in mesh_list])
+    must_keep_indexes = np.where(mesh_list_len>max_mesh_sized_filtered_away)
+    
+    if verbose:
+        print(f"must_keep_indexes = {must_keep_indexes}")
+    
+    if len(must_keep_indexes) == len(mesh_list):
+        if verbose:
+            print(f"All meshes were above the max_mesh_sized_filtered_away threshold: {max_mesh_sized_filtered_away}")
+        if return_meshes:
+            return mesh_list
+        else:
+            return np.arange(len(mesh_list))   
+            
 
     mesh_list = np.array(mesh_list)
 
@@ -3677,6 +3698,9 @@ def filter_away_inside_meshes(mesh_list,
         #e) remove the losing index from the viable meshes index list
         viable_meshes = viable_meshes[viable_meshes!=losing_index]
 
+    # making sure to add back in the meshes that shouldn't be filtered away
+    viable_meshes = np.union1d(viable_meshes,must_keep_indexes)
+        
     if return_meshes:
         return [k for i,k in enumerate(mesh_list) if i in viable_meshes]
     else:
