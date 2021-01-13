@@ -1206,7 +1206,7 @@ def visualize_neuron(
                 
                 if subtract_glia:
                     if (current_neuron.glia_faces is not None) and (len(current_neuron.glia_faces) > 0):
-                        whole_mesh = main_mesh_to_plot.submesh([np.delete(np.arange(len(current_neuron.mesh.faces)),
+                        whole_mesh = current_neuron.mesh.submesh([np.delete(np.arange(len(current_neuron.mesh.faces)),
                                                                                  current_neuron.glia_faces)],append=True,repair=False)
                     else:
                         whole_mesh = current_neuron.mesh

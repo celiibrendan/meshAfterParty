@@ -1559,6 +1559,9 @@ def split_info_to_neuroglancer_link(segment_id,
     
     
     """
+    
+    print(f"segment_id = {segment_id}")
+    
     if split_coordinates is None:
         split_coordinates = pru.get_all_coordinate_suggestions(split_info)
 
@@ -1600,7 +1603,7 @@ def split_info_to_neuroglancer_link(segment_id,
     elif output_type == "server":
         # To upload to the state server for a shortened URL:
         client = pru.get_client()
-        state = chained_sb.render_state(edit_df.sort_values(by='priority'), return_as='dict')
+        state = chained_sb.render_state(df_list, return_as='dict')
         state_id = client.state.upload_state_json(state)
         short_url = client.state.build_neuroglancer_url(state_id, ngl_url=client.info.viewer_site())
         return_value = short_url
@@ -1632,8 +1635,12 @@ def split_suggestions_datajoint_dicts_to_neuroglancer_dataframe(split_suggestion
                                             split_info = curr_data["split_results"],
                                             output_type=output_type
                                            )
+        
 
-        curr_link_html = ipython_html_object_to_link(curr_link)
+        if type(curr_link) is str:
+            curr_link_html = curr_link
+        else:
+            curr_link_html = ipython_html_object_to_link(curr_link)
 
         n_suggested_cuts = len(pru.get_all_coordinate_suggestions(curr_data["split_results"]))
         n_paths_not_cut = pru.get_n_paths_not_cut(curr_data["split_results"])

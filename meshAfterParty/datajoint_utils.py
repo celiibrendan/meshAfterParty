@@ -843,6 +843,8 @@ def create_suggested_splits_neuroglancer_spreadsheet(segment_ids=None,
     allen_spreadsheet = pru.split_suggestions_datajoint_dicts_to_neuroglancer_dataframe(split_suggestions_data,
                                                                                        output_type=output_type)
 
+    
+    
     #4) Export the dataframe to the specified location (default local directory)
     if output_filepath is None:
         output_folder = Path(output_folder)
