@@ -432,6 +432,10 @@ def configure_minnie_vm():
         
     return minnie,schema
 
+def configure_nucleus_table(version=30):
+    m65mat = dj.create_virtual_module('m65mat', 'microns_minnie65_materialization')
+    return m65mat.Nucleus.Info & {'ver': version}
+
 import trimesh
 def get_decimated_mesh(seg_id,decimation_ratio=0.25):
     key = dict(segment_id=seg_id,decimation_ratio=decimation_ratio)
@@ -859,8 +863,10 @@ def create_suggested_splits_neuroglancer_spreadsheet(segment_ids=None,
         return allen_spreadsheet
     
 
+
 #runs the configuration
 config_celii()
 minnie,_ = configure_minnie_vm()
+nuc_table = configure_nucleus_table()
 from minfig.adapters import *
 
