@@ -1481,11 +1481,13 @@ def get_client():
     return FrameworkClient('minnie65_phase3_v1')
 
 def set_state_builder(layer_name = 'split_cands',
-                      color='#FFFFFF'):
+                      color='#FFFFFF',
+                     transparency=0.5):
     client = FrameworkClient('minnie65_phase3_v1')
     # The following generates a statebuilder that can turn dataframes into neuroglancer states
     img_layer = statebuilder.ImageLayerConfig(client.info.image_source(), contrast_controls=True, black=0.35, white=0.65)
-    seg_layer = statebuilder.SegmentationLayerConfig(client.info.segmentation_source(), selected_ids_column='root_id')
+    seg_layer = statebuilder.SegmentationLayerConfig(client.info.segmentation_source(), selected_ids_column='root_id',
+                                                    view_kws={'alpha_3d': transparency})
     pts = statebuilder.PointMapper('split_location', set_position=True)
     anno_layer = statebuilder.AnnotationLayerConfig(layer_name, mapping_rules=pts, linked_segmentation_layer=seg_layer.name, color=color, active=True,
                                                    tags=['valid', 'not_valid','proof'])

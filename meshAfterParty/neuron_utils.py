@@ -3229,12 +3229,22 @@ def all_soma_connnecting_endpionts_from_starting_info(starting_info):
     
 import copy
 
-def skeleton_points_along_path(limb_obj,branch_path,return_unique=True):
+def skeleton_points_along_path(limb_obj,branch_path,
+                               skeletal_distance_per_coordinate=4000,
+                               return_unique=True):
     """
     Purpose: Will give skeleton coordinates for the endpoints of the 
     branches along the specified path
+    
+    if skeletal_distance_per_coordinate is None then will just endpoints
     """
-    skeleton_coordinates = np.array([sk.find_branch_endpoints(limb_obj[k].skeleton) for k in branch_path]).reshape(-1,3)
+    if skeletal_distance_per_coordinate is None:
+        skeleton_coordinates = np.array([sk.find_branch_endpoints(limb_obj[k].skeleton) for k in branch_path]).reshape(-1,3)
+    else:
+        skeleton_coordinates = np.concatenate([sk.resize_skeleton_branch(
+                                        limb_obj[k].skeleton,
+                                        segment_width=skeletal_distance_per_coordinate) for k in branch_path]).reshape(-1,3)
+        
     if return_unique:
         return np.unique(skeleton_coordinates,axis=0)
     else:

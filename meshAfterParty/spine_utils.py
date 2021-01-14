@@ -125,7 +125,7 @@ def split_mesh_into_spines_shaft(current_mesh,
     file_to_write = cgal_folder / Path(f"segment_{segment_name}.off")
 
     written_file_location = tu.write_neuron_off(current_mesh,file_to_write)
-
+    
     cgal_data,cgal_sdf_data = cgal_segmentation(written_file_location,
                                              clusters,
                                              smoothness,
@@ -215,7 +215,8 @@ def get_spine_meshes_unfiltered_from_mesh(current_mesh,
     
     if segment_name is None:
         segment_name = f"{np.random.randint(10,1000)}_{np.random.randint(10,1000)}"
-        
+    
+    print(f"segment_name before cgal = {segment_name}")
     
     (spine_meshes,
      spine_meshes_idx,

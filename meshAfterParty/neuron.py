@@ -2464,12 +2464,12 @@ class Neuron:
     
     
     
-    
+    import system_utils as su
     def calculate_spines(self,
                         #query="width > 400 and n_faces_branch>100",
                          query="median_mesh_center > 140 and n_faces_branch>100",#previous used median_mesh_center > 140
-                        clusters_threshold=2,
-                        smoothness_threshold=0.08,
+                        clusters_threshold=3,#2,
+                        smoothness_threshold=0.1,#0.08,
                         shaft_threshold=300,
                         cgal_path=Path("./cgal_temp"),
                         print_flag=False,
@@ -2531,6 +2531,7 @@ class Neuron:
                         if print_flag:
                             print(f"Working on limb {limb_idx} branch {branch_idx}")
                         #calculate the spines
+                        su.compressed_pickle(curr_branch,"curr_branch_before_spines")
                         spine_submesh_split= spu.get_spine_meshes_unfiltered(current_neuron = self,
                                                                 limb_idx=limb_idx,
                                                                 branch_idx=branch_idx,

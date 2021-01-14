@@ -868,7 +868,8 @@ def create_suggested_splits_neuroglancer_spreadsheet(segment_ids=None,
 
 #runs the configuration
 config_celii()
-minnie,_ = configure_minnie_vm()
-nuc_table = configure_nucleus_table()
+#nuc_table = configure_nucleus_table()
+minnie,schema = configure_minnie_vm()
+
 from minfig.adapters import *
 
