@@ -2531,7 +2531,9 @@ class Neuron:
                         if print_flag:
                             print(f"Working on limb {limb_idx} branch {branch_idx}")
                         #calculate the spines
-                        su.compressed_pickle(curr_branch,"curr_branch_before_spines")
+                        
+                        #su.compressed_pickle(curr_branch,"curr_branch_before_spines")
+                        
                         spine_submesh_split= spu.get_spine_meshes_unfiltered(current_neuron = self,
                                                                 limb_idx=limb_idx,
                                                                 branch_idx=branch_idx,
@@ -2542,6 +2544,8 @@ class Neuron:
                                                                 return_sdf=False,
                                                                 print_flag=False,
                                                                 shaft_threshold=shaft_threshold)
+                        
+                            
                         #print(f"curr_branch.mesh = {curr_branch.mesh}")
 #                         spine_submesh_split = spu.get_spine_meshes_unfiltered_from_mesh(curr_branch.mesh,
 #                                                                 segment_name=f"{limb_idx}_{branch_idx}",

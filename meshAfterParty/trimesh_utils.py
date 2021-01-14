@@ -2435,7 +2435,7 @@ def mesh_segmentation(
         check_connect_comp = True, #will only be used if returning meshes
         return_ordered_by_size = True,
 
-        verbose = False,
+        verbose = True,
 
     ):
     """
@@ -2454,6 +2454,11 @@ def mesh_segmentation(
     
     """
     
+    # ------- 1/14 Additon: Going to make sure mesh has no degenerate faces --- #
+    mesh_to_segment,faces_kept = tu.connected_nondegenerate_mesh(mesh,
+                                                                 return_kept_faces_idx=True,
+                                                                 return_removed_faces_idx=False)
+    
     if not cgal_folder.exists():
         cgal_folder.mkdir(parents=True,exist_ok=False)
 
@@ -2462,7 +2467,7 @@ def mesh_segmentation(
         if mesh is None:
             raise Exception("Both mesh and filepath are None")
         file_dest = cgal_folder / Path(f"{np.random.randint(10,1000)}_mesh.off")
-        filepath = write_neuron_off(mesh,file_dest)
+        filepath = write_neuron_off(mesh_to_segment,file_dest)
         mesh_temp_file = True
 
     filepath = Path(filepath)
@@ -2483,9 +2488,17 @@ def mesh_segmentation(
     cgal_output_file = Path(str(filepath_no_ext) + "-cgal_" + str(np.round(clusters,2)) + "_" + "{:.2f}".format(smoothness) + ".csv" )
     cgal_output_file_sdf = Path(str(filepath_no_ext) + "-cgal_" + str(np.round(clusters,2)) + "_" + "{:.2f}".format(smoothness) + "_sdf.csv" )
 
-    cgal_data = np.genfromtxt(str(cgal_output_file.absolute()), delimiter='\n')
-    cgal_sdf_data = np.genfromtxt(str(cgal_output_file_sdf.absolute()), delimiter='\n')
+    cgal_data_pre_filt = np.genfromtxt(str(cgal_output_file.absolute()), delimiter='\n')
+    cgal_sdf_data_pre_filt = np.genfromtxt(str(cgal_output_file_sdf.absolute()), delimiter='\n')
 
+    """ 1/14: Need to adjust for the degenerate faces removed
+    """
+    cgal_data = np.ones(len(mesh.faces))*(np.max(cgal_data_pre_filt)+1)
+    cgal_data[faces_kept] = cgal_data_pre_filt
+    
+    cgal_sdf_data = np.zeros(len(mesh.faces))
+    cgal_sdf_data[faces_kept] = cgal_sdf_data_pre_filt
+    
     if return_meshes:
         if mesh is None:
             mesh = load_mesh_no_processing(filepath)
@@ -2566,6 +2579,80 @@ def get_non_manifold_vertices(mesh):
     mesh_o3d = convert_trimesh_to_o3d(mesh)  
     return np.asarray(mesh_o3d.get_non_manifold_vertices())
 
+
+"""
+From trimesh:
+
+self.remove_infinite_values()
+self.merge_vertices(**kwargs)
+# if we're cleaning remove duplicate
+# and degenerate faces
+
+if validate:
+    self.remove_duplicate_faces()
+    self.remove_degenerate_faces()
+    self.fix_normals()
+
+
+"""
+def connected_nondegenerate_mesh(mesh,return_kept_faces_idx=False,
+                                 return_removed_faces_idx = False,
+                                connectivity="edges"):
+    """
+    Purpose: To convert a mesh to a connected non-degenerate mesh
+    
+    Pseuducode:
+    1) Find all the non-degnerate faces indices
+    2) Split the mesh with the connectivity and returns the largest mesh
+    3) Return a submesh of all non degenerate faces and the split meshes
+    
+    """
+    mesh_filtered,nondeg_faces = tu.remove_degenerate_faces(mesh,
+                                                           return_face_idxs=True)
+    
+    if len(nondeg_faces) == 0:
+        raise Exception("No mesh after removing degenerate faces")
+    conn_mesh,conn_faces = tu.split_significant_pieces(mesh_filtered,
+                                significance_threshold=1,
+                               return_face_indices=True,
+                               connectivity=connectivity)
+    
+    kept_faces = nondeg_faces[conn_faces[0]]
+    not_kept_faces = np.delete(np.arange(len(mesh.faces)),kept_faces)
+                                                       
+                                                
+    if return_kept_faces_idx and return_removed_faces_idx:
+        return conn_mesh[0],kept_faces,not_kept_faces
+    elif return_kept_faces_idx:
+        return conn_mesh[0],kept_faces
+    elif return_removed_faces_idx:
+        return conn_mesh[0],not_kept_faces
+    else:
+        return conn_mesh[0]
+    
+
+def find_degenerate_faces(mesh,return_nondegenerate_faces=False):
+    nondegenerate = trimesh.triangles.nondegenerate(
+                mesh.triangles,
+                areas=mesh.area_faces,
+
+                height=trimesh.tol.merge)
+
+    if not return_nondegenerate_faces:
+        return np.where(nondegenerate==False)[0]
+    else:
+        return np.where(nondegenerate==True)[0]
+    
+def find_nondegenerate_faces(mesh):
+    return find_degenerate_faces(mesh,return_nondegenerate_faces=True)
+
+def remove_degenerate_faces(mesh,return_face_idxs=False):
+    nondeg_faces = find_nondegenerate_faces(mesh)
+    new_mesh = mesh.submesh([nondeg_faces],append=True,repair=False)
+    if return_face_idxs:
+        return new_mesh,nondeg_faces
+    else:
+        return new_mesh
 
 def mesh_interior(mesh,
                     return_interior=True,

@@ -3185,6 +3185,7 @@ def preprocess_neuron(
                 use_meshafterparty=True,
                 glia_faces=None,
                 nuclei_faces=None):
+    
     pre_branch_connectivity = "edges"
     print(f"use_meshafterparty = {use_meshafterparty}")
     
@@ -3222,9 +3223,27 @@ def preprocess_neuron(
         
     # -------- Phase 1: Doing Soma Detection (if Not already done) ---------- #
     if somas is None:
-        soma_mesh_list,run_time,total_soma_list_sdf = sm.extract_soma_center(segment_id,
+        (soma_mesh_list, 
+         run_time, 
+         total_soma_list_sdf,
+         glia_pieces,
+         nuclei_pieces) = sm.extract_soma_center(segment_id,
                                                  current_neuron.vertices,
                                                  current_neuron.faces)
+        
+        if len(glia_pieces)>0:
+            glia_faces = tu.original_mesh_faces_map(current_neuron,tu.combine_meshes(glia_pieces))
+            n_glia_faces = len(glia_faces)
+        else:
+            glia_faces = []
+            n_glia_faces = 0
+            
+        if len(nuclei_pieces)>0:
+            nuclei_faces = tu.original_mesh_faces_map(current_neuron,tu.combine_meshes(nuclei_pieces))
+            n_nuclei_faces = len(nuclei_faces)
+        else:
+            nuclei_faces = []
+            n_nuclei_faces = 0
     else:
         soma_mesh_list,run_time,total_soma_list_sdf = somas
         print(f"Using pre-computed somas: soma_mesh_list = {soma_mesh_list}")

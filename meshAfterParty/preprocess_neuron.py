@@ -1102,7 +1102,7 @@ def preprocess_neuron(mesh=None,
                     combine_close_skeleton_nodes_threshold=700,
                      ):
     
-    
+    print("inside preproces neuron")
     whole_processing_tiempo = time.time()
     
     
@@ -1138,9 +1138,30 @@ def preprocess_neuron(mesh=None,
     
     # --- 1) Doing the soma detection
     if somas is None:
-        soma_mesh_list,run_time,total_soma_list_sdf = sm.extract_soma_center(segment_id,
+        print("\n\nUsing the glia soma extract!!\n\n")
+        (soma_mesh_list, 
+         run_time, 
+         total_soma_list_sdf,
+         glia_pieces,
+         nuclei_pieces) = sm.extract_soma_center(segment_id,
                                                  current_neuron.vertices,
                                                  current_neuron.faces)
+        
+        if len(glia_pieces)>0:
+            glia_faces = tu.original_mesh_faces_map(current_neuron,tu.combine_meshes(glia_pieces))
+            n_glia_faces = len(glia_faces)
+        else:
+            glia_faces = []
+            n_glia_faces = 0
+            
+        if len(nuclei_pieces)>0:
+            nuclei_faces = tu.original_mesh_faces_map(current_neuron,tu.combine_meshes(nuclei_pieces))
+            n_nuclei_faces = len(nuclei_faces)
+        else:
+            nuclei_faces = []
+            n_nuclei_faces = 0
+        
+        
     else:
         soma_mesh_list,run_time,total_soma_list_sdf = somas
     
@@ -1887,7 +1908,7 @@ def preprocess_neuron(mesh=None,
     #print(f"returning preprocessed_data = {preprocessed_data}")
     return preprocessed_data
 
-
+'''
 def preprocess_neuron_OLD(mesh=None,
                      mesh_file=None,
                      segment_id=None,
@@ -2598,5 +2619,7 @@ def preprocess_neuron_OLD(mesh=None,
     
     print(f"returning preprocessed_data = {preprocessed_data}")
     return preprocessed_data
+    
+'''
     
     

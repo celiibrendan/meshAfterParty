@@ -72,6 +72,7 @@ import skeleton_utils as sk
 import copy
 import neuron_utils as nru
 import networkx_utils as xu
+import time
 
 connectivity = "edges"
 
@@ -117,20 +118,47 @@ def split_mesh_into_spines_shaft(current_mesh,
                           delete_temp_file=True,
                           shaft_threshold = 300,
                                  return_sdf = True,
-                                print_flag = True):
-
+                                print_flag = True,
+                                filter_away_degenerate_faces=True):
+ 
+    
     if not cgal_folder.exists():
         cgal_folder.mkdir(parents=True,exist_ok=False)
 
     file_to_write = cgal_folder / Path(f"segment_{segment_name}.off")
-
-    written_file_location = tu.write_neuron_off(current_mesh,file_to_write)
     
-    cgal_data,cgal_sdf_data = cgal_segmentation(written_file_location,
+    
+    
+    # ------- 1/14 Additon: Going to make sure mesh has no degenerate faces --- #
+    if filter_away_degenerate_faces:
+        mesh_to_segment,faces_kept = tu.connected_nondegenerate_mesh(current_mesh,
+                                                                     return_kept_faces_idx=True,
+                                                                     return_removed_faces_idx=False)
+
+
+        written_file_location = tu.write_neuron_off(mesh_to_segment,file_to_write)
+    else:
+        written_file_location = tu.write_neuron_off(current_mesh,file_to_write)
+    
+    cgal_data_pre_filt,cgal_sdf_data_pre_filt = cgal_segmentation(written_file_location,
                                              clusters,
                                              smoothness,
                                              return_sdf=True,
                                                delete_temp_file=delete_temp_file)
+    
+    """ 1/14: Need to adjust for the degenerate faces removed
+    """
+    if filter_away_degenerate_faces:
+        cgal_data = np.ones(len(current_mesh.faces))*(np.max(cgal_data_pre_filt)+1)
+        cgal_data[faces_kept] = cgal_data_pre_filt
+
+        cgal_sdf_data = np.zeros(len(current_mesh.faces))
+        cgal_sdf_data[faces_kept] = cgal_sdf_data_pre_filt
+    else:
+        cgal_data = cgal_data_pre_filt
+        cgal_sdf_data = cgal_sdf_data_pre_filt
+    
+    
     #print(f"file_to_write = {file_to_write.absolute()}")
     if delete_temp_file:
         #print("attempting to delete file")
@@ -144,6 +172,10 @@ def split_mesh_into_spines_shaft(current_mesh,
     #gets the meshes that are split using the cgal labels
     split_meshes,split_meshes_idx = tu.split_mesh_into_face_groups(current_mesh,cgal_data,return_idx=True,
                                    check_connect_comp = False)
+    
+    
+    
+    split_meshes,split_meshes_idx
     
     
     if len(split_meshes.keys()) <= 1:
@@ -194,6 +226,7 @@ def split_mesh_into_spines_shaft(current_mesh,
     if len(spine_meshes) == 0:
         if print_flag:
             print("No spine meshes detected")
+            
 
     if return_sdf:
         return spine_meshes,spine_meshes_idx,shaft_meshes,shaft_meshes_idx,cgal_sdf_data
