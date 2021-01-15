@@ -101,7 +101,7 @@ import os
 from collections import namedtuple
 
 
-class MeshAdapter(dj.AttributeAdapter):
+"""class MeshAdapter(dj.AttributeAdapter):
     # Initialize the correct attribute type (allows for use with multiple stores)
     def __init__(self, attribute_type):
         self.attribute_type = attribute_type
@@ -174,7 +174,7 @@ class DecimatedMeshAdapter(dj.AttributeAdapter):
 
 # instantiate for use as a datajoint type
 mesh = MeshAdapter('filepath@meshes')
-decimated_mesh = DecimatedMeshAdapter('filepath@decimated_meshes')
+decimated_mesh = DecimatedMeshAdapter('filepath@decimated_meshes')"""
 
 # --------- Adapter that will be used for decomposition ----------- #
 import neuron_utils as nru
