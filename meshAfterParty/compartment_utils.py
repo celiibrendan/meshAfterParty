@@ -125,6 +125,9 @@ def get_skeletal_distance_no_skipping(main_mesh,edges,
 #                 sub_components_face_indexes = sub_components_face_indexes_sig
 
         #getting the indices of the submeshes whose bounding box contain the edge 
+        #su.compressed_pickle(sub_components,"sub_components_debug")
+        #su.compressed_pickle(ex_edge,"ex_edge")
+        
         contains_points_results = np.array([s_comp.bounding_box.contains(ex_edge.reshape(-1,3)) for s_comp in sub_components])
         
         containing_indices = (np.arange(0,len(sub_components)))[np.sum(contains_points_results,axis=1) >= len(ex_edge)]

@@ -2207,11 +2207,11 @@ def fill_holes(mesh,
     
     mesh.merge_vertices()
     
-    if tu.is_manifold(mesh):
-        print("Mesh was manifold")
-        if len(tu.find_border_face_groups(mesh))==0 and tu.is_manifold(mesh):
-            print("No holes needed to fill and mesh was manifold so returning original mesh")
-            return mesh
+    
+    #if len(tu.find_border_face_groups(mesh))==0 and tu.is_manifold(mesh) and tu.is_watertight(mesh):
+    if len(tu.find_border_face_groups(mesh))==0 and tu.is_watertight(mesh):
+        print("No holes needed to fill and mesh was watertight and no vertex group")
+        return mesh
         
     lrg_mesh = mesh
     with meshlab.FillHoles(max_hole_size=max_hole_size,self_itersect_faces=self_itersect_faces) as fill_hole_obj:
@@ -2318,7 +2318,9 @@ def poisson_surface_reconstruction(mesh,
                                    output_folder="./temp",
                                   delete_temp_files=True,
                                    name=None,
-                                  verbose=False):
+                                  verbose=False,
+                                  return_largest_mesh=False,
+                                  manifold_clean =True):
     if type(output_folder) != type(Path()):
         output_folder = Path(str(output_folder))
         output_folder.mkdir(parents=True,exist_ok=True)
@@ -2343,7 +2345,20 @@ def poisson_surface_reconstruction(mesh,
                                 )
     if verbose:
         print(f"-----Time for Screened Poisson= {time.time()-skeleton_start}")
-        
+    
+    if return_largest_mesh:
+        new_mesh = tu.split_significant_pieces(new_mesh,
+                                               significance_threshold=1,
+                                               connectivity='edges')[0]
+        #only want to check manifoldness if it is one piece
+        if manifold_clean:
+            new_mesh.merge_vertices()
+            new_mesh = tu.fill_holes(new_mesh)
+            #new_mesh = tu.connected_nondegenerate_mesh(mesh)
+            print(f"Mesh manifold status: {tu.is_manifold(new_mesh)}")
+            print(f"Mesh watertight status: {tu.is_watertight(new_mesh)}")
+    
+    
     return new_mesh
 
 
@@ -2565,7 +2580,8 @@ def convert_o3d_to_trimesh(mesh):
     if not type(mesh) == type(trimesh.Trimesh()):
         new_mesh = trimesh.Trimesh(
                                     vertices=np.asarray(mesh.vertices),
-                                   faces=np.asarray(mesh.triangles)
+                                   faces=np.asarray(mesh.triangles),
+                                vertex_normals=np.asarray(mesh.vertex_normals)
                                   )
     else:
         new_mesh = mesh
@@ -2577,6 +2593,7 @@ def mesh_volume_o3d(mesh):
 
     
 def is_manifold(mesh):
+    #su.compressed_pickle(mesh,"manifold_debug_mesh")
     mesh_o3d = convert_trimesh_to_o3d(mesh)  
     return mesh_o3d.is_vertex_manifold()
 

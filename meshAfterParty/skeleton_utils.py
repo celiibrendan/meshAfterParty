@@ -1341,6 +1341,7 @@ def stack_skeletons(sk_list,graph_cleaning=False):
 
 #------------ The actual skeletonization from mesh contraction----------- #
 from calcification_param_Module import calcification_param
+import trimesh
 def calcification(
                     location_with_filename,
                     max_triangle_angle =1.91986,
@@ -1351,8 +1352,9 @@ def calcification(
                     is_medially_centered=True,
                     min_edge_length = 75,
                     edge_length_multiplier = 0.002,
-                    print_parameters=True
+                    print_parameters=True,
                 ):
+
     
     if type(location_with_filename) == type(Path()):
         location_with_filename = str(location_with_filename.absolute())
@@ -1380,19 +1382,44 @@ def calcification(
 
 def skeleton_cgal(mesh=None,
                   mesh_path=None,
+                  path_to_write=None,
                   filepath = "./temp.off",
-                  remove_temp_files=True,
+                  remove_mesh_temp_file=True,
+                  remove_skeleton_temp_file=False,
+                  manifold_fix=True,
                   verbose=False,
+                  return_skeleton_file_path_and_status=False,
                   **kwargs):
     """
     Pseudocode: 
     1) Write the mesh to a file
     2) Pass the file to the calcification
     3) Delete the temporary file
+    
+    -- will now check and fix mesh manifoldness
     """
+    
+    #----------- 1/15 Addition: Will fix manifold issues
+    if manifold_fix:
+        if verbose:
+            print("")
+        if mesh is None:
+            mesh = tu.load_mesh_no_processing(mesh_path)
+        
+        if not tu.is_manifold(mesh): #should only be one piece
+            mesh = tu.poisson_surface_reconstruction(mesh,
+                                                 return_largest_mesh=True,
+                                                 manifold_clean=True)
+        if not tu.is_watertight(mesh):
+            mesh = tu.fill_holes(mesh)
+            
+        print(f"Manifold status before skeletonization = {tu.is_manifold(mesh)}")
+        
     #1) Write the mesh to a file
     if not mesh is None:
         written_path = write_neuron_off(mesh,filepath)
+        
+        
     else:
         written_path = mesh_path
     
@@ -1400,21 +1427,27 @@ def skeleton_cgal(mesh=None,
     sk_time = time.time()
     skeleton_results,sk_file = calcification(written_path,**kwargs)
     
-    significant_poisson_skeleton = read_skeleton_edges_coordinates([sk_file])
     
     #3) Delete the temporary file
-    if remove_temp_files:
-        if mesh_path is None:
-            Path(written_path).unlink()
-        Path(sk_file).unlink()
-    
-    if verbose:
-        print(f"Total time for skeletonizing {time.time() - sk_time}")
-        print(f"Returning skeleton of size {significant_poisson_skeleton.shape}")
-    
-    return significant_poisson_skeleton
+    if remove_mesh_temp_file:
+        Path(written_path).unlink()
     
 
+    if verbose:
+        print(f"Total time for skeletonizing {time.time() - sk_time}")
+        
+    if return_skeleton_file_path_and_status:
+        return skeleton_results,sk_file
+    else:
+        if verbose:
+            print(f"Returning skeleton of size {significant_poisson_skeleton.shape}")
+        significant_poisson_skeleton = read_skeleton_edges_coordinates([sk_file])
+        
+        if remove_skeleton_temp_file:
+            Path(sk_file).unlink()
+            
+        return significant_poisson_skeleton
+    
 
 # ---------- Does the cleaning of the skeleton -------------- #
 
@@ -2852,14 +2885,25 @@ def skeletonize_connected_branch(current_mesh,
             print(f"mesh_pieces = {mesh_pieces}")
             print("     Starting Calcification (Changed back where stitches large poissons)")
             for zz,piece in enumerate(mesh_pieces):
+                
+                """ Old way that didnt' check for manifoldness
+                
                 current_mesh_path = output_folder / f"{name}_{zz}"
-                if skeleton_print:
-                    print(f"current_mesh_path = {current_mesh_path}")
+                #if skeleton_print:
+                
+                print(f"current_mesh_path = {current_mesh_path}")
                 written_path = write_neuron_off(piece,current_mesh_path)
                 
-                #print(f"Path sending to calcification = {written_path[:-4]}")
                 returned_value, sk_file_name = calcification(written_path,
                                                                min_edge_length = current_min_edge)
+                """
+                #print(f"Path sending to calcification = {written_path[:-4]}")
+                
+                returned_value, sk_file_name = sk.skeleton_cgal(mesh=piece,
+                                                                filepath= output_folder / f"{name}_{zz}",
+                                     return_skeleton_file_path_and_status=True,
+                                min_edge_length = current_min_edge)
+                
                 if skeleton_print:
                     print(f"returned_value = {returned_value}")
                     print(f"sk_file_name = {sk_file_name}")
