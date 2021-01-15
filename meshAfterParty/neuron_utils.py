@@ -2515,7 +2515,7 @@ def spine_density_eligible(neuron_obj):
     return spine_density_eligible
 
 def spines_per_branch_eligible(neuron_obj):
-    if neuron_obj.n_branches > 0:
+    if neuron_obj.n_spine_eligible_branches > 0:
         spines_per_branch_eligible = np.round(neuron_obj.n_spines/neuron_obj.n_spine_eligible_branches,3)
     else:
         spines_per_branch_eligible = 0
