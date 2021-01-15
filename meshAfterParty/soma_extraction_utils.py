@@ -833,7 +833,6 @@ def extract_soma_center(segment_id,
         list_of_largest_mesh = [k for k in ordered_mesh_splits if len(k.faces) > large_mesh_threshold/2]
 
     total_soma_list = []
-    total_classifier_list = []
     total_poisson_list = []
     total_soma_list_sdf = []
 
@@ -943,12 +942,13 @@ def extract_soma_center(segment_id,
                     print(f"\n    --- On segmentation loop {ii} --")
                     print(f"largest_mesh_path_inner_decimated_clean = {largest_mesh_path_inner_decimated_clean}\n")
 
+                    '''
                     faces = np.array(largest_mesh_path_inner_decimated_clean.faces)
                     verts = np.array(largest_mesh_path_inner_decimated_clean.vertices)
 
                     # may need to do some processing
 
-
+                    
                     segment_id_new = int(str(segment_id) + f"{i}{j}")
                     #print(f"Before the classifier the pymeshfix_clean = {pymeshfix_clean}")
                     verts_labels, faces_labels, soma_value,classifier = wcda.extract_branches_whole_neuron(
@@ -966,7 +966,7 @@ def extract_soma_center(segment_id,
                                             )
                     print(f"soma_sdf_value = {soma_value}")
 
-                    total_classifier_list.append(classifier)
+                   
                     #total_poisson_list.append(largest_mesh_path_inner_decimated)
 
                     # Save all of the portions that resemble a soma
@@ -988,28 +988,43 @@ def extract_soma_center(segment_id,
                                                                         and (classifier.sdf_final_dict[g]["n_faces"] < soma_size_threshold_max))]
 
                     print("valid_soma_segments_width")
+                    '''
+                    
+                    """# ----------- 1/14 Addition that will just use the trimesh segmentation function ------------"""
+                    divided_meshes,divided_meshes_sdf = tu.mesh_segmentation(mesh=largest_mesh_path_inner_decimated_clean,clusters=3,smoothness=0.2)
+                    
+                    divided_meshes_len = np.array([len(k.faces) for k in divided_meshes])
+                    valid_indexes = np.where((divided_meshes_len > soma_size_threshold) & 
+                                             (divided_meshes_len < soma_size_threshold_max) & 
+                                            (np.array(divided_meshes_sdf) > soma_width_threshold))[0]
+                    
+                    valid_soma_meshes = [divided_meshes[k] for k in valid_indexes]
+                    valid_soma_segments_width = [divided_meshes_sdf[k] for k in valid_indexes]
+                    
+                    
 
 
                     """# =------------- 1/12: Addition that will repeat this loop --------------"""
-                    if len(valid_soma_segments_width) > 0:
+                    if len(valid_soma_meshes) > 0:
                         break
                     else:
                         """
                         Pseudocode: 
                         Get the largest mesh segment
-                        """
+                        
+                        Old:
                         new_mesh_try_faces = np.where(classifier.labels_list == nu.mode_1d(classifier.labels_list))[0]
                         largest_mesh_path_inner_decimated_clean = largest_mesh_path_inner_decimated_clean.submesh([new_mesh_try_faces],append=True)
+                        """
+                        largest_mesh_path_inner_decimated_clean = divided_meshes[0]
 
                 if len(valid_soma_segments_width) > 0:
                     print(f"      ------ Found {len(valid_soma_segments_width)} viable somas: {valid_soma_segments_width}")
                     somas_found_in_big_loop = True
                     #get the meshes only if signfiicant length
-                    labels_list = classifier.labels_list
 
-                    for v,sdf in zip(valid_soma_segments_width,valid_soma_segments_sdf):
-                        submesh_face_list = np.where(classifier.labels_list == v)[0]
-                        soma_mesh = largest_mesh_path_inner_decimated_clean.submesh([submesh_face_list],append=True)
+                    for soma_mesh,sdf in zip(valid_soma_meshes,valid_soma_segments_width):
+                        
 
                         # ---------- No longer doing the extra checks in here --------- #
 

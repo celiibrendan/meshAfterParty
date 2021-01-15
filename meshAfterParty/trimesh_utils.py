@@ -1595,7 +1595,7 @@ def ray_trace_distance(mesh,
         ray_origins = mesh.vertices[vertex_inds]
         ray_directions = mesh.vertex_normals[vertex_inds]
     elif (not ray_origins is None) and (not ray_directions is None):
-        passs
+        pass
     else:
         face_inds = np.arange(0,len(mesh.faces))
         ray_origins = mesh.triangles_center[face_inds]
@@ -2454,50 +2454,62 @@ def mesh_segmentation(
     
     """
     
+
     # ------- 1/14 Additon: Going to make sure mesh has no degenerate faces --- #
     mesh_to_segment,faces_kept = tu.connected_nondegenerate_mesh(mesh,
                                                                  return_kept_faces_idx=True,
                                                                  return_removed_faces_idx=False)
     
-    if not cgal_folder.exists():
-        cgal_folder.mkdir(parents=True,exist_ok=False)
-
-    mesh_temp_file = False
-    if filepath is None:
-        if mesh is None:
-            raise Exception("Both mesh and filepath are None")
-        file_dest = cgal_folder / Path(f"{np.random.randint(10,1000)}_mesh.off")
-        filepath = write_neuron_off(mesh_to_segment,file_dest)
-        mesh_temp_file = True
-
-    filepath = Path(filepath)
-
-    assert(filepath.exists())
-    filepath_no_ext = filepath.absolute().parents[0] / filepath.stem
-
-
-    start_time = time.time()
-
+    #-------- 1/14 Addition: Will check for just a sheet of mesh with a 0 sdf ---------#
+    sdf_faces = tu.ray_trace_distance(mesh_to_segment)
+    perc_0_faces = np.sum(sdf_faces==0)/len(sdf_faces)
     if verbose:
-        print(f"Going to run cgal segmentation with:"
-             f"\nFile: {str(filepath_no_ext)} \nclusters:{clusters} \nsmoothness:{smoothness}")
+        print(f"perc_0_faces = {perc_0_faces}")
+    if perc_0_faces == 1:
+        cgal_data = np.zeros(len(mesh.faces))
+        cgal_sdf_data = np.zeros(len(mesh.faces))
+        
+        delete_temp_files=False
+    else:
+        if not cgal_folder.exists():
+            cgal_folder.mkdir(parents=True,exist_ok=False)
 
-    csm.cgal_segmentation(str(filepath_no_ext),clusters,smoothness)
+        mesh_temp_file = False
+        if filepath is None:
+            if mesh is None:
+                raise Exception("Both mesh and filepath are None")
+            file_dest = cgal_folder / Path(f"{np.random.randint(10,1000)}_mesh.off")
+            filepath = write_neuron_off(mesh_to_segment,file_dest)
+            mesh_temp_file = True
 
-    #read in the csv file
-    cgal_output_file = Path(str(filepath_no_ext) + "-cgal_" + str(np.round(clusters,2)) + "_" + "{:.2f}".format(smoothness) + ".csv" )
-    cgal_output_file_sdf = Path(str(filepath_no_ext) + "-cgal_" + str(np.round(clusters,2)) + "_" + "{:.2f}".format(smoothness) + "_sdf.csv" )
+        filepath = Path(filepath)
 
-    cgal_data_pre_filt = np.genfromtxt(str(cgal_output_file.absolute()), delimiter='\n')
-    cgal_sdf_data_pre_filt = np.genfromtxt(str(cgal_output_file_sdf.absolute()), delimiter='\n')
+        assert(filepath.exists())
+        filepath_no_ext = filepath.absolute().parents[0] / filepath.stem
 
-    """ 1/14: Need to adjust for the degenerate faces removed
-    """
-    cgal_data = np.ones(len(mesh.faces))*(np.max(cgal_data_pre_filt)+1)
-    cgal_data[faces_kept] = cgal_data_pre_filt
-    
-    cgal_sdf_data = np.zeros(len(mesh.faces))
-    cgal_sdf_data[faces_kept] = cgal_sdf_data_pre_filt
+
+        start_time = time.time()
+
+        if verbose:
+            print(f"Going to run cgal segmentation with:"
+                 f"\nFile: {str(filepath_no_ext)} \nclusters:{clusters} \nsmoothness:{smoothness}")
+
+        csm.cgal_segmentation(str(filepath_no_ext),clusters,smoothness)
+
+        #read in the csv file
+        cgal_output_file = Path(str(filepath_no_ext) + "-cgal_" + str(np.round(clusters,2)) + "_" + "{:.2f}".format(smoothness) + ".csv" )
+        cgal_output_file_sdf = Path(str(filepath_no_ext) + "-cgal_" + str(np.round(clusters,2)) + "_" + "{:.2f}".format(smoothness) + "_sdf.csv" )
+
+        cgal_data_pre_filt = np.genfromtxt(str(cgal_output_file.absolute()), delimiter='\n')
+        cgal_sdf_data_pre_filt = np.genfromtxt(str(cgal_output_file_sdf.absolute()), delimiter='\n')
+
+        """ 1/14: Need to adjust for the degenerate faces removed
+        """
+        cgal_data = np.ones(len(mesh.faces))*(np.max(cgal_data_pre_filt)+1)
+        cgal_data[faces_kept] = cgal_data_pre_filt
+
+        cgal_sdf_data = np.zeros(len(mesh.faces))
+        cgal_sdf_data[faces_kept] = cgal_sdf_data_pre_filt
     
     if return_meshes:
         if mesh is None:

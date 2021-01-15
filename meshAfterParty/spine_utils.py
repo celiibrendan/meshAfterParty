@@ -76,6 +76,7 @@ import time
 
 connectivity = "edges"
 
+"""   DON'T NEED THIS FUNCTION ANYMORE BECAUSE REPLACED BY TRIMESH_UTILS MESH_SEGMENTATION
 def cgal_segmentation(written_file_location,
                       clusters=2,
                       smoothness=0.03,
@@ -108,7 +109,7 @@ def cgal_segmentation(written_file_location,
     if return_sdf:
         return cgal_data,cgal_sdf_data
     else:
-        return cgal_data
+        return cgal_data"""
 
 def split_mesh_into_spines_shaft(current_mesh,
                            segment_name="",
@@ -118,10 +119,10 @@ def split_mesh_into_spines_shaft(current_mesh,
                           delete_temp_file=True,
                           shaft_threshold = 300,
                                  return_sdf = True,
-                                print_flag = True,
-                                filter_away_degenerate_faces=True):
+                                print_flag = True):
  
     
+    """
     if not cgal_folder.exists():
         cgal_folder.mkdir(parents=True,exist_ok=False)
 
@@ -146,8 +147,6 @@ def split_mesh_into_spines_shaft(current_mesh,
                                              return_sdf=True,
                                                delete_temp_file=delete_temp_file)
     
-    """ 1/14: Need to adjust for the degenerate faces removed
-    """
     if filter_away_degenerate_faces:
         cgal_data = np.ones(len(current_mesh.faces))*(np.max(cgal_data_pre_filt)+1)
         cgal_data[faces_kept] = cgal_data_pre_filt
@@ -157,12 +156,29 @@ def split_mesh_into_spines_shaft(current_mesh,
     else:
         cgal_data = cgal_data_pre_filt
         cgal_sdf_data = cgal_sdf_data_pre_filt
-    
-    
+        
     #print(f"file_to_write = {file_to_write.absolute()}")
     if delete_temp_file:
         #print("attempting to delete file")
         file_to_write.unlink()
+    """
+    
+    
+
+    
+    cgal_data,cgal_sdf_data = tu.mesh_segmentation(current_mesh,
+                                                  cgal_folder=cgal_folder,
+                                                   clusters=clusters,
+                                                   smoothness=smoothness,
+                                                   return_sdf=True,
+                                                   delete_temp_files=delete_temp_file,
+                                                   return_meshes=False,
+                                                   return_ordered_by_size=False
+                                                  )
+    
+    """ 1/14: Need to adjust for the degenerate faces removed
+    """
+
     
     #get a look at how many groups and what distribution:
     from collections import Counter
