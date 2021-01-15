@@ -2435,7 +2435,7 @@ def mesh_segmentation(
         check_connect_comp = True, #will only be used if returning meshes
         return_ordered_by_size = True,
 
-        verbose = True,
+        verbose = False,
 
     ):
     """
