@@ -110,7 +110,7 @@ import numpy as np
 import time
 decimation_version = 0
 decimation_ratio = 0.25
-process_version = 0
+process_version = 1
 
 @schema
 class Decomposition(dj.Computed):
