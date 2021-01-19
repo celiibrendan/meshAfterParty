@@ -2320,6 +2320,8 @@ def poisson_surface_reconstruction(mesh,
                                    name=None,
                                   verbose=False,
                                   return_largest_mesh=False,
+                                   return_significant_meshes=False,
+                                   significant_mesh_threshold=1000,
                                   manifold_clean =True):
     if type(output_folder) != type(Path()):
         output_folder = Path(str(output_folder))
@@ -2357,6 +2359,11 @@ def poisson_surface_reconstruction(mesh,
             #new_mesh = tu.connected_nondegenerate_mesh(mesh)
             print(f"Mesh manifold status: {tu.is_manifold(new_mesh)}")
             print(f"Mesh watertight status: {tu.is_watertight(new_mesh)}")
+    
+    if return_significant_meshes:
+        return tu.split_significant_pieces(new_mesh,
+                                               significance_threshold=significant_mesh_threshold,
+                                               connectivity='edges')
     
     
     return new_mesh

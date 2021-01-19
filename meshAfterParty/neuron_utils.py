@@ -3056,6 +3056,22 @@ def convert_int_names_to_string_names(limb_names,start_letter="L"):
 def convert_string_names_to_int_names(limb_names):
     return [int(k[1:]) for k in limb_names]
 
+def get_limb_string_name(limb_idx,start_letter="L"):
+    if type(limb_idx) == int:
+        return f"{start_letter}{limb_idx}" 
+    elif type(limb_idx) == str:
+        return limb_idx
+    else:
+        raise Exception("Not int or string input")
+        
+def get_limb_int_name(limb_name):
+    if type(limb_name) == int:
+        return limb_name
+    elif type(limb_name) == str:
+        return int(limb_name[1:])
+    else:
+        raise Exception("Not int or string input")
+
 import neuron_visualizations as nviz
 def filter_limbs_below_soma_percentile(neuron_obj,
                                         above_percentile = 70,
@@ -3249,7 +3265,70 @@ def skeleton_points_along_path(limb_obj,branch_path,
         return np.unique(skeleton_coordinates,axis=0)
     else:
         return skeleton_coordinates
+    
+    
+    
+    
+# ----------- 1/15: For Automatic Axon Finding ---------------#
+import numpy_utils as nu
+def add_branch_label(neuron_obj,limb_branch_dict,
+                    labels):
+    """
+    Purpose: Will go through and apply a label to the branches
+    specified
+    
+    """
+    if not nu.is_array_like(labels):
+        labels = [labels]
+    
+    for limb_name ,branch_array in limb_branch_dict.items():
+        for b in branch_array:
+            branch_obj = neuron_obj[limb_name][b]
+            
+            for l in labels:
+                if l not in branch_obj.labels:
+                    branch_obj.labels.append(l)
+                    
+def clear_all_branch_labels(neuron_obj,labels_to_clear="all"):
+    if labels_to_clear != "all" and not nu.is_array_like(labels_to_clear):
+        labels_to_clear = [labels_to_clear]
+        
+    for l in neuron_obj:
+        for b in l:
+            if labels_to_clear == "all":
+                b.labels=[]
+            else:
+                b.labels = list(np.setdiff1d(b.labels,labels_to_clear))
+            
+            
+import neuron_statistics as nst
+def viable_axon_limbs_by_starting_angle(neuron_obj,
+                                       axon_soma_angle_threshold=70,
+                                       return_starting_angles=False):
+    """
+    This is method that does not use neuron querying (becuase just simple iterating through limbs)
+    """
+    
+    possible_axon_limbs = []
+    # Find the limb find the soma angle AND Filter away all limbs with a soma starting angle above threshold
+    limb_to_starting_angle = dict()
+    for curr_limb_idx,curr_limb in enumerate(curr_neuron_obj):
+        curr_soma_angle = nst.soma_starting_angle(curr_neuron_obj,curr_limb_idx)
+        limb_to_starting_angle[curr_limb_idx] = curr_soma_angle
 
+        if curr_soma_angle > axon_soma_angle_threshold:
+            possible_axon_limbs.append(curr_limb_idx)
+    
+    if return_starting_angles:
+        return possible_axon_limbs,limb_to_starting_angle
+    else:
+        return possible_axon_limbs
+    
+
+    
+    
+
+    
 import neuron_utils as nru
 import neuron #package where can use the Branches class to help do branch skeleton analysis
 

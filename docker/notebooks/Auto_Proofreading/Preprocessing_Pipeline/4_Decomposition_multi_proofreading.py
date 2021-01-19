@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[ ]:
 
 
 """
@@ -13,7 +13,7 @@ using the new decomposition method
 """
 
 
-# In[15]:
+# In[1]:
 
 
 import numpy as np
@@ -29,13 +29,22 @@ import datajoint_utils as du
 from importlib import reload
 
 
-# In[18]:
+# # Debugging the seg fault
+
+# In[2]:
+
+
+#so that it will have the adapter defined
+from datajoint_utils import *
+
+
+# In[3]:
 
 
 test_mode = False
 
 
-# In[38]:
+# In[4]:
 
 
 import minfig
@@ -58,7 +67,7 @@ minnie,schema = du.configure_minnie_vm()
 
 # # Defining the Table
 
-# In[30]:
+# In[5]:
 
 
 import neuron_utils as nru
@@ -67,51 +76,42 @@ import trimesh_utils as tu
 import numpy as np
 
 
-# In[31]:
+# In[6]:
 
 
 import meshlab
 meshlab.set_meshlab_port(current_port=None)
 
 
-# In[32]:
-
-
-#so that it will have the adapter defined
-from datajoint_utils import *
-
-
-# In[33]:
+# In[10]:
 
 
 decimation_version = 0
 decimation_ratio = 0.25
-key_source = (minnie.Decimation().proj(decimation_version='version')  & 
-                  dict(decimation_version=decimation_version,decimation_ratio=decimation_ratio)  
-                  & minnie.MultiSomaProofread2() & (dj.U("segment_id") & (minnie.BaylorSegmentCentroid()).proj()))
+# key_source = (minnie.Decimation().proj(decimation_version='version')  & 
+#                   dict(decimation_version=decimation_version,decimation_ratio=decimation_ratio)  
+#                   & minnie.MultiSomaProofread2() & (dj.U("segment_id") & (minnie.BaylorSegmentCentroid()).proj()))
+
+key_source = ((minnie.Decimation).proj(decimation_version='version') & 
+                            "decimation_version=" + str(decimation_version) &
+                       f"decimation_ratio={decimation_ratio}" &  (minnie.BaylorSegmentCentroid() & "multiplicity>0") & minnie.MultiSomaProofread2())
 key_source
 
 
-# In[34]:
+# In[ ]:
 
 
 #schema.external['decomposition'].delete(delete_external_files=True)
 
 
-# In[35]:
-
-
-#minnie.Decomposition.drop()
-
-
-# In[40]:
+# In[12]:
 
 
 import numpy as np
 import time
 decimation_version = 0
 decimation_ratio = 0.25
-process_version = 0
+process_version = 1
 
 @schema
 class Decomposition(dj.Computed):
@@ -169,9 +169,10 @@ class Decomposition(dj.Computed):
 
 
     
-    key_source = (minnie.Decimation().proj(decimation_version='version')  & 
-                  dict(decimation_version=decimation_version,decimation_ratio=decimation_ratio)  
-                  & minnie.MultiSomaProofread2() & (dj.U("segment_id") & (minnie.BaylorSegmentCentroid()).proj()))
+    key_source = ((minnie.Decimation).proj(decimation_version='version') & 
+                            "decimation_version=" + str(decimation_version) &
+                       f"decimation_ratio={decimation_ratio}" &  (minnie.BaylorSegmentCentroid() & "multiplicity>0") & minnie.MultiSomaProofread2())
+                                                                  
     
 
     def make(self,key):
@@ -267,7 +268,7 @@ class Decomposition(dj.Computed):
 
 # # Running the Populate
 
-# In[41]:
+# In[13]:
 
 
 curr_table = (minnie.schema.jobs & "table_name='__decomposition'")

@@ -2467,7 +2467,8 @@ class Neuron:
     import system_utils as su
     def calculate_spines(self,
                         #query="width > 400 and n_faces_branch>100",
-                         query="median_mesh_center > 140 and n_faces_branch>100",#previous used median_mesh_center > 140
+                         #query="median_mesh_center > 140 and n_faces_branch>100",#previous used median_mesh_center > 140
+                         query="median_mesh_center > 115 and n_faces_branch>100",#previous used median_mesh_center > 140
                         clusters_threshold=3,#2,
                         smoothness_threshold=0.1,#0.08,
                         shaft_threshold=300,

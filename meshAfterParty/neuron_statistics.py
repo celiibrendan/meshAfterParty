@@ -174,7 +174,12 @@ def neuron_path_analysis(neuron_obj,
     
 import numpy as np
 import trimesh_utils as tu
-def soma_starting_angle(neuron_obj,limb_idx,soma_idx = 0,y_vector = np.array([0,-1,0])):
+def soma_starting_angle(limb_obj=None,
+                        neuron_obj=None,
+                        limb_idx=None,
+                        soma_idx = 0,
+                        soma_center = None,
+                        y_vector = np.array([0,-1,0])):
     """
     Will find the angle between the vector pointing to the
     top of the volume and the angle from the soma center to the starting skeleton
@@ -182,15 +187,21 @@ def soma_starting_angle(neuron_obj,limb_idx,soma_idx = 0,y_vector = np.array([0,
     
     
     """
-    
-    curr_limb_obj = neuron_obj[limb_idx]
-    curr_soma = neuron_obj[f"S{soma_idx}"].mesh
-    
+    if limb_obj is None:
+        curr_limb_obj = neuron_obj[limb_idx]
+        
+    else:
+        curr_limb_obj = limb_obj
+        
     st_coordinates = curr_limb_obj.current_starting_coordinate
-    curr_soma_center = tu.mesh_center_vertex_average(curr_soma)
+    
+    if soma_center is None:
+        curr_soma = neuron_obj[f"S{soma_idx}"].mesh
+        soma_center = tu.mesh_center_vertex_average(curr_soma)
+    
     
     #1) Get starting angle of branch
-    st_vector = st_coordinates - curr_soma_center
+    st_vector = st_coordinates - soma_center
     st_vector_norm = st_vector/np.linalg.norm(st_vector)
     angle_from_top = np.round(nu.angle_between_vectors(y_vector,st_vector_norm),2)
     

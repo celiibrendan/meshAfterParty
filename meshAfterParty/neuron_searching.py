@@ -12,7 +12,8 @@ import numpy_utils as nu
 import pandas_utils as pu
 import networkx_utils as xu
 
-def convert_neuron_to_branches_dataframe(current_neuron):
+def convert_neuron_to_branches_dataframe(current_neuron,
+                                        limbs_to_process=[]):
     """
     Purpose: 
     How to turn a concept map into a pandas table with only the limb_idx and node_idx
@@ -22,7 +23,11 @@ def convert_neuron_to_branches_dataframe(current_neuron):
     
     """
     curr_concept_network = nru.return_concept_network(current_neuron)
-    limb_idxs = nru.get_limb_names_from_concept_network(curr_concept_network)
+    
+    if len(limbs_to_process) == 0:
+        limb_idxs = nru.get_limb_names_from_concept_network(curr_concept_network)
+    else:
+        limb_idxs = [nru.get_limb_string_name(k) for k in limbs_to_process]
     
     
     limb_node_idx_dicts = []
@@ -82,6 +87,7 @@ def width_new(branch,limb_name=None,branch_name=None,width_new_name="no_spine_me
 
 
 
+
 # ---------- new possible widths ----------------- #
 @run_options(run_type="Branch")
 def mean_mesh_center(branch,limb_name=None,branch_name=None,**kwargs):
@@ -118,6 +124,48 @@ def spines_per_skeletal_length(branch,limb_name=None,branch_name=None,**kwargs):
     curr_skeleton_distance = sk.calculate_skeleton_distance(branch.skeleton)
     return curr_n_spines/curr_skeleton_distance
 
+
+# ----------- working with different labels -----------------#
+@run_options(run_type="Branch")
+def matching_label(branch,limb_name=None,branch_name=None,**kwargs):
+    poss_labels = kwargs["labels"]
+    match_flag = False
+    for l in poss_labels:
+        if l in branch.labels:
+            match_flag = True
+            break
+    return match_flag
+
+@run_options(run_type="Branch")
+def labels_restriction(branch,limb_name=None,branch_name=None,**kwargs):
+    poss_labels = kwargs.get("matching_labels",[])
+    not_possible_labels = kwargs.get("not_matching_labels",[])
+    
+#     print(f"poss_labels = {poss_labels}")
+#     print(f"not_possible_labels = {not_possible_labels}")
+#     print(f"np.intersect1d(branch.labels,poss_labels) = {np.intersect1d(branch.labels,poss_labels)}")
+   
+    if len(poss_labels) == len(np.intersect1d(branch.labels,poss_labels)):
+        if 0 == len(np.intersect1d(branch.labels,not_possible_labels)):
+            return True
+    return False
+
+@run_options(run_type="Branch")
+def labels(branch,limb_name=None,branch_name=None,**kwargs):
+    return branch.labels
+
+
+def query_neuron_by_labels(neuron_obj,
+    matching_labels=[],
+    not_matching_labels=[]):
+    
+    return ns.query_neuron(neuron_obj,
+               query="labels_restriction == True",
+               functions_list=["labels_restriction"],
+               function_kwargs=dict(matching_labels=matching_labels,
+                                    not_matching_labels=not_matching_labels
+                                    
+                                   ))
 
 
 #------------------------------- Limb Functions ------------------------------------#
@@ -320,8 +368,13 @@ axon_width_like_requirement = "(median_mesh_center < 200)"# or no_spine_median_m
 ais_axon_width_like_requirement = "(median_mesh_center < 600)" #this will get all of axons including the axon intial segment
 
 def axon_width_like_query(width_to_use):
-    axon_width_like_query = (f"(n_spines < 4 and {width_to_use} and skeleton_distance_branch <= 15000)"
-                    f" or (skeleton_distance_branch > 15000 and {width_to_use} and spines_per_skeletal_length < 0.00023)")
+    axon_width_like_query = (
+                    #f"(n_spines < 4 and {width_to_use} and skeleton_distance_branch <= 15000)"
+                    f"(n_spines < 4 and {width_to_use} and skeleton_distance_branch <= 25000)"
+                    #f" or (skeleton_distance_branch > 15000 and {width_to_use} and spines_per_skeletal_length < 0.00023)"
+                    f" or (skeleton_distance_branch > 15000 and {width_to_use} and spines_per_skeletal_length < 0.00007)"
+                            
+                            )
     return axon_width_like_query
 
 axon_width_like_functions_list = [
@@ -646,6 +699,29 @@ def axon_segment_clean_false_positives(curr_limb,
     
     return return_dict
             
+    
+# --------- 1/15: Additions to help find axon -----------------#
+import neuron_statistics as nst
+
+@run_options(run_type="Limb")
+def soma_starting_angle(curr_limb,limb_name=None,**kwargs):
+    """
+    will compute the angle in degrees from the vector pointing
+    straight to the volume and the vector pointing from 
+    the middle of the soma to the starting coordinate of the limb
+    
+    """
+    print_flag = kwargs.get("verbose",False)
+    curr_soma_angle = nst.soma_starting_angle(limb_obj=curr_limb,
+                        soma_center = kwargs["soma_center"],
+                        )
+    
+    if print_flag:
+        print(f"Limb {limb_name} soma angle: {curr_soma_angle} ")
+        
+    return curr_soma_angle
+    
+
 
 #------------------------------- Creating the Data tables from the neuron and functions------------------------------
 
@@ -661,7 +737,11 @@ def apply_function_to_neuron(current_neuron,current_function,function_kwargs=dic
     """
     
     curr_neuron_concept_network = nru.return_concept_network(current_neuron)
-    curr_limb_names = nru.get_limb_names_from_concept_network(curr_neuron_concept_network)
+    
+    if "limbs_to_process" in function_kwargs.keys():
+        curr_limb_names = [nru.get_limb_string_name(k) for k in function_kwargs["limbs_to_process"]]
+    else:
+        curr_limb_names = nru.get_limb_names_from_concept_network(curr_neuron_concept_network)
     
     function_mapping = dict([(limb_name,dict()) for limb_name in curr_limb_names])
 
@@ -671,6 +751,7 @@ def apply_function_to_neuron(current_neuron,current_function,function_kwargs=dic
             curr_limb_concept_network = curr_neuron_concept_network.nodes[limb_name]["data"].concept_network
             for branch_idx in curr_limb_concept_network.nodes():
                 function_mapping[limb_name][branch_idx] = current_function(curr_limb_concept_network.nodes[branch_idx]["data"],limb_name=limb_name,branch_name=branch_idx,**function_kwargs)
+                
     elif current_function.run_type=="Limb":
         #if it was a limb function that was passed
         """
@@ -722,7 +803,10 @@ def map_new_limb_node_value(current_df,mapping_dict,value_name):
     return current_df
 
 import system_utils as su
-def generate_neuron_dataframe(current_neuron,functions_list,check_nans=True,function_kwargs=dict()):
+def generate_neuron_dataframe(current_neuron,
+                              functions_list,
+                              check_nans=True,
+                              function_kwargs=dict()):
     """
     Purpose: With a neuron and a specified set of functions generate a dataframe
     with the values computed
@@ -761,8 +845,12 @@ def generate_neuron_dataframe(current_neuron,functions_list,check_nans=True,func
         
     print(f"functions_list = {functions_list}")
     
+    
+    limbs_to_process = function_kwargs.get("limbs_to_process",[])
+    
     #2) Create a dataframe for the neuron
-    curr_df = convert_neuron_to_branches_dataframe(current_neuron)
+    curr_df = convert_neuron_to_branches_dataframe(current_neuron,
+                                                  limbs_to_process=limbs_to_process)
     
     """
     3) For each function:
@@ -970,3 +1058,4 @@ def query_neuron(concept_network,
     return limb_branch_pairings
 
 
+import neuron_searching as ns

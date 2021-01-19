@@ -534,7 +534,7 @@ import ipyvolume as ipv
 import calcification_Module as cm
 from pathlib import Path
 import time
-import skeleton_utils as sk
+
 
 #  Utility functions
 angle = np.pi/2
@@ -2660,7 +2660,6 @@ import pathlib
 
 
 import meshlab
-import skeleton_utils as sk
 
 from shutil import rmtree
 from pathlib import Path
@@ -3251,7 +3250,6 @@ def skeletonize_neuron(main_mesh_total,
     new_cleaned_skeleton.shape
     
     """
-    import skeleton_utils as sk
     global_time = time.time()
     
     #if no soma is provided then do own soma finding
@@ -5684,6 +5682,8 @@ def align_skeletons_at_connectivity(sk_1,sk_2):
     return sk_1,sk_2
 
 
+
+
 def restrict_skeleton_from_start(skeleton,
                      cutoff_distance,
                     subtract_cutoff = False,
@@ -5981,3 +5981,114 @@ def map_between_branches_lists(branches_1,branches_2,check_all_matched=True,
         if len(np.unique(old_to_new_branch_mapping[old_to_new_branch_mapping!=-1])) < len(branches_2):
             raise Exception("Not all of the new branches had at least one mapping")
     return old_to_new_branch_mapping
+
+
+
+# ---------------- 1/17: Helper function with the axon identification----- #
+
+# ---------------- 12/23 -------------------- #
+def restrict_skeleton_from_start_plus_offset(skeleton,
+                                               offset=1000,
+                                            comparison_distance=2000,
+                                                min_comparison_distance=1000,
+                                            verbose=True,
+                                               ):
+
+    """
+    Purpose: Will get a portion of the skeleton relative the start 
+    that 
+    1) subtracts off the offset
+    2) keeps the next comparison distance length
+    
+    Pseudocode: 
+
+    3) Use the restrict skeelton function to subtract the offset
+    - if not then add whole skeleton to final skeleton
+    4) if it was a sucess, see if the distance is greater than comparison distance
+    - if not then add current skeleton to final
+    5) Use the subtract skeleton to only keep the comparison distance of skeleton
+    6) Add to final skeleton
+
+    offset_skeletons_aligned_at_shared_endpoint()
+    
+    Ex: 
+    vis_branches_idx = [7,9]
+    vis_branches = [curr_limb[k] for k in vis_branches_idx]
+    vis_branches
+
+
+    curr_skeletons = [k.skeleton for k in vis_branches]
+    stripped_skeletons = sk.offset_skeletons_aligned_at_shared_endpoint(curr_skeletons)
+
+    curr_colors = ["red","black"]
+    nviz.plot_objects(meshes=[k.mesh for k in vis_branches],
+                      meshes_colors=curr_colors,
+                      skeletons=stripped_skeletons,
+                      skeletons_colors=curr_colors,
+                      scatters=[np.array([stripped_skeletons[0][-1][-1],stripped_skeletons[1][-1][-1]])],
+                      scatter_size=1
+                     )
+
+
+    sk.parent_child_skeletal_angle(stripped_skeletons[1],stripped_skeletons[0])
+
+
+    """
+    e = skeleton
+        
+    # -------- Making sure that we don't take off too much so it's just a spec
+    original_sk_length = sk.calculate_skeleton_distance(e)
+    if original_sk_length < offset + min_comparison_distance:
+        offset_adjusted = original_sk_length - min_comparison_distance
+        if offset_adjusted < 0:
+            offset_adjusted = 0
+
+        #print(f" Had to Adjust Offset to {offset_adjusted}")
+    else:
+        offset_adjusted  = offset
+
+    ret_sk,_,success = sk.restrict_skeleton_from_start(e,
+                                                       cutoff_distance = offset_adjusted,
+                                                       subtract_cutoff=True)
+    if not success:
+        ret_sk = e
+    else:
+        if sk.calculate_skeleton_distance(ret_sk) > comparison_distance:
+            ret_sk,_,success = sk.restrict_skeleton_from_start(ret_sk,
+                                                       cutoff_distance = comparison_distance,
+                                                       subtract_cutoff=False)
+            
+    return ret_sk
+
+
+def skeleton_endpoint_vector(skeleton,
+                             normalize_vector=True,
+                             starting_coordinate = None):
+    """
+    Purpose: To get the vector made by the endpoints of a skeleton
+    
+    Pseudocode: 
+    1) if the starting coordinate is specified then order the skeleton 
+    according to that starting coordinate
+    2) Get the endpoints of the skeleton
+    3) Subtract the endpoints from each other (Normalize if requested)
+    
+    
+    """
+    if starting_coordinate is not None:
+        restricted_skeleton = sk.order_skeleton(skeleton,
+                                                            start_endpoint_coordinate=starting_coordinate)
+    else:
+        restricted_skeleton = skeleton
+    
+    restricted_skeleton_endpoints_sk = np.array([restricted_skeleton[0][0],restricted_skeleton[-1][-1]]).reshape(-1,2,3)
+    
+    restricted_skeleton_vector = np.array(restricted_skeleton[-1][-1]-restricted_skeleton[0][0])
+    
+    if normalize_vector:
+        restricted_skeleton_vector = restricted_skeleton_vector/np.linalg.norm(restricted_skeleton_vector)
+        
+    return restricted_skeleton_vector
+
+    
+import skeleton_utils as sk

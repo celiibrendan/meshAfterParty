@@ -3376,15 +3376,14 @@ def preprocess_neuron(
     containing_mesh_indices #the mapping of each soma centroid to the correct split mesh
     soma_containing_meshes = sm.grouping_containing_mesh_indices(containing_mesh_indices)
 
-    soma_touching_meshes = [split_meshes[k] for k in soma_containing_meshes.keys()]
-
 
     #     print(f"# of non soma touching seperate meshes = {len(non_soma_touching_meshes)}")
     #     print(f"# of inside pieces = {len(inside_pieces)}")
-    print(f"\n-----Before filtering away multiple disconneted soma pieces-----")
-    print(f"# of soma containing seperate meshes = {len(soma_touching_meshes)}")
-    print(f"meshes with somas = {soma_containing_meshes}")
+    
 
+    
+    '''  1/18 Addition that combines all soma meshes
+    
     # ------ 11/15 Addition: Part 2.b 
 
     """
@@ -3436,6 +3435,22 @@ def preprocess_neuron(
         print(f" Filtering Away Disconnected Soma Pieces {time.time()-optimize_time}")
     optimize_time = time.time()
     
+    '''
+    print(f"\n-----Before combining multiple mesh pieces-----")
+    print(f"soma_containing_meshes = {soma_containing_meshes}")
+    
+    soma_containing_meshes_keys = np.array(list(soma_containing_meshes.keys()))
+    combined_soma_containing_mesh = tu.combine_meshes([split_meshes[k] for k in soma_containing_meshes_keys])
+    not_processed_soma_containing_meshes = []
+    
+    #rewriting the 
+    soma_containing_meshes = {0:list(np.arange(0,len(soma_mesh_list)))}
+    soma_containing_meshes_keys = np.array(list(soma_containing_meshes.keys()))
+    
+    print(f"\n-----After combining multiple mesh pieces-----")
+    print(f"soma_containing_meshes = {soma_containing_meshes}")
+    
+    
     
     
     
@@ -3478,7 +3493,7 @@ def preprocess_neuron(
         current_time = time.time()
 
         #1) Final all soma faces (through soma extraction and then soma original faces function)
-        current_mesh = split_meshes[mesh_idx]
+        current_mesh = combined_soma_containing_mesh
 
         current_soma_mesh_list = [soma_mesh_list[k] for k in soma_idxes]
 
