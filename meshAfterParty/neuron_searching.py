@@ -892,6 +892,8 @@ def query_neuron(concept_network,
                          print_flag=False,
                          ):
     """
+    *** to specify "limbs_to_process" to process just put in the function kwargs
+    
     Purpose: Recieve a neuron object or concept map 
     representing a neuron and apply the query
     to find the releveant limbs, branches

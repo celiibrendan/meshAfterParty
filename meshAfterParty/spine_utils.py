@@ -396,15 +396,16 @@ def get_spine_meshes_unfiltered_from_mesh(current_mesh,
 def get_spine_meshes_unfiltered(current_neuron,
                  limb_idx,
                 branch_idx,
-                clusters=2,
-                smoothness=0.05,
+                clusters=3,#2,
+                smoothness=0.1,#0.05,
                 cgal_folder = Path("./cgal_temp"),
                 delete_temp_file=True,
                 return_sdf=False,
                 print_flag=False,
-                shaft_threshold=300):
+                shaft_threshold=300,
+                               mesh=None):
     
-    get_spine_meshes_unfiltered
+    
     current_mesh = current_neuron.concept_network.nodes[nru.limb_label(limb_idx)]["data"].concept_network.nodes[branch_idx]["data"].mesh
     
     return get_spine_meshes_unfiltered_from_mesh(current_mesh,

@@ -43,8 +43,9 @@ def get_best_cut_edge(curr_limb,
                       small_soma_connectors_skeletal_threshold = 2500,
                       
                       # parameters for the doubling back
-                      double_back_threshold = 100,# 130,
+                      double_back_threshold = 80,#100,# 130,
                       offset = 1000,
+                      comparison_distance_double_back = 6000,
                       
                       #parameters for the width threshold
                       width_jump_threshold = 200,
@@ -84,6 +85,10 @@ def get_best_cut_edge(curr_limb,
         if consider_path_neighbors_for_removal:
             curr_neighbors = np.unique(np.concatenate([xu.get_neighbors(curr_limb.concept_network,k) for k in cut_path]))
             segments_to_consider = curr_neighbors[(curr_neighbors != cut_path[0]) & (curr_neighbors != cut_path[-1])]
+            
+            # ----------- 1/19: Have to remove the starting nodes from possible collapsing ------
+            segments_to_consider = np.setdiff1d(segments_to_consider,curr_limb.all_starting_nodes)
+            
             print(f"consider_path_neighbors_for_removal is set so segments_to_consider = {segments_to_consider}")
         else:
             segments_to_consider = np.array(path_without_ends)
@@ -128,13 +133,12 @@ def get_best_cut_edge(curr_limb,
     edges_to_delete = None
     
     resolve_crossover_at_end = True
-    curr_high_degree_coord = None #will store what high degree end-node was tried
+    curr_high_degree_coord_list = [] #will store what high degree end-node was tried
     if verbose:
         print(f"Found {len(high_degree_endpoint_coordinates)} high degree coordinates to cut")
         
-    if len(high_degree_endpoint_coordinates)>0:
-        
-        curr_high_degree_coord = high_degree_endpoint_coordinates[0]
+    for curr_high_degree_coord in high_degree_endpoint_coordinates:
+        curr_high_degree_coord_list.append(curr_high_degree_coord)
 
         if verbose:
             print(f"Picking {curr_high_degree_coord} high degree coordinates to cut")
@@ -148,11 +152,28 @@ def get_best_cut_edge(curr_limb,
                                                 **kwargs
                                )
         print(f"curr_limb.deleted_edges 5 ={curr_limb.deleted_edges}")
+        
+        #  --- 1/19: Add in a check that will see if divides up the path, if not then set to empty  --- #
+        
         if len(edges_to_delete_pre)>0:
-            edges_to_delete = edges_to_delete_pre
-            edges_to_create = edges_to_create_pre
             
-        resolve_crossover_at_end = False
+            cut_path_edges = np.vstack([cut_path[:-1],cut_path[1:]]).T
+            G = nx.from_edgelist(cut_path_edges)
+            G.remove_edges_from(edges_to_delete_pre)
+            
+            if len(G.nodes()) < len(cut_path):
+                print("Using the resolve crossover delete edges because will help seperate the path")
+                edges_to_delete = edges_to_delete_pre
+                edges_to_create = edges_to_create_pre
+                resolve_crossover_at_end = False
+                break
+
+            else:
+                print("NOT USING the resolve crossover delete edges because not help resolve the cut")
+                continue
+                
+            
+        
     
         
     
@@ -186,6 +207,7 @@ def get_best_cut_edge(curr_limb,
         err_edges,edges,edges_double_back = ed.double_back_edges_path(curr_limb,
                                 path_to_check=cut_path,
                               double_back_threshold = double_back_threshold,
+                              comparison_distance = comparison_distance_double_back,
                              offset=offset,
                             verbose = verbose,
                             skip_nodes=skip_nodes)
@@ -204,13 +226,17 @@ def get_best_cut_edge(curr_limb,
 
     if edges_to_delete is None:
         if verbose: 
-            print("\nAttempting the width jump check (attempting from both sides)")
+            print("\nAttempting the width jump check (ARTIFICIALLY ATTEMPTING FROM BOTH SIDES)")
+            print(f"width_jump_threshold = {width_jump_threshold}")
             
         possible_starting_nodes = [cut_path[0],cut_path[-1]]
         
         
         first_error_edges = []
         first_error_sizes = []
+        first_error_locations = []
+        
+        """  Old way of doing 
         for s_node in possible_starting_nodes:
             
             curr_limb.set_concept_network_directional(starting_node = s_node,suppress_disconnected_errors=True)
@@ -239,7 +265,49 @@ def get_best_cut_edge(curr_limb,
             else:
                 first_error_edges.append(None)
                 first_error_sizes.append(-np.inf)
-     
+        """
+        
+        # ----------- 1/19: New Way of Splitting ------------- #
+        curr_limb.set_concept_network_directional(starting_node = cut_path[0],suppress_disconnected_errors=True)
+            
+
+
+        err_edges,edges,edges_width_jump = ed.width_jump_edges_path(curr_limb,
+                                                                    path_to_check=cut_path,
+                                                                    width_jump_threshold=width_jump_threshold,
+                                                                    offset=offset,
+                                                                    verbose=verbose,
+                                                                    skip_nodes=skip_nodes
+                                )
+
+        # 1) Doing the forwards way
+
+        err_edges_mask = np.where(edges_width_jump>=width_jump_threshold)[0]
+
+        if np.any(err_edges_mask):
+            first_error_edges.append(edges[err_edges_mask[0]])
+            first_error_sizes.append(edges_width_jump[err_edges_mask][0])
+            first_error_locations.append(err_edges_mask[0])
+        else:
+            first_error_edges.append(None)
+            first_error_sizes.append(-np.inf)
+            first_error_locations.append(np.inf)
+            
+        # 2) Doing the backwards way
+        
+        edges_width_jump_flipped = np.flip(edges_width_jump)
+        edges_flipped = np.flip(edges)
+        
+        err_edges_mask = np.where(edges_width_jump_flipped <=-width_jump_threshold)[0]
+
+        if np.any(err_edges_mask):
+            first_error_edges.append(edges_flipped[err_edges_mask[0]])
+            first_error_sizes.append(-1*(edges_width_jump_flipped[err_edges_mask[0]]))
+            first_error_locations.append(err_edges_mask[0])
+        else:
+            first_error_edges.append(None)
+            first_error_sizes.append(-np.inf)
+            first_error_locations.append(np.inf)
         
         """
         Pseudocode: 
@@ -249,10 +317,15 @@ def get_best_cut_edge(curr_limb,
         
         """
         if (not first_error_edges[0] is None) or (not first_error_edges[1] is None):
+            """  Old way that did it on the biggest size, new way does it on the first jump
             winning_path = np.argmax(first_error_sizes)
+            """
+            
+            winning_path = np.argmin(first_error_locations)
             winning_err_edge = first_error_edges[winning_path]
             if verbose: 
-                print(f"first_error_sizes = {first_error_sizes}, winning_path = {winning_path}")
+                print(f"first_error_sizes = {first_error_sizes}, first_error_locations = {first_error_locations}, winning_path = {winning_path}")
+                
                 
             edges_to_delete = [winning_err_edge]
         else:
@@ -316,7 +389,7 @@ def get_best_cut_edge(curr_limb,
         edges_to_create = list(edges_to_create)
     if nu.is_array_like(removed_branches):
         removed_branches = list(removed_branches)
-    return edges_to_delete,edges_to_create,curr_limb,removed_branches,curr_high_degree_coord
+    return edges_to_delete,edges_to_create,curr_limb,removed_branches,curr_high_degree_coord_list
 
 def get_all_coordinate_suggestions(suggestions,concatenate=True,
                                   voxel_adjustment=True):
@@ -521,6 +594,7 @@ def multi_soma_split_suggestions(neuron_obj,
                                  plot_suggestions=False,
                                  plot_suggestions_scatter_size=0.4,
                                  remove_segment_threshold = 1500,
+                                 plot_cut_coordinates = True,
                                 **kwargs):
     """
     Purpose: To come up with suggestions for splitting a multi-soma
@@ -641,8 +715,8 @@ def multi_soma_split_suggestions(neuron_obj,
                                       high_degree_endpoint_coordinates_tried=high_degree_endpoint_coordinates_tried,
                                                                               **kwargs)
                 
-                if curr_high_degree_coord is not None:
-                    high_degree_endpoint_coordinates_tried.append(curr_high_degree_coord) 
+                
+                high_degree_endpoint_coordinates_tried += curr_high_degree_coord
                 
                 print(f"curr_limb_copy.deleted_edges = {curr_limb_copy.deleted_edges}")
                 print(f"curr_limb_copy.created_edges = {curr_limb_copy.created_edges}")
@@ -665,6 +739,37 @@ def multi_soma_split_suggestions(neuron_obj,
                 
                 print(f"total_soma_paths_to_cut = {total_soma_paths_to_cut}")
                 if not cut_edges is None:
+                    
+                    if plot_cut_coordinates:
+                        suggested_cut_points = []
+                        for cut_e in cut_edges:
+                            high_degree_endpoint_coordinates_tried
+                            shared_endpoints = sk.shared_endpoint(curr_limb_copy[cut_e[0]].skeleton,
+                                                            curr_limb_copy[cut_e[1]].skeleton,
+                                                                 return_possibly_two=True)
+                            if shared_endpoints.ndim == 1:
+                                suggested_cut_points.append(shared_endpoints)
+                            else:
+                                for s_e in shared_endpoints:
+                                    if len(nu.matching_rows(high_degree_endpoint_coordinates_tried,s_e)) > 0:
+                                        suggested_cut_points.append(s_e)
+                                        
+                        suggested_cut_points = np.unique(np.array(suggested_cut_points).reshape(-1,3),axis=0)
+                        
+                        path_skeleton_points = nru.skeleton_points_along_path(curr_limb_copy,
+                                                                              skeletal_distance_per_coordinate=3000,
+                                                                             branch_path=soma_to_soma_path)
+                        print(f"\n\nsuggested_cut_points = {suggested_cut_points}\n\n")
+                        nviz.plot_objects(curr_limb_copy.mesh,
+                                          skeletons=[curr_limb_copy.skeleton],
+                                          scatters = [path_skeleton_points,suggested_cut_points],
+                                          scatters_colors=["blue","red"],
+                                          scatter_size = 0.3
+                        
+                        )
+                        
+                    
+                    
                     total_soma_paths_to_cut += cut_edges
                 if not added_edges is None:
                     total_soma_paths_to_add += added_edges
@@ -824,7 +929,7 @@ def split_neuron_limb_by_seperated_network(neuron_obj,
         #get all of the starting dictionaries that match a node in the subgraph
         curr_all_concept_network_data = [k for k in curr_limb.all_concept_network_data if k["starting_node"] in list(curr_subgraph)]
         if len(curr_all_concept_network_data) > 1:
-            raise (f"There were more not exactly one starting dictinoary: {curr_all_concept_network_data} ")
+            raise Exception(f"There were more not exactly one starting dictinoary: {curr_all_concept_network_data} ")
             
             
         limb_corresp_for_networks = dict([(i,dict(branch_skeleton=k.skeleton,
@@ -1262,7 +1367,8 @@ def split_neuron(neuron_obj,
                  limb_results=None,
                  plot_soma_limb_network=False,
                  plot_seperated_neurons=False,
-                verbose=False):
+                verbose=False,
+                **kwargs):
     """
     Purpose: To take in a whole neuron that could have any number of somas
     and then to split it into multiple neuron objects
@@ -1279,8 +1385,9 @@ def split_neuron(neuron_obj,
     
     #1) Get all of the split suggestions
     if limb_results is None:
-        limb_results = pru.multi_soma_split_suggestions(neuron_obj,plot_intermediates=False,
-                                                   verbose = verbose)
+        limb_results = pru.multi_soma_split_suggestions(neuron_obj,
+                                                   verbose = verbose,
+                                                       **kwargs)
     
     #2) Split all of the limbs that need splitting
     split_neuron_obj = pru.split_neuron_limbs_by_suggestions(neuron_obj,
@@ -1304,10 +1411,13 @@ def split_neuron(neuron_obj,
 
 
 import numpy_utils as nu
-def remove_branches_from_limb(limb_obj,branch_list,
+import time
+'''
+def remove_branches_from_limb_old(limb_obj,branch_list,
                              plot_new_limb=False,
                               reassign_mesh=True,
                               store_placeholder_for_removed_nodes=True,
+                              debug_time = True,
                              verbose=False):
     """
     Purpose: To remove 1 or more branches from the concept network
@@ -1334,7 +1444,15 @@ def remove_branches_from_limb(limb_obj,branch_list,
 
     Ex: new_limb_obj = nru.remove_branches_from_limb(curr_limb,[30,31],plot_new_limb=True,verbose=True)
     """
+    
+    limb_time = time.time()
+    
     curr_limb_cp = copy.deepcopy(limb_obj)
+    
+    if debug_time:
+        print(f"deepcopy limb time = {time.time() - limb_time}")
+        limb_time = time.time()
+    
     
     if not nu.is_array_like(branch_list ):
         branch_list = [branch_list]
@@ -1352,6 +1470,10 @@ def remove_branches_from_limb(limb_obj,branch_list,
         branch_obj = curr_limb_cp[curr_short_seg_revised]
         
         touching_branches,touching_endpoints = nru.skeleton_touching_branches(curr_limb_cp,branch_idx=curr_short_seg_revised)
+        
+        if debug_time:
+            print(f"skeleton branch touchings = {time.time() - limb_time}")
+            limb_time = time.time()
         
         
         #deciding whether to take the average or just an endpoint as the new stitch point depending on if nodes on both ends
@@ -1374,6 +1496,10 @@ def remove_branches_from_limb(limb_obj,branch_list,
         if verbose:
             print(f"touching_endpoints = {touching_endpoints}")
             print(f"new_stitch_point = {new_stitch_point}")
+            
+        if debug_time:
+            print(f"Getting new stitch point time = {time.time() - limb_time}")
+            limb_time = time.time()
         
         #1a) Decide which branch to give the mesh to
         if middle_node and reassign_mesh:
@@ -1396,9 +1522,14 @@ def remove_branches_from_limb(limb_obj,branch_list,
                             curr_limb_cp[curr_short_seg_revised].skeleton) for br in all_touching_branches]
             winning_branch =all_touching_branches[np.argmin(all_touching_branches_angles)]
             
+            
             if verbose:
                 print(f"Angles for {all_touching_branches} are {all_touching_branches_angles}")
                 print(f"Branch that will absorb mesh of {curr_short_seg} is {winning_branch} ")
+                
+            if debug_time:
+                print(f"branch angles = {time.time() - limb_time}")
+                limb_time = time.time()
             
             curr_limb_cp[winning_branch].mesh_face_idx = np.concatenate([curr_limb_cp[winning_branch].mesh_face_idx,
                                                                     curr_limb_cp[curr_short_seg_revised].mesh_face_idx])
@@ -1411,6 +1542,11 @@ def remove_branches_from_limb(limb_obj,branch_list,
                 else:
                     curr_limb_cp[winning_branch].spines = curr_limb_cp[curr_short_seg_revised].spines
                     curr_limb_cp[winning_branch].spines_volume = curr_limb_cp[curr_short_seg_revised].spines_volume
+                    
+            
+            if debug_time:
+                print(f"Resolving spines time = {time.time() - limb_time}")
+                limb_time = time.time()
             
 
         #1b) Alter the skeletons of those that were touching
@@ -1421,7 +1557,9 @@ def remove_branches_from_limb(limb_obj,branch_list,
                                                                             skeleton_stitch_point=t_endpoints)
                 curr_limb_cp[br].calculate_endpoints()
                 
-        
+        if debug_time:
+            print(f"smoothing the segments and calculating endpoints = {time.time() - limb_time}")
+            limb_time = time.time()
         """
         
         
@@ -1442,11 +1580,18 @@ def remove_branches_from_limb(limb_obj,branch_list,
             curr_limb_cp[curr_short_seg_revised].calculate_endpoints()
             run_concept_network_checks = False
             
+        if debug_time:
+            print(f" Adding placeholder branch time = {time.time() - limb_time}")
+            limb_time = time.time()
 
         limb_to_soma_concept_networks = pre.calculate_limb_concept_networks(curr_limb_cp.limb_correspondence,
                                                                                     curr_limb_cp.network_starting_info,
                                                                                     run_concept_network_checks=False,
                                                                               )  
+        if debug_time:
+            print(f"Calculating limb concept networks time = {time.time() - limb_time}")
+            limb_time = time.time()
+        
         #print(f"curr_limb.deleted_edges 6={curr_limb_cp.deleted_edges}")
         curr_limb_cp = neuron.Limb(curr_limb_cp.mesh,
                                  curr_limb_cp.limb_correspondence,
@@ -1457,12 +1602,217 @@ def remove_branches_from_limb(limb_obj,branch_list,
                                   deleted_edges=curr_limb_cp.deleted_edges,
                                   created_edges=curr_limb_cp.created_edges)
         
+        if debug_time:
+                print(f"Creating new limb object time = {time.time() - limb_time}")
+                limb_time = time.time()
+        
         #print(f"curr_limb.deleted_edges 7={curr_limb_cp.deleted_edges}")
         
         
         
         
     
+    if plot_new_limb:
+        nviz.plot_limb_correspondence(curr_limb_cp.limb_correspondence)
+    
+    return curr_limb_cp
+'''
+
+def remove_branches_from_limb(limb_obj,branch_list,
+                             plot_new_limb=False,
+                              reassign_mesh=True,
+                              store_placeholder_for_removed_nodes=True,
+                              debug_time = False,
+                             verbose=False):
+    """
+    Purpose: To remove 1 or more branches from the concept network
+    of a limb and to adjust the underlying skeleton
+    
+    Application: To be used in when trying to split 
+    a neuron and want to combine nodes that are really close
+    
+    
+    *** currently does not does not reallocate the mesh part of the nodes that were deleted
+    
+    
+    Pseudocode: 
+    
+    For each branch to remove
+    0) Find the branches that were touching the soon to be deleted branch
+    1) Alter the skeletons of those that were touching that branch
+    
+    After revised all nodes
+    2) Remove the current node
+    3) Generate the limb correspondence, network starting info to generate soma concept networks
+    4) Create a new limb object and return it
+
+
+    Ex: new_limb_obj = nru.remove_branches_from_limb(curr_limb,[30,31],plot_new_limb=True,verbose=True)
+    """
+    
+    limb_time = time.time()
+    
+    curr_limb_cp = copy.deepcopy(limb_obj)
+    
+    if debug_time:
+        print(f"deepcopy limb time = {time.time() - limb_time}")
+        limb_time = time.time()
+    
+    
+    if not nu.is_array_like(branch_list ):
+        branch_list = [branch_list]
+        
+    seg_id_lookup = np.arange(0,len(curr_limb_cp))
+    
+    for curr_short_seg in branch_list:
+        #need to look up the new seg id if there is one now based on previous deletions
+        
+        curr_short_seg_revised = seg_id_lookup[curr_short_seg]
+        if verbose:
+            print(f"curr_short_seg_revised = {curr_short_seg_revised}")
+        
+        
+        branch_obj = curr_limb_cp[curr_short_seg_revised]
+        
+        touching_branches,touching_endpoints = nru.skeleton_touching_branches(curr_limb_cp,branch_idx=curr_short_seg_revised)
+        
+        if debug_time:
+            print(f"skeleton branch touchings = {time.time() - limb_time}")
+            limb_time = time.time()
+        
+        
+        #deciding whether to take the average or just an endpoint as the new stitch point depending on if nodes on both ends
+        touch_len = np.array([len(k) for k in touching_branches])
+        
+        if verbose:
+            print(f"np.sum(touch_len>0) = {np.sum(touch_len>0)}")
+            
+        if np.sum(touch_len>0)==2:
+            if verbose:
+                print("Using average stitch point")
+            new_stitch_point = np.mean(touching_endpoints,axis=0)
+            middle_node = True
+        else:
+            if verbose:
+                print("Using ONE stitch point")
+            new_stitch_point = touching_endpoints[np.argmax(touch_len)]
+            middle_node = False
+        
+        if verbose:
+            print(f"touching_endpoints = {touching_endpoints}")
+            print(f"new_stitch_point = {new_stitch_point}")
+            
+        if debug_time:
+            print(f"Getting new stitch point time = {time.time() - limb_time}")
+            limb_time = time.time()
+        
+        #1a) Decide which branch to give the mesh to
+        if middle_node and reassign_mesh:
+            """
+            Pseudocode:
+            1) Get the skeletal angles between all the touching branches and the branch to be deleted
+            2) Find the branch with the smallest skeletal angle
+            3) Things that need to be updated for the winning branch:
+            - mesh
+            -mesh_face_idx
+            - n_spines
+            - spines
+            - spines_volume
+            
+            
+            """
+            all_touching_branches = np.concatenate(touching_branches)
+            all_touching_branches_angles = [sk.offset_skeletons_aligned_parent_child_skeletal_angle(
+                            curr_limb_cp[br].skeleton,
+                            curr_limb_cp[curr_short_seg_revised].skeleton) for br in all_touching_branches]
+            winning_branch =all_touching_branches[np.argmin(all_touching_branches_angles)]
+            
+            
+            if verbose:
+                print(f"Angles for {all_touching_branches} are {all_touching_branches_angles}")
+                print(f"Branch that will absorb mesh of {curr_short_seg} is {winning_branch} ")
+                
+            if debug_time:
+                print(f"branch angles = {time.time() - limb_time}")
+                limb_time = time.time()
+            
+            curr_limb_cp[winning_branch].mesh_face_idx = np.concatenate([curr_limb_cp[winning_branch].mesh_face_idx,
+                                                                    curr_limb_cp[curr_short_seg_revised].mesh_face_idx])
+            curr_limb_cp[winning_branch].mesh = tu.combine_meshes([curr_limb_cp[winning_branch].mesh,
+                                                                    curr_limb_cp[curr_short_seg_revised].mesh])
+            if not curr_limb_cp[curr_short_seg_revised].spines is None:
+                if curr_limb_cp[winning_branch].spines is not None:
+                    curr_limb_cp[winning_branch].spines += curr_limb_cp[curr_short_seg_revised].spines
+                    curr_limb_cp[winning_branch].spines_volume += curr_limb_cp[curr_short_seg_revised].spines_volume
+                else:
+                    curr_limb_cp[winning_branch].spines = curr_limb_cp[curr_short_seg_revised].spines
+                    curr_limb_cp[winning_branch].spines_volume = curr_limb_cp[curr_short_seg_revised].spines_volume
+                    
+            
+            if debug_time:
+                print(f"Resolving spines time = {time.time() - limb_time}")
+                limb_time = time.time()
+            
+
+        #1b) Alter the skeletons of those that were touching
+        for t_branches,t_endpoints in zip(touching_branches,touching_endpoints):
+            for br in t_branches:
+                curr_limb_cp[br].skeleton = sk.add_and_smooth_segment_to_branch(curr_limb_cp[br].skeleton,
+                                                                                new_stitch_point=new_stitch_point,
+                                                                            skeleton_stitch_point=t_endpoints)
+                curr_limb_cp[br].calculate_endpoints()
+                
+        if debug_time:
+            print(f"smoothing the segments and calculating endpoints = {time.time() - limb_time}")
+            limb_time = time.time()
+        """
+        
+        
+        
+        """
+        
+            
+        #2) Remove the current node
+        if not store_placeholder_for_removed_nodes:
+            curr_limb_cp.concept_network.remove_node(curr_short_seg_revised)
+            #update the seg_id_lookup
+            seg_id_lookup = np.insert(seg_id_lookup,curr_short_seg,-1)[:-1]
+            run_concept_network_checks=True
+        else:
+            curr_mesh_center = curr_limb_cp[curr_short_seg_revised].mesh_center
+            center_deviation = 5.2345
+            curr_limb_cp[curr_short_seg_revised].skeleton = np.array([curr_mesh_center,curr_mesh_center+center_deviation]).reshape(-1,2,3)
+            curr_limb_cp[curr_short_seg_revised].calculate_endpoints()
+            run_concept_network_checks = False
+            
+        if debug_time:
+            print(f" Adding placeholder branch time = {time.time() - limb_time}")
+            limb_time = time.time()
+            
+
+    limb_to_soma_concept_networks = pre.calculate_limb_concept_networks(curr_limb_cp.limb_correspondence,
+                                                                                curr_limb_cp.network_starting_info,
+                                                                                run_concept_network_checks=False,
+                                                                          )  
+    if debug_time:
+        print(f"Calculating limb concept networks time = {time.time() - limb_time}")
+        limb_time = time.time()
+
+    #print(f"curr_limb.deleted_edges 6={curr_limb_cp.deleted_edges}")
+    curr_limb_cp = neuron.Limb(curr_limb_cp.mesh,
+                             curr_limb_cp.limb_correspondence,
+                             concept_network_dict=limb_to_soma_concept_networks,
+                             mesh_face_idx = curr_limb_cp.mesh_face_idx,
+                             labels=curr_limb_cp.labels,
+                             branch_objects=curr_limb_cp.branch_objects,
+                              deleted_edges=curr_limb_cp.deleted_edges,
+                              created_edges=curr_limb_cp.created_edges)
+
+    if debug_time:
+            print(f"Creating new limb object time = {time.time() - limb_time}")
+            limb_time = time.time()
+
+
     if plot_new_limb:
         nviz.plot_limb_correspondence(curr_limb_cp.limb_correspondence)
     

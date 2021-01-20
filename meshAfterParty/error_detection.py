@@ -147,6 +147,7 @@ def width_jump_edges_path(limb, #assuming the concept network is already set
 
 import skeleton_utils as sk
 import numpy_utils as nu
+import system_utils as su
 def double_back_edges(
     limb,
     double_back_threshold = 130,
@@ -215,6 +216,8 @@ def double_back_edges(
             up_vec = up_sk_flipped[-1][-1] - up_sk_flipped[0][0] 
             d_vec = d_sk[-1][-1] - d_sk[0][0]
 
+            
+            
             curr_angle = nu.angle_between_vectors(up_vec,d_vec)
 
             if curr_angle > double_back_threshold:
@@ -294,13 +297,14 @@ def double_back_edges_path(
 
         up_vec = up_sk_flipped[-1][-1] - up_sk_flipped[0][0] 
         d_vec = d_sk[-1][-1] - d_sk[0][0]
-
+        
         curr_angle = nu.angle_between_vectors(up_vec,d_vec)
         edges_doubling_back.append(curr_angle)
         
         if verbose:
                 print(f"  Edge: {current_nodes}: curr_angle = {np.round(curr_angle,2)}")
                 
+        
         
         if curr_angle > double_back_threshold:
             error_edges.append(list(current_nodes))

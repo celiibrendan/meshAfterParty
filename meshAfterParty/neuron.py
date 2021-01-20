@@ -354,6 +354,37 @@ class Limb:
         return st_dict
     
     @property
+    def all_starting_coordinates(self):
+        """
+        Purpose: will generate the dictionary that is organized
+        soma_idx --> soma_group_idx --> dict(touching_verts,endpoint)
+        
+        that can be used to generate a concept network from 
+        
+        """
+        start_coordinates = []
+        for st in self.all_concept_network_data:
+            start_coordinates.append(st["starting_coordinate"])
+            
+        start_coordinates = np.array(start_coordinates).reshape(-1,3)
+        return start_coordinates
+    
+    @property
+    def all_starting_nodes(self):
+        """
+        Purpose: will generate the dictionary that is organized
+        soma_idx --> soma_group_idx --> dict(touching_verts,endpoint)
+        
+        that can be used to generate a concept network from 
+        
+        """
+        starting_nodes = []
+        for st in self.all_concept_network_data:
+            starting_nodes.append(st["starting_node"])
+            
+        return starting_nodes
+    
+    @property
     def limb_correspondence(self):
         self._index = -1
         limb_corr = dict()
@@ -704,11 +735,32 @@ class Limb:
         
         if soma_group_idx == -1:
             soma_group_idx = self.current_soma_group_idx
+            
+        if debug:
+            print(f"starting_node = {starting_node}")
+            print(f"soma_group_idx = {soma_group_idx}")
+            print(f"starting_soma = {starting_soma}")
+            
+            
+        """  Old way:     
         
         matching_concept_network_data = [k for k in self.all_concept_network_data if ((k["starting_soma"] == starting_soma) or (nru.soma_label(k["starting_soma"]) == starting_soma))]
 
         if len(matching_concept_network_data) < 1:
             raise Exception(f"The concept_network data for the starting soma ({starting_soma}) did not have exactly one match: {matching_concept_network_data}")
+            
+        matching_concept_network_dict = matching_concept_network_data[soma_group_idx]
+        
+        """
+        
+        
+        
+        # ------- 1/19 New way ------------ #
+        matching_concept_network_dict = nru.get_matching_concept_network_data(self,soma_idx=starting_soma,
+                                                                          soma_group_idx=soma_group_idx,
+                                     starting_node=starting_node,
+                                     verbose=False)[0]
+        
         
         
         #find which the starting_coordinate and starting_node
@@ -732,7 +784,7 @@ class Limb:
         
         
         
-        matching_concept_network_dict = matching_concept_network_data[soma_group_idx]
+        
         #print(f"matching_concept_network_dict = {matching_concept_network_dict}")
         curr_starting_node = matching_concept_network_dict["starting_node"]
         curr_starting_coordinate= matching_concept_network_dict["starting_coordinate"]
@@ -2474,12 +2526,13 @@ class Neuron:
                         shaft_threshold=300,
                         cgal_path=Path("./cgal_temp"),
                         print_flag=False,
-                        filter_out_border_spines=True,
+                        filter_out_border_spines=False, #this seemed to cause a lot of misses
                         skeleton_endpoint_nullification=True,
                          soma_vertex_nullification = True,
                          border_percentage_threshold=0.3,
                         check_spine_border_perc=0.4,
-                        calculate_spine_volume=True):
+                        calculate_spine_volume=True,
+                        limb_branch_dict=None):
         
         print(f"query = {query}")
         print(f"smoothness_threshold = {smoothness_threshold}")
@@ -2514,9 +2567,11 @@ class Neuron:
         for limb_idx,curr_limb in enumerate(self):
             limb_idx = f"L{limb_idx}"
             
-            #to be used for endpoint nullification
-            if skeleton_endpoint_nullification:
-                curr_limb_end_coords = sk.find_skeleton_endpoint_coordinates(curr_limb.skeleton)
+            # ------------- 1/20 Addition that allows you to specify which branches to do ------- #
+            if limb_branch_dict is not None:
+                if limb_idx not in list(limb_branch_dict.keys()):
+                    continue
+            
             
             
             if soma_vertex_nullification:
@@ -2526,9 +2581,16 @@ class Neuron:
             curr_limb._index = -1
             for branch_idx,curr_branch in enumerate(curr_limb):
                 if limb_idx in new_branch_dict.keys():
+
                     #print(f"new_branch_dict[{limb_idx}] = {new_branch_dict[limb_idx]}")
                     #print(f"branch_idx = {branch_idx}")
                     if branch_idx in new_branch_dict[limb_idx]:
+                        
+                        # ------------- 1/20 Addition that allows you to specify which branches to do ------- #
+                        if limb_branch_dict is not None:
+                            if branch_idx not in limb_branch_dict[limb_idx]:
+                                continue
+
                         if print_flag:
                             print(f"Working on limb {limb_idx} branch {branch_idx}")
                         #calculate the spines
@@ -2584,8 +2646,11 @@ class Neuron:
                             if print_flag:
                                 print("Using the skeleton_endpoint_nullification option")
                                 
+                            
+                            curr_branch_end_coords = sk.find_skeleton_endpoint_coordinates(self[limb_idx][branch_idx].skeleton)
+                                
                             spine_submesh_split_filtered = tu.filter_meshes_by_containing_coordinates(spine_submesh_split_filtered,
-                                                                        curr_limb_end_coords,
+                                                                        curr_branch_end_coords,
                                                                         distance_threshold=500)
                         
                         if soma_vertex_nullification:

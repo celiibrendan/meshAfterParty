@@ -189,3 +189,39 @@ processed_axon_mess = [864691134884741370,
                       ]
 
 lots_of_axon_errors = [864691134884741370]
+
+# --------------- Looking at inhibitory and excitatory --------- #
+
+inh_non_apical_branch_pointing_up = [864691135614163403,
+                                  864691134884749050,
+                                  864691135210028992,
+                                  864691135759822525,
+                                    864691135269732773,
+                                    864691135510810610]
+very_similar_apical_branch_pointing_up = [864691135581209284]
+
+inh_mess_of_axon_like = [864691135428521008,
+                        864691135510477264]
+
+inh_mislabeled = [864691135497663251]
+
+inh_fat_apical_start = [864691135354903503,
+                       864691135303196071]
+
+inh_multiple_straight_up = [864691135692737983]
+
+non_spiny_dendrites_coming_off_top = [864691135637409476,
+                                     864691135655037892]
+
+
+# ---- Excitatory: 
+
+sparsely_spined = [864691135644605167]
+
+thick_upward_apical = [864691135780809040]
+
+spiny_upward_apical = [864691135847929438,
+                      864691135575126046]
+
+not_straight_up_apical = [864691135212670336]
+

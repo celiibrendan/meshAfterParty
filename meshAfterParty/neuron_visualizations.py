@@ -2011,4 +2011,30 @@ def plot_limb_path(limb_obj,path):
                       meshes_colors="red",
                      skeletons=[limb_obj[k].skeleton for k in path])
     
+    
+    
+# ----------- For plotting classifications ------------------ #
+import neuron_searching as ns
+def plot_axon(neuron_obj):
+    axon_limb_branch_dict = ns.query_neuron_by_labels(neuron_obj,
+                             matching_labels = ["axon"],
+                             )
+    nviz.visualize_neuron(neuron_obj,
+                         visualize_type=["mesh"],
+                         limb_branch_dict=axon_limb_branch_dict,
+                         mesh_color="red",
+                         mesh_whole_neuron=True)
+    
+def plot_axon_merge_errors(neuron_obj):
+    error_limb_branch_dict = ns.query_neuron_by_labels(neuron_obj,
+                             matching_labels = ["axon-like"],
+                             not_matching_labels = ["axon"]
+                             )
+    nviz.visualize_neuron(neuron_obj,
+                         visualize_type=["mesh"],
+                         limb_branch_dict=error_limb_branch_dict,
+                         mesh_color="red",
+                         mesh_whole_neuron=True)
+    
+    
 import neuron_visualizations as nviz

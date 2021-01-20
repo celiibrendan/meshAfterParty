@@ -794,6 +794,7 @@ def branches_to_concept_network(curr_branch_skeletons,
 
     #1) Identify the starting node on the starting branch
     starting_node = xu.get_nodes_with_attributes_dict(branches_graph,dict(coordinates=starting_coordinate))
+    
     if verbose:
         print(f"At the start, starting_node (in terms of the skeleton, that shouldn't match the starting edge) = {starting_node}")
     if len(starting_node) != 1:
@@ -952,7 +953,10 @@ def check_concept_network(curr_limb_concept_network,closest_endpoint,
                           curr_limb_divided_skeletons,print_flag=False,
                          return_touching_piece=True,
                          verbose=False):
+    
     recovered_touching_piece = xu.get_nodes_with_attributes_dict(curr_limb_concept_network,dict(starting_coordinate=closest_endpoint))
+    
+    
     if verbose:
         print(f"recovered_touching_piece = {recovered_touching_piece}")
         print(f"After concept mapping size = {len(curr_limb_concept_network.nodes())}")
@@ -3267,6 +3271,35 @@ def skeleton_points_along_path(limb_obj,branch_path,
         return skeleton_coordinates
     
     
+def get_matching_concept_network_data(limb_obj,soma_idx=None,soma_group_idx=None,
+                                     starting_node=None,
+                                     verbose=False):
+    
+    if type(soma_idx) == str:
+        soma_idx = int(soma_idx[1:])
+    
+    if soma_idx is None and (soma_group_idx is None) and starting_node is None:
+        raise Exception("All soma, soma_group and starting node descriptions are None")
+        
+    matching_concept_network_dicts_idx = np.arange(len(limb_obj.all_concept_network_data))
+  
+    if soma_idx is not None:
+        soma_matches = np.array([i for i,k in enumerate(limb_obj.all_concept_network_data) if k["starting_soma"] == soma_idx])
+        matching_concept_network_dicts_idx = np.intersect1d(matching_concept_network_dicts_idx,soma_matches)
+        
+    if soma_group_idx is not None:
+        soma_matches = np.array([i for i,k in enumerate(limb_obj.all_concept_network_data) if k["soma_group_idx"] == soma_group_idx])
+        matching_concept_network_dicts_idx = np.intersect1d(matching_concept_network_dicts_idx,soma_matches)
+        
+    if starting_node is not None:
+        soma_matches = np.array([i for i,k in enumerate(limb_obj.all_concept_network_data) if k["starting_node"] == starting_node])
+        matching_concept_network_dicts_idx = np.intersect1d(matching_concept_network_dicts_idx,soma_matches)
+        
+    if verbose:
+        print(f"matching_concept_network_dicts_idx = {matching_concept_network_dicts_idx}")
+        
+    return [limb_obj.all_concept_network_data[k] for k in matching_concept_network_dicts_idx]
+    
     
     
 # ----------- 1/15: For Automatic Axon Finding ---------------#
@@ -3302,7 +3335,7 @@ def clear_all_branch_labels(neuron_obj,labels_to_clear="all"):
             
             
 import neuron_statistics as nst
-def viable_axon_limbs_by_starting_angle(neuron_obj,
+def viable_axon_limbs_by_starting_angle_old(neuron_obj,
                                        axon_soma_angle_threshold=70,
                                        return_starting_angles=False):
     """
@@ -3323,6 +3356,35 @@ def viable_axon_limbs_by_starting_angle(neuron_obj,
         return possible_axon_limbs,limb_to_starting_angle
     else:
         return possible_axon_limbs
+    
+import neuron_searching as ns
+def viable_axon_limbs_by_starting_angle(neuron_obj,
+                                       soma_angle_threshold,
+                                        above_threshold=False,
+                                        soma_name="S0",
+                                        return_int_name=True,
+                                       verbose=False):
+    
+    curr_neuron_obj = neuron_obj
+    soma_center = curr_neuron_obj[soma_name].mesh_center
+
+    if above_threshold:
+        curr_query = f"soma_starting_angle>{soma_angle_threshold}"
+    else:
+        curr_query = f"soma_starting_angle<{soma_angle_threshold}"
+    
+    possible_axon_limbs_dict = ns.query_neuron(curr_neuron_obj,
+                        query=curr_query,
+                       functions_list=["soma_starting_angle"],
+                       function_kwargs=dict(soma_center=soma_center,
+                                           verbose=verbose))
+
+    possible_axon_limbs = list(possible_axon_limbs_dict.keys())
+    if return_int_name:
+        return [nru.get_limb_int_name(k) for k in possible_axon_limbs]
+    else:
+        return possible_axon_limbs
+    
     
 
     
