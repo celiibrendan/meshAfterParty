@@ -76,6 +76,7 @@ def convert_soma_to_piece_connectivity_to_graph(soma_to_piece_connectivity):
     
 from copy import deepcopy as dc
 
+
 def dc_check(current_object,attribute):
     try:
         return getattr(current_object,attribute)
@@ -2522,16 +2523,23 @@ class Neuron:
                          #query="median_mesh_center > 140 and n_faces_branch>100",#previous used median_mesh_center > 140
                          query="median_mesh_center > 115 and n_faces_branch>100",#previous used median_mesh_center > 140
                         clusters_threshold=3,#2,
-                        smoothness_threshold=0.1,#0.08,
+                        smoothness_threshold=0.15,#0.08,
                         shaft_threshold=300,
                         cgal_path=Path("./cgal_temp"),
                         print_flag=False,
+                         spine_n_face_threshold=25,
                         filter_out_border_spines=False, #this seemed to cause a lot of misses
                         skeleton_endpoint_nullification=True,
+                         skeleton_endpoint_nullification_distance = 2000,
                          soma_vertex_nullification = True,
                          border_percentage_threshold=0.3,
                         check_spine_border_perc=0.4,
                         calculate_spine_volume=True,
+                         
+                         #-------1/20 Addition --------
+                         filter_by_volume = True,
+                         filter_by_volume_threshold = 19835293, #calculated from experiments
+                         
                         limb_branch_dict=None):
         
         print(f"query = {query}")
@@ -2628,7 +2636,7 @@ class Neuron:
         #                         print(f"spine_submesh_split = {spine_submesh_split}")
 
                         spine_submesh_split_filtered = spu.filter_spine_meshes(spine_submesh_split,
-                                                                              spine_n_face_threshold=20)
+                                                                              spine_n_face_threshold=spine_n_face_threshold)
         #                 if limb_idx == "L0":
         #                     if branch_idx == 0:
         #                         print(f"spine_submesh_split_filtered = {spine_submesh_split_filtered}")
@@ -2651,7 +2659,7 @@ class Neuron:
                                 
                             spine_submesh_split_filtered = tu.filter_meshes_by_containing_coordinates(spine_submesh_split_filtered,
                                                                         curr_branch_end_coords,
-                                                                        distance_threshold=500)
+                                                                        distance_threshold=skeleton_endpoint_nullification_distance)
                         
                         if soma_vertex_nullification:
                             if print_flag:
@@ -2659,10 +2667,28 @@ class Neuron:
                                 
                             spine_submesh_split_filtered = spu.filter_out_soma_touching_spines(spine_submesh_split_filtered,
                                                                         soma_kdtree=soma_kdtree)
-                            
                         
-                
-
+                        already_calculated_volumes = False
+                        if filter_by_volume:
+                            """
+                            Pseudocode: 
+                            1) Calculate the volumes of all the spines
+                            2) Filter those spines for only those above the volume
+                            
+                            """
+                            
+                            
+                            if len(spine_submesh_split_filtered) > 0:
+                                
+                                
+                                spine_volumes = np.array([tu.mesh_volume(k) for k in spine_submesh_split_filtered])
+                                volume_kept_idx = np.where(spine_volumes > filter_by_volume_threshold)[0]
+                                spine_submesh_split_filtered = [spine_submesh_split_filtered[k] for k in volume_kept_idx]
+                                
+                                curr_branch.spines_volume = spine_volumes[volume_kept_idx]
+                                
+                                already_calculated_volumes = True
+                                                         
                         if print_flag:
                             print(f"--> n_spines found = {len(spine_submesh_split_filtered)}")
                         curr_branch.spines = spine_submesh_split_filtered
@@ -2673,7 +2699,7 @@ class Neuron:
                     curr_branch.spines = None
                 
                 # will compute the spine volumes if asked for 
-                if calculate_spine_volume:
+                if calculate_spine_volume and not already_calculated_volumes:
                     curr_branch.compute_spines_volume()
                     
     @property

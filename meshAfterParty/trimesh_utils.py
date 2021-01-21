@@ -2227,7 +2227,7 @@ def fill_holes(mesh,
 def filter_meshes_by_containing_coordinates(mesh_list,nullifying_points,
                                                 filter_away=True,
                                            method="distance",
-                                           distance_threshold=500,
+                                           distance_threshold=2000,
                                            verbose=False,
                                            return_indices=False):
     """

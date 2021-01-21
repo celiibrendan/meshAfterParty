@@ -1544,18 +1544,25 @@ def save_compressed_neuron(neuron_object,output_folder,file_name="",return_file_
     
 
 #For decompressing the neuron
-
+import time
 import preprocessing_vp2 as pre
 def decompress_neuron(filepath,original_mesh,
-                     suppress_output=True):
+                     suppress_output=True,
+                     debug_time = False):
     if suppress_output:
         print("Decompressing Neuron in minimal output mode...please wait")
     
     with su.suppress_stdout_stderr() if suppress_output else su.dummy_context_mgr():
         
+        decompr_time = time.time()
+        
         loaded_compression = su.decompress_pickle(filepath)
         print(f"Inside decompress neuron and decomposition_type = {loaded_compression['decomposition_type']}")
 
+        if debug_time:
+            print(f"Decompress pickle time = {time.time() - decompr_time}")
+            decompr_time = time.time()
+        
         #creating dictionary that will be used to construct the new neuron object
         recovered_preprocessed_data = dict()
 
@@ -1574,6 +1581,11 @@ def decompress_neuron(filepath,original_mesh,
             print("Recieved trimesh as orignal mesh")
         else:
             raise Exception(f"Got an unknown type as the original mesh: {original_mesh}")
+            
+        if debug_time:
+            print(f"Getting mesh time = {time.time() - decompr_time}")
+            decompr_time = time.time()
+            
 
         if len(original_mesh.faces) != loaded_compression["original_mesh_n_faces"]:
             raise Exception(f"Number of faces in mesh used for compression ({loaded_compression['original_mesh_n_faces']})"
@@ -1588,9 +1600,16 @@ def decompress_neuron(filepath,original_mesh,
                             f"({len(original_mesh.vertices)})")
         else:
             print("Passed vertices original mesh check")
+            
+            
+        if debug_time:
+            print(f"Face and Vertices check time = {time.time() - decompr_time}")
+            decompr_time = time.time()
 
 
         recovered_preprocessed_data["soma_meshes"] = [original_mesh.submesh([k],append=True,repair=False) for k in loaded_compression["soma_meshes_face_idx"]]
+        
+        
 
         """
         b) soma_to_piece_connectivity
@@ -1603,10 +1622,15 @@ def decompress_neuron(filepath,original_mesh,
         """
         recovered_preprocessed_data["soma_to_piece_connectivity"] = loaded_compression["soma_to_piece_connectivity"]
         recovered_preprocessed_data["soma_sdfs"] = loaded_compression["soma_sdfs"]
-        if "soma_volume_ratios" in  recovered_preprocessed_data.keys():
+        if "soma_volume_ratios" in  loaded_compression.keys():
+            print("using precomputed soma_volume_ratios")
             recovered_preprocessed_data["soma_volume_ratios"] = loaded_compression["soma_volume_ratios"]
         else:
             recovered_preprocessed_data["soma_volume_ratios"] = None
+            
+        if debug_time:
+            print(f"Original Soma mesh time = {time.time() - decompr_time}")
+            decompr_time = time.time()
 
         """
         d) insignificant_limbs
@@ -1629,6 +1653,8 @@ def decompress_neuron(filepath,original_mesh,
         recovered_preprocessed_data["not_processed_soma_containing_meshes"] = [original_mesh.submesh([k],append=True,repair=False) for k in loaded_compression["not_processed_soma_containing_meshes_face_idx"]]
         
         
+        
+        
         if "glia_faces" in loaded_compression.keys():
             curr_glia = loaded_compression["glia_faces"]
         else:
@@ -1640,6 +1666,10 @@ def decompress_neuron(filepath,original_mesh,
         recovered_preprocessed_data["non_soma_touching_meshes"] = [original_mesh.submesh([k],append=True,repair=False) for k in loaded_compression["non_soma_touching_meshes_face_idx"]]
 
         recovered_preprocessed_data["inside_pieces"] = [original_mesh.submesh([k],append=True,repair=False) for k in loaded_compression["inside_pieces_face_idx"]]
+        
+        if debug_time:
+            print(f"Insignificant and Not-processed and glia time = {time.time() - decompr_time}")
+            decompr_time = time.time()
 
         """
         e) limb_meshes
@@ -1650,7 +1680,9 @@ def decompress_neuron(filepath,original_mesh,
 
         recovered_preprocessed_data["limb_meshes"] = [original_mesh.submesh([k],append=True,repair=False) for k in loaded_compression["limb_meshes_face_idx"]]
 
-
+        if debug_time:
+            print(f"Limb meshes time = {time.time() - decompr_time}")
+            decompr_time = time.time()
         """
 
         f) limb_correspondence
@@ -1705,6 +1737,9 @@ def decompress_neuron(filepath,original_mesh,
 
         recovered_preprocessed_data["limb_correspondence"] = new_limb_correspondence
 
+        if debug_time:
+            print(f"Limb Correspondence = {time.time() - decompr_time}")
+            decompr_time = time.time()
 
         # ------------------ This is old way of restoring the limb concept networks but won't work now ------------- #
         
@@ -1754,6 +1789,9 @@ def decompress_neuron(filepath,original_mesh,
             limb_concept_networks[curr_limb_idx] = limb_to_soma_concept_networks
             limb_labels[curr_limb_idx]= None
         
+        if debug_time:
+            print(f"calculating limb networks = {time.time() - decompr_time}")
+            decompr_time = time.time()
 
         recovered_preprocessed_data["limb_concept_networks"] = limb_concept_networks
         recovered_preprocessed_data["limb_labels"] = limb_labels
@@ -1781,6 +1819,9 @@ def decompress_neuron(filepath,original_mesh,
                                             calculate_spines=False,
                                             
                                            widths_to_calculate=[])
+        if debug_time:
+            print(f"Sending to Neuron Object = {time.time() - decompr_time}")
+            decompr_time = time.time()
     
     return decompressed_neuron
 

@@ -372,7 +372,7 @@ def axon_width_like_query(width_to_use):
                     #f"(n_spines < 4 and {width_to_use} and skeleton_distance_branch <= 15000)"
                     f"(n_spines < 4 and {width_to_use} and skeleton_distance_branch <= 25000)"
                     #f" or (skeleton_distance_branch > 15000 and {width_to_use} and spines_per_skeletal_length < 0.00023)"
-                    f" or (skeleton_distance_branch > 15000 and {width_to_use} and spines_per_skeletal_length < 0.00007)"
+                    f" or (skeleton_distance_branch > 25000 and {width_to_use} and spines_per_skeletal_length < 0.00015)"
                             
                             )
     return axon_width_like_query
@@ -472,6 +472,7 @@ def axon_segment(curr_limb,limb_branch_dict=None,limb_name=None,
 
 @run_options(run_type="Limb")
 def axon_segment_downstream_dendrites(curr_limb,limb_branch_dict,limb_name=None,downstream_face_threshold=5000,
+                                      downstream_non_axon_percentage_threshold = 0.3,
                  print_flag=False,
                  #return_limb_branch_dict=False,
                  **kwargs):
@@ -492,6 +493,7 @@ def axon_segment_downstream_dendrites(curr_limb,limb_branch_dict,limb_name=None,
     """
     if print_flag:
         print(f"downstream_face_threshold= {downstream_face_threshold}")
+        print(f"downstream_non_axon_percentage_threshold = {downstream_non_axon_percentage_threshold}")
         #print(f"limb_branch_dict= {limb_branch_dict}")
         
     #curr_limb_branch_dict = kwargs["function_kwargs"]["limb_branch_dict"]
@@ -502,6 +504,9 @@ def axon_segment_downstream_dendrites(curr_limb,limb_branch_dict,limb_name=None,
         return False
     
     curr_axon_nodes = curr_limb_branch_dict[limb_name]
+    
+#     if print_flag:
+#         print(f"curr_axon_nodes = {curr_axon_nodes}")
     
     curr_limb_copy = deepcopy(curr_limb) #deepcopying so don't change anything
     
@@ -523,11 +528,23 @@ def axon_segment_downstream_dendrites(curr_limb,limb_branch_dict,limb_name=None,
                 curr_downstream_nodes = np.concatenate(curr_downstream_nodes)
                 #b. Get the total number of faces for all upstream non-axon nodes
                 curr_non_axon_nodes = set([k for k in curr_downstream_nodes if k not in curr_axon_nodes])
+                downstream_axon_nodes = set([k for k in curr_downstream_nodes if k in curr_axon_nodes])
+                
                 if len(curr_non_axon_nodes) > 0: 
                     non_axon_face_count = np.sum([len(curr_limb_copy.concept_network.nodes[k]["data"].mesh.faces) for k in curr_non_axon_nodes])
+                    axon_face_count = np.sum([len(curr_limb_copy.concept_network.nodes[k]["data"].mesh.faces) for k  in downstream_axon_nodes])
+                    perc_non_axon = non_axon_face_count / (non_axon_face_count + axon_face_count)
                     if print_flag:
-                        print(f"Soma {sm_start}, limb {limb_name}, node {n} had {non_axon_face_count} non-axon downstream faces")  
-                    if non_axon_face_count > downstream_face_threshold:
+                        print(f"Soma {sm_start}, limb {limb_name}, node {n} had {non_axon_face_count} non-axon downstream faces, {axon_face_count} axon downstream for a percentage of {perc_non_axon}")  
+                    #if non_axon_face_count > downstream_face_threshold:
+                    
+                    # ----------- 1/20 addition: That factors in percentages and not just raw face count ------- #
+                    if downstream_non_axon_percentage_threshold is not None:
+                        reverse_label = perc_non_axon > downstream_non_axon_percentage_threshold and non_axon_face_count > downstream_face_threshold
+                    else:
+                        reverse_label = non_axon_face_count > downstream_face_threshold
+                    
+                    if reverse_label:
                         non_axon_nodes.append(n)
                         if print_flag:
                             print(f"     Added {n} to non-axon list")

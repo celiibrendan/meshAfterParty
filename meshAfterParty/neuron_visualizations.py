@@ -57,7 +57,7 @@ def plot_limb_concept_network_2D(neuron_obj,
                                  limb_name=None,
                                  somas=None,
                                  starting_soma=None,
-                                 starting_soma_group=0,
+                                 starting_soma_group=None,
                                  default_color = "green",
                                   node_size=2000,
                                   font_color="white",
@@ -130,7 +130,7 @@ def plot_limb_concept_network_2D(neuron_obj,
     # (COULD NOT END UP CONCATENATING AND JUST USE ONE SOMA AS STARTING POINT)
     if directional:
         graph_list = []
-        if starting_soma is not None:
+        if starting_soma is not None or starting_soma_group is not None:
             limb_obj.set_concept_network_directional(starting_soma=starting_soma,
                                                      soma_group_idx = starting_soma_group,
                                                      suppress_disconnected_errors=suppress_disconnected_errors)
@@ -1832,7 +1832,7 @@ def plot_objects(main_mesh=None,
                            )
         
         
-def plot_branch_spines(curr_branch):
+def plot_branch_spines(curr_branch,plot_skeletons=True):
     import trimesh_utils as tu
     """
     Purpose: To plot a branch with certain spines
@@ -2036,5 +2036,29 @@ def plot_axon_merge_errors(neuron_obj):
                          mesh_color="red",
                          mesh_whole_neuron=True)
     
+    
+import numpy_utils as nu
+import trimesh_utils as tu
+def plot_branches_with_spines(branches,plot_skeletons=True):
+    """
+    To plot the branch meshes and their spines
+    
+    """
+    if not nu.is_array_like(branches):
+        branches = [branches]
+        
+    if plot_skeletons:
+        skeletons = [k.skeleton for k in branches]
+    else:
+        skeletons = []
+        s
+    total_mesh = tu.combine_meshes([k.mesh for k in branches])  
+    total_spines = np.concatenate([k.spines for k in branches])
+    
+    nviz.plot_objects(total_mesh,
+                     meshes=total_spines,
+                     meshes_colors="red",
+                      mesh_alpha=1,
+                     skeletons=skeletons)
     
 import neuron_visualizations as nviz
