@@ -214,6 +214,8 @@ inh_multiple_straight_up = [864691135692737983]
 non_spiny_dendrites_coming_off_top = [864691135637409476,
                                      864691135655037892]
 
+inh_good_example_of_when_can_error_out_axon = [864691134884747002]
+
 
 # ---- Excitatory: 
 
@@ -227,3 +229,7 @@ spiny_upward_apical = [864691135847929438,
 
 not_straight_up_apical = [864691135212670336]
 
+# ------------------- For proofreading -----------------
+
+dendritic_piece_merged_onto_axon = [864691135945454116,
+                                    864691135644605167]

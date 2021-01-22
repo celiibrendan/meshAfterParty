@@ -2523,11 +2523,13 @@ class Neuron:
                          #query="median_mesh_center > 140 and n_faces_branch>100",#previous used median_mesh_center > 140
                          query="median_mesh_center > 115 and n_faces_branch>100",#previous used median_mesh_center > 140
                         clusters_threshold=3,#2,
-                        smoothness_threshold=0.15,#0.08,
+                        smoothness_threshold=0.12,#0.08,
                         shaft_threshold=300,
                         cgal_path=Path("./cgal_temp"),
                         print_flag=False,
                          spine_n_face_threshold=25,
+                         filter_by_bounding_box_longest_side_length=True,
+                         side_length_threshold = 5000,
                         filter_out_border_spines=False, #this seemed to cause a lot of misses
                         skeleton_endpoint_nullification=True,
                          skeleton_endpoint_nullification_distance = 2000,
@@ -2588,6 +2590,7 @@ class Neuron:
             
             curr_limb._index = -1
             for branch_idx,curr_branch in enumerate(curr_limb):
+                already_calculated_volumes = False
                 if limb_idx in new_branch_dict.keys():
 
                     #print(f"new_branch_dict[{limb_idx}] = {new_branch_dict[limb_idx]}")
@@ -2637,6 +2640,14 @@ class Neuron:
 
                         spine_submesh_split_filtered = spu.filter_spine_meshes(spine_submesh_split,
                                                                               spine_n_face_threshold=spine_n_face_threshold)
+            
+                        if filter_by_bounding_box_longest_side_length:
+                            old_length = len(spine_submesh_split_filtered)
+                            spine_submesh_split_filtered = tu.filter_meshes_by_bounding_box_longest_side(spine_submesh_split_filtered,
+                                                                                                     side_length_threshold=side_length_threshold)
+                            if len(spine_submesh_split_filtered) < old_length:
+                                print(f"Removed {old_length - len(spine_submesh_split_filtered)} spines because of side length greater than {side_length_threshold}")
+                            
         #                 if limb_idx == "L0":
         #                     if branch_idx == 0:
         #                         print(f"spine_submesh_split_filtered = {spine_submesh_split_filtered}")
@@ -2668,7 +2679,7 @@ class Neuron:
                             spine_submesh_split_filtered = spu.filter_out_soma_touching_spines(spine_submesh_split_filtered,
                                                                         soma_kdtree=soma_kdtree)
                         
-                        already_calculated_volumes = False
+                        
                         if filter_by_volume:
                             """
                             Pseudocode: 
@@ -2685,7 +2696,7 @@ class Neuron:
                                 volume_kept_idx = np.where(spine_volumes > filter_by_volume_threshold)[0]
                                 spine_submesh_split_filtered = [spine_submesh_split_filtered[k] for k in volume_kept_idx]
                                 
-                                curr_branch.spines_volume = spine_volumes[volume_kept_idx]
+                                curr_branch.spines_volume = list(spine_volumes[volume_kept_idx])
                                 
                                 already_calculated_volumes = True
                                                          

@@ -3847,5 +3847,32 @@ def turn_off_logging():
     logging.getLogger("trimesh").setLevel(logging.ERROR)
 
 turn_off_logging()
+
+
+# -------------- 1/21 ------------- #
+def bounding_box_oriented_side_lengths(mesh,return_largest_side=False):
     
+    bbox = mesh.bounding_box_oriented.vertices
+    x_axis_unique = np.unique(bbox[:,0])
+    y_axis_unique = np.unique(bbox[:,1])
+    z_axis_unique = np.unique(bbox[:,2])
+    x_length = (np.max(x_axis_unique) - np.min(x_axis_unique)).astype("float")
+    y_length = (np.max(y_axis_unique) - np.min(y_axis_unique)).astype("float")
+    z_length = (np.max(z_axis_unique) - np.min(z_axis_unique)).astype("float")
+    
+    if return_largest_side:
+        return np.max([x_length,y_length,z_length])
+    else:
+        return x_length,y_length,z_length
+    
+def bounding_box_longest_side(mesh):
+    return bounding_box_oriented_side_lengths(mesh,return_largest_side=True)
+
+def filter_meshes_by_bounding_box_longest_side(meshes,
+                                              side_length_threshold):
+    longest_side_lengths = np.array([tu.bounding_box_longest_side(k) for k in meshes])
+    keep_indexes = np.where(longest_side_lengths<=side_length_threshold)[0]
+    return [meshes[i] for i in keep_indexes]
+
+
 import trimesh_utils as tu

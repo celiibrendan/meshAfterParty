@@ -85,6 +85,47 @@ def set_minnie65_config_segmentation(minfig,
             curr_at_path = getattr(minfig.minnie65_config,at)
             print(f"Current path for {at} = {curr_at_path}")
 
+def restrict_jobs_table_by_error_substring(current_table,
+    message_in_error,
+    verbose = True,
+    delete_table=False):
+
+    """
+    Purpose: To delete entries in a jobs table with a specific substring
+
+    Pseudocode: 
+    1) Pull down all of the key_hashes and error messages
+    2) Iterate through all of the error messages and find the indexes that have matching
+    substring
+    3) Restrict the key hashes to that group
+    4) restrict the original table by all the keyhashes and return
+    5) Optionally delete these entries
+
+
+    """
+
+    #1) Pull down all of the key_hashes and error messages
+    key_hashes,messages = current_table.fetch("key_hash","error_message")
+
+    total_keys_index = []
+    for i,m in enumerate(messages):
+        if message_in_error in m:
+            total_keys_index.append(i)
+
+    if verbose:
+        print(f"Found {len(total_keys_index)} matching entries with substring {message_in_error}")
+
+    #3) Restrict the key hashes to that group
+    key_hashes_to_restrict = key_hashes[total_keys_index]
+
+    #4) restrict the original table by all the keyhashes and return
+    new_restricted_table = current_table & [dict(key_hash = k) for k in key_hashes_to_restrict]
+
+    if delete_table:
+        new_restricted_table.delete()
+    else:
+        return new_restricted_table
+
 
 
         

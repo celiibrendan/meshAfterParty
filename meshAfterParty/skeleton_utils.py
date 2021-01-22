@@ -6091,4 +6091,23 @@ def skeleton_endpoint_vector(skeleton,
     return restricted_skeleton_vector
 
     
+    
+# ----------- 1 /21  -------------------- #
+def high_degree_coordinates_on_path(limb_obj,curr_path_to_cut,
+                                   degree_to_check=4):
+    """
+    Purpose: Find coordinates on a skeleton of the path speciifed (in terms of node ids)
+    that are above the degree_to_check (in reference to the skeleton)
+    
+    
+    """
+    path_divergent_points = [sk.find_branch_endpoints(limb_obj[k].skeleton) for k in curr_path_to_cut]
+    endpoint_coordinates = np.unique(np.concatenate(path_divergent_points),axis=0)
+
+    limb_sk_gr = sk.convert_skeleton_to_graph(limb_obj.skeleton)
+    endpoint_degrees = xu.get_coordinate_degree(limb_sk_gr,endpoint_coordinates)
+    high_degree_endpoint_coordinates = endpoint_coordinates[endpoint_degrees>=degree_to_check]
+    
+    return high_degree_endpoint_coordinates
+
 import skeleton_utils as sk

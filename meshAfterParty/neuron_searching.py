@@ -73,6 +73,16 @@ def skeleton_distance_branch(curr_branch,name=None,branch_name=None,**kwargs):
     except:
         print(f"curr_branch.skeleton = {curr_branch.skeleton}")
         raise Exception("")
+        
+@run_options(run_type="Branch")
+def skeletal_length(curr_branch,name=None,branch_name=None,**kwargs):
+    try:
+        #print(f"curr_branch.skeleton = {curr_branch.skeleton.shape}")
+        return sk.calculate_skeleton_distance(curr_branch.skeleton)
+    except:
+        print(f"curr_branch.skeleton = {curr_branch.skeleton}")
+        raise Exception("")
+        
 
 @run_options(run_type="Branch")
 def n_spines(branch,limb_name=None,branch_name=None,**kwargs):
@@ -123,6 +133,11 @@ def spines_per_skeletal_length(branch,limb_name=None,branch_name=None,**kwargs):
     curr_n_spines = n_spines(branch)
     curr_skeleton_distance = sk.calculate_skeleton_distance(branch.skeleton)
     return curr_n_spines/curr_skeleton_distance
+
+# --------- spine densities ---------------- #
+@run_options(run_type="Branch")
+def spine_density(branch,limb_name=None,branch_name=None,**kwargs):
+    return branch.spine_density
 
 
 # ----------- working with different labels -----------------#
@@ -247,6 +262,26 @@ import networkx as nx
 import skeleton_utils as sk
 
 @run_options(run_type="Limb")
+@run_options(run_type="Limb")
+
+def skeletal_distance_from_soma_excluding_node(curr_limb,
+                    limb_name = None,
+                    somas = None,
+                    error_if_all_nodes_not_return=True,
+                    print_flag = False,
+                    **kwargs
+                            
+    ):
+    
+    return nru.skeletal_distance_from_soma(curr_limb,
+                    limb_name = None,
+                    somas = None,
+                    error_if_all_nodes_not_return=True,
+                    include_node_skeleton_dist=False,
+                    print_flag = False,
+                    **kwargs)
+
+@run_options(run_type="Limb")
 def skeletal_distance_from_soma(curr_limb,
                     limb_name = None,
                     somas = None,
@@ -256,107 +291,14 @@ def skeletal_distance_from_soma(curr_limb,
                     **kwargs
                             
     ):
-
-    """
-    Purpose: To determine the skeletal distance away from 
-    a soma a branch piece is
     
-    Pseudocode: 
-    0) Create dictionary that will store all of the results
-    For each directional concept network
-    1) Find the starting node
-    For each node: 
-    1)find the shortest path from starting node to that node
-    2) convert the path into skeletal distance of each node 
-    and then add up
-    3) Map of each of distances to the node in a dictionary and return
-    - replace a previous one if smaller
-    
-    Example: 
-    skeletal_distance_from_soma(
-                    limb_name = "L1"
-                    curr_limb = uncompressed_neuron.concept_network.nodes[limb_name]["data"]
-                    print_flag = True
-                    #soma_list=None
-                    somas = [0,1]
-                    check_all_nodes_in_return=True
-    )
-
-    """
-    if print_flag:
-        print(f"\n\n------Working on Limb ({limb_name})-------")
-        print(f"Starting nodes BEFORE copy = {xu.get_starting_node(curr_limb.concept_network,only_one=False)}")
-
-    curr_limb_copy =  deepcopy(curr_limb)
-    
-    if print_flag:
-        print(f"Starting nodes after copy = {xu.get_starting_node(curr_limb_copy.concept_network,only_one=False)}")
-
-    #0) Create dictionary that will store all of the results
-    return_dict = dict()
-
-    #For each directional concept network
-    if somas is None:
-        touching_somas = [k["starting_soma"] for k in curr_limb_copy.all_concept_network_data]
-    else:
-        if not nu.is_array_like(somas):
-            somas = [somas]
-        touching_somas = somas
-
-    if print_flag:
-        print(f"Performing analysis for somas: {touching_somas}")
-
-    for sm_start in touching_somas:
-        #1) Find the starting node
-        if print_flag:
-            print(f"--> Working on soma {sm_start}")
-        try:
-            curr_limb_copy.set_concept_network_directional(sm_start)
-        except:
-            if print_flag:
-                print(f"Limb ({limb_name}) was not connected to soma {sm_start} accordinag to all concept networks")
-            continue
-        curr_directional_network = curr_limb_copy.concept_network_directional
-        starting_node = curr_limb_copy.current_starting_node
-
-        #For each node: 
-        for n in curr_directional_network.nodes():
-            #1)find the shortest path from starting node to that node
-            #( could potentially not be there because it is directional)
-            try:
-                curr_shortest_path = nx.shortest_path(curr_directional_network,starting_node,n)
-            except:
-                #return_dict[n] = np.inf
-                continue
-            #2) convert the path into skeletal distance of each node and then add up
-            if not include_node_skeleton_dist:
-                path_length = np.sum([sk.calculate_skeleton_distance(curr_directional_network.nodes[k]["data"].skeleton)
-                               for k in curr_shortest_path[:-1]])
-            else:
-                path_length = np.sum([sk.calculate_skeleton_distance(curr_directional_network.nodes[k]["data"].skeleton)
-                               for k in curr_shortest_path])
-
-
-            #3) Map of each of distances to the node in a dictionary and return
-            #- replace a previous one if smaller
-
-            if n in return_dict.keys():
-                if path_length < return_dict[n]:
-                    return_dict[n] = path_length
-            else:
-                return_dict[n] = path_length
-    if print_flag:
-        print(f"\nBefore Doing the dictionary correction, return_dict={return_dict}\n")
-    #check that the return dict has all of the nodes
-    for n in list(curr_limb_copy.concept_network.nodes()):
-        if n not in return_dict.keys():
-            return_dict[n] = np.inf
-   
-    if error_if_all_nodes_not_return:
-        if set(list(return_dict.keys())) != set(list(curr_limb_copy.concept_network.nodes())):
-            raise Exception("return_dict keys do not exactly match the curr limb nodes")
-            
-    return return_dict
+    return nru.skeletal_distance_from_soma(curr_limb,
+                    limb_name = None,
+                    somas = None,
+                    error_if_all_nodes_not_return=True,
+                    include_node_skeleton_dist=True,
+                    print_flag = False,
+                    **kwargs)
 
 
 from copy import deepcopy
@@ -377,6 +319,15 @@ def axon_width_like_query(width_to_use):
                             )
     return axon_width_like_query
 
+def axon_merge_error_width_like_query(width_to_use):
+   
+
+    axon_width_like_query = (f"((n_spines < 2) and ((n_spines < 3 and {width_to_use} and skeleton_distance_branch <= 25000)"
+    #f" or (skeleton_distance_branch > 15000 and {width_to_use} and spines_per_skeletal_length < 0.00023)"
+    f" or (skeleton_distance_branch > 25000 and {width_to_use} and spines_per_skeletal_length < 0.00015)))")
+    return axon_width_like_query
+    
+
 axon_width_like_functions_list = [
     "width",
     "median_mesh_center",
@@ -392,6 +343,7 @@ def axon_width_like_segments(current_neuron,
                       current_query=None,
                       current_functions_list=None,
                              include_ais=False,
+                             axon_merge_error=False,
                              verbose=True,
                              width_to_use=None):
     """
@@ -410,6 +362,11 @@ def axon_width_like_segments(current_neuron,
             else:
                 width_expression = axon_width_like_requirement
         current_query = axon_width_like_query(width_expression)
+        
+    if axon_merge_error:
+        print(f"width_expression = {width_expression}")
+        current_query = axon_merge_error_width_like_query(width_expression)
+        
     if verbose:
         print(f"current_query = {current_query}")
         
