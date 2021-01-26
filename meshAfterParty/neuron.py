@@ -2589,7 +2589,7 @@ class Neuron:
         
         #check that have calculated the median mesh center if required
         if "median_mesh_center" in functions_list:
-            if "median_mesh_center" not in self[0][0].width_new.keys():
+            if len(self.get_limb_node_names())>0 and "median_mesh_center" not in self[0][0].width_new.keys():
                 print("The median_mesh_center was requested but has not already been calculated so calculating now.... ")
                 
                 self.calculate_new_width(no_spines=False,

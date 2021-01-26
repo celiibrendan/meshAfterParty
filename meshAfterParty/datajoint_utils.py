@@ -918,6 +918,114 @@ def get_exc_inh_classified_table():
                         "(cell_type = 'excitatory') or  (cell_type = 'inhibitory')")
     return classified_table
 
+
+def table_for_decomposition(segment_id,
+                           verbose=False):
+    """
+    Will get a restricted decomposition or decomposition split table
+    by the segment id
+    """
+    key = dict(segment_id=segment_id)
+    curr_table = (minnie.DecompositionSplit & key)
+    
+    if len(curr_table)>0:
+
+        if verbose:
+            print("Pulling down neurons from DecompositionSplit")
+    else:
+        
+        
+        if verbose:
+            print("Pulling down neurons from Decomposition")
+
+        curr_table = (minnie.Decomposition() & key)
+        n_error_limbs,n_somas = curr_table.fetch1("n_error_limbs","n_somas")
+        
+        if n_error_limbs > 1 or n_somas > 2:
+            raise Exception(f"Segment ID {segment_id} should have been in DecompositionSplit but wasnt with "
+                           f"n_error_limbs = {n_error_limbs}, n_somas = {n_somas} ")
+        
+        table_name = "Decomposition"
+    
+    return curr_table
+    
+    
+    
+def decomposition_by_segment_id(segment_id,
+                                return_split_indexes=False,
+                               return_table_name=False,
+                                return_process_version = False,
+                               verbose = False):
+    """
+    Purpose: To get the decomposition data from
+    a segment id by checking if it is in DecompositionSplit, whether it should be
+    and then if it is in Decomposition
+    
+    """
+    key = dict(segment_id=segment_id)
+    
+    #0) Download the possible neurons from either Decomposition or DecompositionSplit
+        
+    table_name = None
+    curr_table = (minnie.DecompositionSplit & key)
+    if len(curr_table)>0:
+
+        if verbose:
+            print("Pulling down neurons from DecompositionSplit")
+
+        neuron_objs,split_indexes = curr_table.fetch("decomposition","split_index")
+        table_name = "DecompositionSplit"
+    else:
+        
+        
+        if verbose:
+            print("Pulling down neurons from Decomposition")
+
+        curr_table = (minnie.Decomposition() & key)
+        n_error_limbs,n_somas = curr_table.fetch1("n_error_limbs","n_somas")
+        
+        if n_error_limbs > 1 or n_somas > 2:
+            raise Exception(f"Segment ID {segment_id} should have been in DecompositionSplit but wasnt with "
+                           f"n_error_limbs = {n_error_limbs}, n_somas = {n_somas} ")
+            
+        neuron_objs = curr_table.fetch("decomposition")
+        
+        split_indexes = [0]
+
+        if len(neuron_objs) > 1:
+            raise Exception("There were more than 1 neuron when pulling down from Decomposition")
+        
+        table_name = "Decomposition"
+        
+    
+    if return_process_version:
+        process_version = np.max(curr_table.fetch("process_version"))
+        
+        if verbose:
+            print(f"process version = {process_version}")
+    
+    if verbose:
+        print(f"Number of Neurons found = {len(neuron_objs)}")
+
+    if not return_split_indexes and not return_table_name and not return_process_version:
+        return neuron_objs
+    
+    return_value = [neuron_objs,split_indexes]
+    if return_table_name:
+        return_value.append(table_name)
+    if return_process_version:
+        return_value.append(process_version)
+    
+    return return_value
+
+def spine_recalculation_by_segment_id(segment_id):
+    """
+    Will pull down the updated spine information for a segment_id
+    
+    """
+    curr_table = table_for_decomposition(segment_id)
+    return (minnie.SpineRecalculation() & curr_table.proj()).fetch("spine_data")
+
 #runs the configuration
 config_celii()
 #nuc_table = configure_nucleus_table()
