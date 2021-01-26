@@ -338,6 +338,7 @@ curr_table = (minnie.schema.jobs & "table_name='__decomposition_split'")
 
 
 import time
+import random
 pru = reload(pru)
 nru = reload(nru)
 
