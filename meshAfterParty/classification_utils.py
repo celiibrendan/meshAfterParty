@@ -894,6 +894,7 @@ def axon_classification(neuron_obj,
                 limb_branch_dict=final_axon_error_like_classification,
                 labels="axon-like")
         
+        
         if error_width_max is None:
             error_limb_branch_dict = ns.query_neuron_by_labels(curr_neuron_obj,
                                  matching_labels = ["axon-like"],

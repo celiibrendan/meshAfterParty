@@ -879,9 +879,10 @@ import copy
 import networkx as nx
 
 def split_neuron_limb_by_seperated_network(neuron_obj,
-                     seperate_networks,
                      curr_limb_idx,
+                    seperate_networks=None,
                     error_on_multile_starting_nodes=True,
+                    delete_limb_if_empty=True,
                      verbose = True):
     """
     Purpose: To Split a neuron limb up into sepearte limb graphs specific
@@ -904,7 +905,12 @@ def split_neuron_limb_by_seperated_network(neuron_obj,
     2) Use the concatenated faces idx to obtain the new limb mesh
     3) index the concatenated faces idx into the limb.mesh_face_idx to get the neew limb.mesh_face_idx
     """
-    seperated_graphs = seperate_networks
+    if seperate_networks is None:
+        seperated_graphs = [neuron_obj[curr_limb_idx].concept_network]
+    else:
+        seperated_graphs = seperate_networks
+        
+        
     new_limb_data = []
     curr_limb = neuron_obj[curr_limb_idx]
 
@@ -1091,6 +1097,9 @@ import preprocessing_vp2 as pre
 import neuron_visualizations as nviz
 import system_utils as su
 
+
+
+
 def split_neuron_limbs_by_suggestions(neuron_obj,
                                 split_suggestions,
                                       plot_soma_limb_network=False,
@@ -1125,17 +1134,16 @@ def split_neuron_limbs_by_suggestions(neuron_obj,
         if verbose:
             print(f"\n\n---Working on Splitting Limb {curr_limb_idx} with {len(conn_comp)} components----")
 
-        split_neuron_obj = pru.split_neuron_limb_by_seperated_network(split_neuron_obj,conn_comp,
-                             curr_limb_idx = curr_limb_idx,
-                                                error_on_multile_starting_nodes=False,
-                                                verbose=verbose)
+        split_neuron_obj = pru.split_neuron_limb_by_seperated_network(split_neuron_obj,
+                                                                      seperate_networks=conn_comp,
+                                                                 curr_limb_idx = curr_limb_idx,
+                                                                error_on_multile_starting_nodes=False,
+                                                                verbose=verbose)
         
     if plot_soma_limb_network:
         nviz.plot_soma_limb_concept_network(split_neuron_obj)
         
     return split_neuron_obj
-
-
 
 def split_disconnected_neuron(neuron_obj,
                               plot_seperated_neurons=False,
@@ -2101,7 +2109,7 @@ def split_suggestions_datajoint_dicts_to_neuroglancer_dataframe(split_suggestion
 
 
 
-
+# ----------------- 1/26: Final Proofreading Rules splitting ------------#
 
 
 import proofreading_utils as pru

@@ -28,6 +28,7 @@ How to clear the external
 schema.external['decomposition'].delete(delete_external_files=True)
 schema.external['somas'].delete(delete_external_files=True)
 schema.external['faces'].delete(delete_external_files=True)
+schema.external['decimated_meshes'].delete(delete_external_files=True)
 """
 decomposition_folder = "decomposition"
 
@@ -920,7 +921,8 @@ def get_exc_inh_classified_table():
 
 
 def table_for_decomposition(segment_id,
-                           verbose=False):
+                           verbose=False,
+                           return_table_name=False):
     """
     Will get a restricted decomposition or decomposition split table
     by the segment id
@@ -932,6 +934,8 @@ def table_for_decomposition(segment_id,
 
         if verbose:
             print("Pulling down neurons from DecompositionSplit")
+            
+        table_name = "DecompositionSplit"
     else:
         
         
@@ -947,7 +951,10 @@ def table_for_decomposition(segment_id,
         
         table_name = "Decomposition"
     
-    return curr_table
+    if return_table_name:
+        return curr_table,table_name
+    else:
+        return curr_table
     
     
     
@@ -1025,6 +1032,29 @@ def spine_recalculation_by_segment_id(segment_id):
     """
     curr_table = table_for_decomposition(segment_id)
     return (minnie.SpineRecalculation() & curr_table.proj()).fetch("spine_data")
+
+def decomposition_with_spine_recalculation(segment_id,verbose=False):
+    """
+    Will pull down all neuron objects with the updated
+    spine data and return the objects
+    
+    """
+    curr_table,table_name = table_for_decomposition(segment_id,return_table_name=True)
+    keys_for_search = curr_table.proj().fetch(as_dict=True)
+    
+    neuron_objs= []
+    for k in keys_for_search:
+        
+        neuron_obj = (getattr(minnie,table_name) & k).fetch1('decomposition')
+        neuron_spine_data = (minnie.SpineRecalculation() & k).fetch1("spine_data")
+        neuron_obj.set_computed_attribute_data(neuron_spine_data)
+        neuron_objs.append(neuron_obj)
+        
+    if verbose:
+        print(f"Number of Neurons found = {len(neuron_objs)}")
+    
+    return neuron_objs
+    
 
 #runs the configuration
 config_celii()
