@@ -13,7 +13,7 @@ import pandas_utils as pu
 import networkx_utils as xu
 
 def convert_neuron_to_branches_dataframe(current_neuron,
-                                        limbs_to_process=[]):
+                                        limbs_to_process=None):
     """
     Purpose: 
     How to turn a concept map into a pandas table with only the limb_idx and node_idx
@@ -24,7 +24,7 @@ def convert_neuron_to_branches_dataframe(current_neuron,
     """
     curr_concept_network = nru.return_concept_network(current_neuron)
     
-    if len(limbs_to_process) == 0:
+    if limbs_to_process is None:
         limb_idxs = nru.get_limb_names_from_concept_network(curr_concept_network)
     else:
         limb_idxs = [nru.get_limb_string_name(k) for k in limbs_to_process]
@@ -339,12 +339,12 @@ axon_width_like_functions_list = [
 ]
 
 
-def axon_width_like_segments(current_neuron,
+def axon_width_like_segments_old(current_neuron,
                       current_query=None,
                       current_functions_list=None,
                              include_ais=False,
                              axon_merge_error=False,
-                             verbose=True,
+                             verbose=False,
                              width_to_use=None):
     """
     Will get all of
@@ -376,6 +376,90 @@ def axon_width_like_segments(current_neuron,
                                        #return_dataframe=True,
                    functions_list=current_functions_list)
     return limb_branch_dict
+
+# ------------- 1//22: Addition that accounts for newer higher fidelity spining --------- #
+def axon_width_like_query_revised(width_to_use,spine_limit):
+   
+    axon_width_like_query = f"((n_spines < 6) and ({width_to_use}) and spine_density <= 0.00007)"
+    return axon_width_like_query
+
+
+def axon_width_like_segments(current_neuron,
+                      current_query=None,
+                      current_functions_list=None,
+                             include_ais=False,
+                             verbose=False,
+                             width_to_use=None):
+    """
+    Purpose: Will get all of the branches that look like spines
+    based on width and spine properties
+    
+    """
+    
+    functions_list = ["median_mesh_center",
+                     "n_spines",
+                     "spine_density"]
+    
+    if current_functions_list is None:
+        current_functions_list = functions_list
+        
+    if current_query is None:
+        if not width_to_use is None:
+            width_expression  = f"(median_mesh_center < {width_to_use})"
+        else:
+            if include_ais:
+                spine_limit = 5
+                width_expression = ais_axon_width_like_requirement
+            else:
+                spine_limit = 3
+                width_expression = axon_width_like_requirement
+                
+        current_query = axon_width_like_query_revised(width_expression,spine_limit)
+        
+        
+    if verbose:
+        print(f"current_query = {current_query}")
+        
+    limb_branch_dict = query_neuron(current_neuron,
+                                       #query="n_spines < 4 and no_spine_average_mesh_center < 400",
+                                       query=current_query,
+                                       #return_dataframe=True,
+                   functions_list=current_functions_list)
+    return limb_branch_dict
+
+import neuron_visualizations as nviz
+def axon_segments_after_checks(neuron_obj,
+                               include_ais=True,
+                               downstream_face_threshold=3000,
+                                width_match_threshold=50,
+                               plot_axon=False,
+                               **kwargs):
+    
+    axon_like_limb_branch_dict = axon_width_like_segments(neuron_obj,
+                                                         include_ais=include_ais,
+                                                         **kwargs)
+    
+    current_functions_list = ["axon_segment"]
+    final_axon_like_classification = ns.query_neuron(neuron_obj,
+
+                                       query="axon_segment==True",
+                                       function_kwargs=dict(limb_branch_dict =axon_like_limb_branch_dict,
+                                                            downstream_face_threshold=downstream_face_threshold,
+                                                            width_match_threshold=width_match_threshold,
+                                                           print_flag=False),
+                                       functions_list=current_functions_list)
+    
+    if plot_axon:
+        nviz.visualize_neuron(neuron_obj,
+                              visualize_type=["mesh"],
+                             limb_branch_dict=final_axon_like_classification,
+                             mesh_color="red",
+                              mesh_color_alpha=1,
+                             mesh_whole_neuron=True)
+    return final_axon_like_classification
+
+
+
 
 @run_options(run_type="Limb")
 def axon_segment(curr_limb,limb_branch_dict=None,limb_name=None,
@@ -773,7 +857,8 @@ def map_new_limb_node_value(current_df,mapping_dict,value_name):
     map_new_limb_node_value(neuron_df,mapping_dict,value_name="random_number")
     neuron_df
     """
-    current_df[value_name] = current_df.apply(lambda x: mapping_dict[x["limb"]][x["node"]], axis=1)
+    if len(current_df) > 0:
+        current_df[value_name] = current_df.apply(lambda x: mapping_dict[x["limb"]][x["node"]], axis=1)
     return current_df
 
 import system_utils as su
@@ -817,10 +902,10 @@ def generate_neuron_dataframe(current_neuron,
     if not nu.is_array_like(functions_list):
         functions_list = [functions_list]
         
-    print(f"functions_list = {functions_list}")
+    #print(f"functions_list = {functions_list}")
     
     
-    limbs_to_process = function_kwargs.get("limbs_to_process",[])
+    limbs_to_process = function_kwargs.get("limbs_to_process",None)
     
     #2) Create a dataframe for the neuron
     curr_df = convert_neuron_to_branches_dataframe(current_neuron,
@@ -1009,9 +1094,11 @@ def query_neuron(concept_network,
     #0) Generate a pandas table that originally has the limb index and node index
     returned_df = generate_neuron_dataframe(concept_network,functions_list=final_feature_functions,
                                            function_kwargs=function_kwargs)
-    
-    filtered_returned_df = returned_df.query(query,
-                  local_dict=local_dict)
+    if len(returned_df)>0:
+        filtered_returned_df = returned_df.query(query,
+                      local_dict=local_dict)
+    else:
+        filtered_returned_df = returned_df
     
     """
     Preparing output for returning
@@ -1020,18 +1107,28 @@ def query_neuron(concept_network,
     if return_dataframe:
         return filtered_returned_df
     
-    limb_branch_pairings = filtered_returned_df[["limb","node"]].to_numpy()
     
-    #gets a dictionary where key is the limb and value is a list of all the branches that were in the filtered dataframe
-    limb_to_branch = dict([(k,np.sort(limb_branch_pairings[:,1][np.where(limb_branch_pairings[:,0]==k)[0]]).astype("int")) 
-                           for k in np.unique(limb_branch_pairings[:,0])])
-    if return_limbs:
-        return list(limb_to_branch.keys())
-    
-    if return_limb_grouped_branches:
-        return limb_to_branch
-    
-    return limb_branch_pairings
+    if len(filtered_returned_df)>0:
+        limb_branch_pairings = filtered_returned_df[["limb","node"]].to_numpy()
+
+        #gets a dictionary where key is the limb and value is a list of all the branches that were in the filtered dataframe
+        limb_to_branch = dict([(k,np.sort(limb_branch_pairings[:,1][np.where(limb_branch_pairings[:,0]==k)[0]]).astype("int")) 
+                               for k in np.unique(limb_branch_pairings[:,0])])
+        if return_limbs:
+            return list(limb_to_branch.keys())
+
+        if return_limb_grouped_branches:
+            return limb_to_branch
+
+        return limb_branch_pairings
+    else:
+        if return_limbs:
+            return []
+        if return_limb_grouped_branches:
+            return dict()
+        if return_limb_grouped_branches:
+            return np.array([]).reshape(-1,2)
+        
 
 
 import neuron_searching as ns

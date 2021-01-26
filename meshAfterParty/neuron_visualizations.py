@@ -813,6 +813,7 @@ def visualize_neuron(
     main_scatter_color = "red",
     
     soma_border_vertices = False,
+    soma_border_vertices_size = 0.3,
     soma_border_vertices_color="random",
     
     verbose=True,
@@ -1551,7 +1552,7 @@ def visualize_neuron(
             
             for curr_scatter,curr_color in zip(new_borders,new_borders_colors):
                 plot_ipv_scatter(curr_scatter,scatter_color=curr_color,
-                            scatter_size=scatter_size,flip_y=flip_y)
+                            scatter_size=soma_border_vertices_size,flip_y=flip_y)
                 main_vertices.append(curr_scatter)
 
     if type(scatters_colors) == str:
@@ -1692,15 +1693,17 @@ def visualize_neuron(
     return
 
 
-def plot_spines(current_neuron,flip_y=True):
+def plot_spines(current_neuron,mesh_whole_neuron_alpha=0.1,
+                mesh_spines_alpha=0.8,
+                flip_y=True):
     visualize_neuron(current_neuron,
                           limb_branch_dict = dict(),
                           mesh_whole_neuron=True,
-                          mesh_whole_neuron_alpha = 0.1,
+                          mesh_whole_neuron_alpha = mesh_whole_neuron_alpha,
 
                         mesh_spines = True,
                         mesh_spines_color = "red",
-                        mesh_spines_alpha = 0.8,
+                        mesh_spines_alpha = mesh_spines_alpha,
                      flip_y=flip_y
 
                          )
@@ -2039,7 +2042,8 @@ def plot_axon_merge_errors(neuron_obj):
     
 import numpy_utils as nu
 import trimesh_utils as tu
-def plot_branches_with_spines(branches,plot_skeletons=True):
+def plot_branches_with_spines(branches,plot_skeletons=True,
+                             print_spine_info=True):
     """
     To plot the branch meshes and their spines
     
@@ -2052,9 +2056,24 @@ def plot_branches_with_spines(branches,plot_skeletons=True):
     else:
         skeletons = []
         s
-    total_mesh = tu.combine_meshes([k.mesh for k in branches])  
-    total_spines = np.concatenate([k.spines for k in branches])
+    total_mesh = tu.combine_meshes([k.mesh for k in branches])
     
+    all_spine_list = []
+    for k in branches:
+        if k.spines is not None and len(k.spines) > 0:
+            all_spine_list.append(k.spines)
+    
+    if len(all_spine_list) > 0:
+        total_spines = np.concatenate(all_spine_list)
+    else:
+        print("No spines to plot")
+        total_spines = []
+        
+    if print_spine_info:
+        for curr_branch in branches:
+            print(f"width = {curr_branch.width_new}, \nn_spines = {curr_branch.n_spines}, spine_density = {curr_branch.spine_density}\n spine_volume_density = {curr_branch.spine_volume_density}"
+                 f"\nskeleton_length = {sk.calculate_skeleton_distance(curr_branch.skeleton)}")
+            
     nviz.plot_objects(total_mesh,
                      meshes=total_spines,
                      meshes_colors="red",

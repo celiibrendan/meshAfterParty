@@ -148,6 +148,9 @@ list_of_faces = [1038,5763,7063,11405]
 branch_threshold = 31000
 returned_df.query("n_faces_branch in @list_of_faces or skeleton_distance_branch > @branch_threshold",
                   local_dict=dict(list_of_faces=list_of_faces,branch_threshold=branch_threshold))
+                  
+Ex 2: of how to restrict a column to being a member or not being in a list
+cell_df.query("not segment_id in @error_segments",local_dict=dict(error_seegments=error_segments))
 """
 
 from pandas import util
@@ -236,3 +239,98 @@ def filter_away_nan_rows(df):
 from IPython.display import display
 def display_df(df):
     display(df)
+    
+def dicts_to_dataframe(list_of_dicts):
+    return pd.DataFrame.from_dict(list_of_dicts)
+    
+# ----------- 1/25 Additon: Used for helping with clustering ----------- #
+import numpy_utils as nu
+import matplotlib.pyplot as plt
+import numpy as np
+
+def divide_dataframe_by_column_value(df,
+                                column,
+                                ):
+    """
+    Purpose: To divide up the dataframe into 
+    multiple dataframes
+    
+    Ex: 
+    divide_dataframe_by_column_value(non_error_cell,
+                                column="cell_type_predicted")
+    
+    """
+    tables = []
+    table_names = []
+    for b,x in df.groupby(column):
+        table_names.append(b)
+        tables.append(x)
+        
+    return tables,table_names
+
+
+def plot_histogram_of_differnt_tables_overlayed(tables_to_plot,
+                          tables_labels,
+                          columns=None,
+                          fig_title=None,
+                           fig_width=18.5,
+                            fig_height = 10.5,
+                            n_plots_per_row = 4,
+                            n_bins=50,
+                            alpha=0.4,
+                                           density=False):
+    """
+    Purpose: Will take multiple
+    tables that all have the same stats and to 
+    overlay plot them
+    
+    Ex: plot_histogram_of_differnt_tables_overlayed(non_error_cell,"total",columns=stats_proj)
+    
+    """
+    if not nu.is_array_like(tables_to_plot):
+        tables_to_plot = [tables_to_plot]
+        
+    if not nu.is_array_like(tables_labels):
+        tables_labels = [tables_labels]
+    
+    ex_table = tables_to_plot[0]
+    
+    if columns is None:
+        columns = list(cell_df.columns)
+        
+    n_rows = int(np.ceil(len(columns)/n_plots_per_row))
+    
+    fig,axes = plt.subplots(n_rows,n_plots_per_row)
+    fig.set_size_inches(fig_width, fig_height)
+    fig.tight_layout()
+    
+    if not fig_title is None:
+        fig.title(fig_title)
+
+    
+    for j,col_title in enumerate(columns):
+        
+        row = np.floor(j/4).astype("int")
+        column = j - row*4
+        ax = axes[row,column]
+        ax.set_title(col_title)
+        
+        for curr_table,curr_table_name in zip(tables_to_plot,tables_labels):
+            curr_data = curr_table[col_title].to_numpy()
+            ax.hist(curr_data,bins=n_bins,label=curr_table_name,alpha=alpha,
+                    density=density)
+            
+        ax.legend()
+        
+def plot_histograms_by_grouping(df,
+                               column_for_grouping,
+                               **kwargs):
+    
+    dfs,df_names = divide_dataframe_by_column_value(df,
+                                column=column_for_grouping,
+                                                   )
+    
+    plot_histogram_of_differnt_tables_overlayed(tables_to_plot=dfs,
+                                               tables_labels=df_names,
+                                               **kwargs)
+    

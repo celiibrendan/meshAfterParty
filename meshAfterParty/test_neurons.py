@@ -233,3 +233,26 @@ not_straight_up_apical = [864691135212670336]
 
 dendritic_piece_merged_onto_axon = [864691135945454116,
                                     864691135644605167]
+
+
+# -------------- Validation of excitatory/inhibitory --------- 
+
+mislabeled_by_stelios = [864691135500208836,
+                        864691135523678660,
+                        864691135497663251]
+
+my_mistake = [864691135461969906, #could decrease the denesly spine density to 0.0002]
+              864691135888524169 # could increase the no spined threshold to like 0.00011
+              864691135488238394 #increase the axon angle to 120 no matter what? and make the number of axons possibly found more than 1 for excitatory and decrease spine density to 0.0002
+              
+             ]
+
+
+my_unavoidable_mistakes_because_of_merges = [864691135730102201,
+                                            864691136023751737] #tricky axon
+ 
+              
+    
+# ------------ Decomposition issues ------------------
+
+missing_skeleton_of_limb = [864691135497663251]

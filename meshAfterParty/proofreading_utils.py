@@ -440,6 +440,24 @@ def get_n_paths_not_cut(limb_results):
                 
     return n_paths_not_cut
 
+def get_n_paths_cut(limb_results):
+    """
+    Get all of the coordinates on the paths that will be cut
+    
+    
+    """
+    if len(limb_results) == 0:
+        return 0
+    
+    n_paths_not_cut = 0
+
+    for limb_idx, limb_data in limb_results.items():
+        for path_cut_info in limb_data:
+            if len(path_cut_info["paths_cut"]) > 0:
+                n_paths_not_cut += 1   
+                
+    return n_paths_not_cut
+
 def get_all_cut_and_not_cut_path_coordinates(limb_results,voxel_adjustment=True,
                                             ):
     """
@@ -594,7 +612,7 @@ def multi_soma_split_suggestions(neuron_obj,
                                  plot_suggestions=False,
                                  plot_suggestions_scatter_size=0.4,
                                  remove_segment_threshold = 1500,
-                                 plot_cut_coordinates = True,
+                                 plot_cut_coordinates = False,
                                 **kwargs):
     """
     Purpose: To come up with suggestions for splitting a multi-soma
@@ -606,6 +624,8 @@ def multi_soma_split_suggestions(neuron_obj,
     3) Optional: Visualize the nodes and their disconnections
 
     """
+    
+    #sprint("inside multi_soma_split_suggestions")
 
     multi_soma_limbs = nru.multi_soma_touching_limbs(neuron_obj)
     multi_touch_limbs = nru.same_soma_multi_touching_limbs(neuron_obj)
@@ -861,6 +881,7 @@ import networkx as nx
 def split_neuron_limb_by_seperated_network(neuron_obj,
                      seperate_networks,
                      curr_limb_idx,
+                    error_on_multile_starting_nodes=True,
                      verbose = True):
     """
     Purpose: To Split a neuron limb up into sepearte limb graphs specific
@@ -929,7 +950,11 @@ def split_neuron_limb_by_seperated_network(neuron_obj,
         #get all of the starting dictionaries that match a node in the subgraph
         curr_all_concept_network_data = [k for k in curr_limb.all_concept_network_data if k["starting_node"] in list(curr_subgraph)]
         if len(curr_all_concept_network_data) > 1:
-            raise Exception(f"There were more not exactly one starting dictinoary: {curr_all_concept_network_data} ")
+            warning_string = f"There were more not exactly one starting dictinoary: {curr_all_concept_network_data} "
+            if error_on_multile_starting_nodes:
+                raise Exception(warning_string)
+            else:
+                print(warning_string)
             
             
         limb_corresp_for_networks = dict([(i,dict(branch_skeleton=k.skeleton,
@@ -1046,7 +1071,8 @@ def split_neuron_limb_by_seperated_network(neuron_obj,
             else:
                 neuron_obj_cp.preprocessed_data[attr_upd][l_i] = limb_data[attr_upd]
 
-    
+    for sm_d in neuron_obj_cp.preprocessed_data["soma_to_piece_connectivity"]:
+        neuron_obj_cp.preprocessed_data["soma_to_piece_connectivity"][sm_d] = list(np.unique(neuron_obj_cp.preprocessed_data["soma_to_piece_connectivity"][sm_d]))
     
     
     return neuron_obj_cp
@@ -1101,6 +1127,7 @@ def split_neuron_limbs_by_suggestions(neuron_obj,
 
         split_neuron_obj = pru.split_neuron_limb_by_seperated_network(split_neuron_obj,conn_comp,
                              curr_limb_idx = curr_limb_idx,
+                                                error_on_multile_starting_nodes=False,
                                                 verbose=verbose)
         
     if plot_soma_limb_network:
@@ -1112,7 +1139,10 @@ def split_neuron_limbs_by_suggestions(neuron_obj,
 
 def split_disconnected_neuron(neuron_obj,
                               plot_seperated_neurons=False,
-                             verbose=False):
+                             verbose=False,
+                             save_original_mesh_idx=True,
+                             filter_away_remaining_error_limbs=True,
+                             return_n_errored_limbs=True):
     """
     Purpose: If a neuron object has already been disconnected
     at the limbs, this function will then split the neuron object
@@ -1132,7 +1162,10 @@ def split_disconnected_neuron(neuron_obj,
     curr_error_limbs = nru.error_limbs(split_neuron_obj)
 
     if len(curr_error_limbs) > 0:
-        raise Exception(f"There were still error limbs before trying the neuron object split: error limbs = {curr_error_limbs}")
+        if not filter_away_remaining_error_limbs:
+            raise Exception(f"There were still error limbs before trying the neuron object split: error limbs = {curr_error_limbs}")
+        else:
+            print(f"Still remaining error limbs ({curr_error_limbs}), but will filter them away")
     
     
     
@@ -1144,6 +1177,7 @@ def split_disconnected_neuron(neuron_obj,
     
     
     neuron_obj_list = []
+    neuron_obj_errored_limbs = []
 
     for curr_soma_idx,curr_soma_name in enumerate(soma_names):
         print(f"\n\n------ Working on Soma {curr_soma_idx} -------")
@@ -1165,9 +1199,25 @@ def split_disconnected_neuron(neuron_obj,
         limb_neighbors = [int(k) for k in limb_neighbors]
 
         soma_to_piece_connectivity = neuron_cp.preprocessed_data["soma_to_piece_connectivity"][curr_soma_idx]
+        
+        
 
         if len(np.intersect1d(limb_neighbors,soma_to_piece_connectivity)) < len(soma_to_piece_connectivity):
             raise Exception(f"piece connectivity ({soma_to_piece_connectivity}) not match limb neighbors ({limb_neighbors})")
+            
+        if filter_away_remaining_error_limbs:# and len(curr_error_limbs)>0:
+            print(f"limb_neighbors BEFORE error limbs removed = {limb_neighbors}")
+            original_len = len(limb_neighbors)
+            
+            limb_neighbors = np.setdiff1d(limb_neighbors,curr_error_limbs)
+            print(f"limb_neighbors AFTER error limbs removed = {limb_neighbors}")
+            
+            n_limbs_errored = original_len - len(limb_neighbors)
+        else:
+            n_limbs_errored = 0
+            
+            
+        neuron_obj_errored_limbs.append(n_limbs_errored)
 
         curr_soma_to_piece_connectivity = {0:np.arange(0,len(limb_neighbors))}
 
@@ -1276,19 +1326,27 @@ def split_disconnected_neuron(neuron_obj,
 
 
 
-
-        whole_branch_mesh = tu.combine_meshes(np.concatenate([[kv["branch_mesh"] for k,kv in jv.items()] for j,jv in curr_limb_correspondence.items()]))
-
+        meshes_to_concat = [[kv["branch_mesh"] for k,kv in jv.items()] for j,jv in curr_limb_correspondence.items()]
         
-        floating_indexes = tu.mesh_pieces_connectivity(neuron_obj.mesh,
+        if len(meshes_to_concat) > 0:
+            whole_branch_mesh = tu.combine_meshes(np.concatenate(meshes_to_concat))
+            
+            floating_indexes = tu.mesh_pieces_connectivity(neuron_obj.mesh,
                          whole_branch_mesh,
                         periphery_pieces=neuron_obj.non_soma_touching_meshes,
                            print_flag=False)
         
-        local_floating_meshes = list(np.array(neuron_obj.non_soma_touching_meshes)[floating_indexes])
+            local_floating_meshes = list(np.array(neuron_obj.non_soma_touching_meshes)[floating_indexes])
+
+            print(f"local_floating_meshes = {local_floating_meshes}")
+            whole_mesh  = whole_mesh + local_floating_meshes
+        else:
+            local_floating_meshes = []
+            whole_mesh  = whole_mesh + local_floating_meshes
+            
+
         
-        print(f"local_floating_meshes = {local_floating_meshes}")
-        whole_mesh  = whole_mesh + local_floating_meshes
+        
 
         #using all of the data to create new preprocessing info
         new_preprocessed_data = preprocessed_data= dict(
@@ -1331,7 +1389,12 @@ def split_disconnected_neuron(neuron_obj,
         description = f"{neuron_cp.description}_soma_{curr_soma_idx}_split"
 
 
-
+        #---------- 1/24: Will save off the original mesh idx so can use the old mesh file to load -------- #
+        if save_original_mesh_idx:
+            original_mesh_idx = tu.original_mesh_faces_map(neuron_obj.mesh,whole_mesh,
+                          exact_match=True)
+        else:
+            original_mesh_idx = None
 
 
         # new neuron object:
@@ -1342,6 +1405,7 @@ def split_disconnected_neuron(neuron_obj,
                  preprocessed_data=new_preprocessed_data,
                  limb_to_branch_objects=limb_to_branch_objects,
                  widths_to_calculate=[],
+                 original_mesh_idx=original_mesh_idx,
                 suppress_output=not verbose)
 
 
@@ -1358,8 +1422,10 @@ def split_disconnected_neuron(neuron_obj,
                                  visualize_type=["mesh","skeleton"],
                                  limb_branch_dict="all")
 
-
-    return neuron_obj_list
+    if return_n_errored_limbs:
+        return neuron_obj_list,neuron_obj_errored_limbs
+    else:
+        return neuron_obj_list
 
 
 
@@ -1368,6 +1434,7 @@ def split_neuron(neuron_obj,
                  plot_soma_limb_network=False,
                  plot_seperated_neurons=False,
                 verbose=False,
+                 filter_away_remaining_error_limbs=True,
                 **kwargs):
     """
     Purpose: To take in a whole neuron that could have any number of somas
@@ -1383,11 +1450,16 @@ def split_neuron(neuron_obj,
     
     neuron_obj = copy.deepcopy(neuron_obj)
     
+    # ---------- 1/22 Addition that cleans the concept network info ------------ #
+    nru.clean_neuron_all_concept_network_data(neuron_obj)
+    
     #1) Get all of the split suggestions
     if limb_results is None:
         limb_results = pru.multi_soma_split_suggestions(neuron_obj,
                                                    verbose = verbose,
                                                        **kwargs)
+    else:
+        print("using precomputed split suggestions")
     
     #2) Split all of the limbs that need splitting
     split_neuron_obj = pru.split_neuron_limbs_by_suggestions(neuron_obj,
@@ -1396,18 +1468,28 @@ def split_neuron(neuron_obj,
                                 verbose=verbose)
     
     
-    #2b) Check that all the splits occured
-    curr_error_limbs = nru.error_limbs(split_neuron_obj)
+    
+    if not filter_away_remaining_error_limbs:
+        curr_error_limbs = nru.error_limbs(split_neuron_obj)
 
-    if len(curr_error_limbs) > 0:
-        raise Exception(f"There were still error limbs before trying the neuron object split: error limbs = {curr_error_limbs}")
+        if len(curr_error_limbs) > 0:
+            raise Exception(f"There were still error limbs before the splitting: {curr_error_limbs}")
+            
     
     #3) Once have split the limbs, split the neuron object into mutliple objects
-    neuron_list = pru.split_disconnected_neuron(split_neuron_obj,
-                         plot_seperated_neurons=True,
+    neuron_list,neuron_obj_errored_limbs = pru.split_disconnected_neuron(split_neuron_obj,
+                         plot_seperated_neurons=plot_seperated_neurons,
+                        filter_away_remaining_error_limbs=filter_away_remaining_error_limbs,
                          verbose =verbose)
-        
-    return neuron_list
+    
+    #2b) Check that all the splits occured
+    for i,n_obj in enumerate(neuron_list):
+        curr_error_limbs = nru.error_limbs(n_obj)
+
+        if len(curr_error_limbs) > 0:
+            raise Exception(f"There were still error limbs after splitting for neuron obj {i}")
+
+    return neuron_list,neuron_obj_errored_limbs
 
 
 import numpy_utils as nu

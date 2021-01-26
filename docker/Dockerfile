@@ -87,6 +87,9 @@ RUN pip3 install --upgrade pip
 #the previous version was 1.9.0
 RUN pip3 install --upgrade meshparty  
 
+# ------- 1/25:
+RUN pip3 install graphviz
+
 
 ADD ./jupyter/run_jupyter_unix.sh /scripts/
 ADD ./jupyter/jupyter_notebook_config.py /root/.jupyter/

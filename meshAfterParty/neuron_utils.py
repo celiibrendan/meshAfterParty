@@ -1472,6 +1472,11 @@ def smaller_preprocessed_data(neuron_object,print_flag=False):
     if "soma_volume_ratios" not in double_soma_obj.preprocessed_data.keys():
         double_soma_obj.preprocessed_data["soma_volume_ratios"] = [double_soma_obj[ll].volume_ratio for ll in double_soma_obj.get_soma_node_names()]
         
+    if hasattr(double_soma_obj,"original_mesh_idx"):
+        original_mesh_idx=double_soma_obj.original_mesh_idx
+    else:
+        original_mesh_idx = None
+    
     compressed_dict = dict(
                           #saving the original number of faces and vertices to make sure reconstruciton doesn't happen with wrong mesh
                           original_mesh_n_faces = len(double_soma_obj.mesh.faces),
@@ -1505,7 +1510,10 @@ def smaller_preprocessed_data(neuron_object,print_flag=False):
                           computed_attribute_dict = computed_attribute_dict,
                           
                           #For concept network creation
-                          limb_network_stating_info = double_soma_obj.preprocessed_data["limb_network_stating_info"]
+                          limb_network_stating_info = double_soma_obj.preprocessed_data["limb_network_stating_info"],
+        
+                          #for storing the faces indexed into the original mesh
+                          original_mesh_idx=original_mesh_idx
         
         
                          
@@ -1530,6 +1538,7 @@ def save_compressed_neuron(neuron_object,output_folder,file_name="",return_file_
     output_path = Path(output_path)
     output_path.parents[0].mkdir(parents=True, exist_ok=True)
     
+    
     inhib_object_compressed_preprocessed_data = smaller_preprocessed_data(neuron_object,print_flag=True)
     compressed_size = su.compressed_pickle(inhib_object_compressed_preprocessed_data,output_path,return_size=True)
     
@@ -1548,7 +1557,10 @@ import time
 import preprocessing_vp2 as pre
 def decompress_neuron(filepath,original_mesh,
                      suppress_output=True,
-                     debug_time = False):
+                     debug_time = False,
+                      using_original_mesh=True,
+                     #error_on_original_mesh_faces_vertices_mismatch=False
+                     ):
     if suppress_output:
         print("Decompressing Neuron in minimal output mode...please wait")
     
@@ -1587,17 +1599,40 @@ def decompress_neuron(filepath,original_mesh,
             decompr_time = time.time()
             
 
+        # ------- 1/23 Addition: where using a saved mesh face idx to index into an original mesh ------#
+        original_mesh_idx = loaded_compression.get("original_mesh_idx",None) 
+        
+        if using_original_mesh:
+            if original_mesh_idx is None:
+                print("The flag for using original mesh was set but no original_mesh_faces_idx stored in compressed data")
+            else:
+                print(f"Original mesh BEFORE using original_mesh_idx = {original_mesh}")
+                original_mesh = original_mesh.submesh([original_mesh_idx],append=True,repair=False)
+                print(f"Original mesh AFTER using original_mesh_idx = {original_mesh}")
+            
+            
+        error_on_original_mesh_faces_vertices_mismatch=False
+        
         if len(original_mesh.faces) != loaded_compression["original_mesh_n_faces"]:
-            raise Exception(f"Number of faces in mesh used for compression ({loaded_compression['original_mesh_n_faces']})"
+            warning_string = (f"Number of faces in mesh used for compression ({loaded_compression['original_mesh_n_faces']})"
                             f" does not match the number of faces in mesh passed to decompress_neuron function "
                             f"({len(original_mesh.faces)})")
+            if error_on_original_mesh_faces_vertices_mismatch:
+                raise Exception(warning_string)
+            else:
+                print(warning_string)
         else:
             print("Passed faces original mesh check")
 
         if len(original_mesh.vertices) != loaded_compression["original_mesh_n_vertices"]:
-            raise Exception(f"Number of vertices in mesh used for compression ({loaded_compression['original_mesh_n_vertices']})"
+            warning_string = (f"Number of vertices in mesh used for compression ({loaded_compression['original_mesh_n_vertices']})"
                             f" does not match the number of vertices in mesh passed to decompress_neuron function "
                             f"({len(original_mesh.vertices)})")
+            
+            if error_on_original_mesh_faces_vertices_mismatch:
+                raise Exception(warning_string)
+            else:
+                print(warning_string)
         else:
             print("Passed vertices original mesh check")
             
@@ -1817,8 +1852,8 @@ def decompress_neuron(filepath,original_mesh,
                      computed_attribute_dict = computed_attribute_dict,
                      suppress_output=suppress_output,
                                             calculate_spines=False,
-                                            
-                                           widths_to_calculate=[])
+                                           widths_to_calculate=[],
+                                           original_mesh_idx=original_mesh_idx)
         if debug_time:
             print(f"Sending to Neuron Object = {time.time() - decompr_time}")
             decompr_time = time.time()
@@ -3343,7 +3378,7 @@ def get_matching_concept_network_data(limb_obj,soma_idx=None,soma_group_idx=None
     
     
     
-# ----------- 1/15: For Automatic Axon Finding ---------------#
+# ----------- 1/15: For Automatic Axon and Apical Classification ---------------#
 import numpy_utils as nu
 def add_branch_label(neuron_obj,limb_branch_dict,
                     labels):
@@ -3539,10 +3574,286 @@ def skeletal_distance_from_soma(curr_limb,
     return return_dict
     
 
+def find_branch_with_specific_coordinate(limb_obj,
+                                        coordinates):
+    """
+    Purpose: To find all branch idxs whos skeleton contains a certain coordinate
     
+    """
+    
+    coordinates = np.array(coordinates).reshape(-1,3)
+    
+    network_branches = [k.skeleton for k in limb_obj]
+    
+    final_branch_idxs = []
+    for e in coordinates:
+        curr_branch_idx = sk.find_branch_skeleton_with_specific_coordinate(network_branches,e)
+        if len(curr_branch_idx) > 0:
+            final_branch_idxs.append(curr_branch_idx)
+    
+    if len(final_branch_idxs) > 0:
+        final_branch_idxs = np.concatenate(final_branch_idxs)
+    
+    return final_branch_idxs
+
+
+
+def neuron_spine_density(neuron_obj,
+                        lower_width_bound = 140,
+                        upper_width_bound = 520,#380,
+                        spine_threshold = 2,
+                        skeletal_distance_threshold = 110000,#30000,
+                        skeletal_length_threshold = 15000,#10000
+                        verbose=False,
+                        plot_candidate_branches=False,
+                        return_branch_processed_info=True,
+                        **kwargs):
+    """
+    Purpose: To Calculate the spine density used to classify
+    a neuron as one of the following categories based on the spine
+    density of high interest branches
+    
+    1) no_spine
+    2) sparsely_spine
+    3) densely_spine
+    
+    
+    """
+    curr_neuron_obj= neuron_obj
+    
+    
+    
+    
+    if plot_candidate_branches:
+        return_dataframe=False
+        close_limb_branch_dict = ns.query_neuron(curr_neuron_obj,
+                                            functions_list=["skeletal_distance_from_soma_excluding_node","no_spine_median_mesh_center",
+                                                            "n_spines","spine_density","skeletal_length"],
+                                            query=(f"(skeletal_distance_from_soma_excluding_node<{skeletal_distance_threshold})"
+                                                   f" and (no_spine_median_mesh_center > {lower_width_bound})"
+                                                   f" and (no_spine_median_mesh_center < {upper_width_bound})"
+                                                  f" and (n_spines > {spine_threshold})"
+                                                   f" and skeletal_length > {skeletal_length_threshold} "
+                                                  ),
+                                             return_dataframe=return_dataframe
+
+
+                                          )
+        
+        nviz.visualize_neuron(curr_neuron_obj,
+                              visualize_type=["mesh"],
+                             limb_branch_dict=close_limb_branch_dict,
+                              mesh_color="red",
+                              mesh_whole_neuron=True)
+        
+        
+    
+    
+    return_dataframe = True
+    close_limb_branch_dict = ns.query_neuron(curr_neuron_obj,
+                                            functions_list=["skeletal_distance_from_soma_excluding_node","no_spine_median_mesh_center",
+                                                            "n_spines","spine_density","skeletal_length"],
+                                            query=(f"(skeletal_distance_from_soma_excluding_node<{skeletal_distance_threshold})"
+                                                   f" and (no_spine_median_mesh_center > {lower_width_bound})"
+                                                   f" and (no_spine_median_mesh_center < {upper_width_bound})"
+                                                  f" and (n_spines > {spine_threshold})"
+                                                   f" and skeletal_length > {skeletal_length_threshold} "
+                                                  ),
+                                             return_dataframe=return_dataframe
+
+
+                                          )
+    
+    total_branches_in_search_radius = ns.query_neuron(curr_neuron_obj,
+                                            functions_list=["skeletal_distance_from_soma_excluding_node","skeletal_length"],
+                                            query=(f"(skeletal_distance_from_soma_excluding_node<{skeletal_distance_threshold})"
+                                                  ),
+                                             return_dataframe=return_dataframe
+
+
+                                          )
+    
+    
+    # ---- 1/24: Calculating the skeletal length of the viable branches --- #
+    total_skeletal_length_in_search_radius = np.sum(total_branches_in_search_radius["skeletal_length"].to_numpy())
+    processed_skeletal_length = np.sum(close_limb_branch_dict["skeletal_length"].to_numpy())
+
+    if len(close_limb_branch_dict)>0:
+        median_spine_density = np.median(close_limb_branch_dict["spine_density"].to_numpy())
+    else:
+        median_spine_density = 0
+        
+    if verbose:
+        print(f'median spine density = {median_spine_density}')
+        print(f"Number of branches = {len(close_limb_branch_dict)}")
+        print(f"Number of branches in radius = {len(total_branches_in_search_radius)}")
+        print(f"processed_skeletal_length = {processed_skeletal_length}")
+        print(f"total_skeletal_length_in_search_radius = {total_skeletal_length_in_search_radius}")
+        
+        
+    if return_branch_processed_info:
+        return (median_spine_density,
+                len(close_limb_branch_dict),processed_skeletal_length,
+                len(total_branches_in_search_radius),total_skeletal_length_in_search_radius)
+    else:
+        return median_spine_density
+    
+def all_concept_network_data_to_limb_network_stating_info(all_concept_network_data):
+    """
+    Purpose: Will conver the concept network data list of dictionaries into a 
+    the dictionary representation of only the limb touching vertices and
+    endpoints of the limb_network_stating_info in the preprocessed data
+    
+    Pseudocode: 
+    Iterate through all of the network dicts and store as
+    soma--> soma_group_idx --> dict(touching_verts,
+                                    endpoint)
+                                    
+    stored in the concept network as 
+    touching_soma_vertices
+    starting_coordinate
+    
+    """
+    limb_network = dict()
+    for k in all_concept_network_data:
+        soma_idx = k["starting_soma"]
+        soma_group_idx = k["soma_group_idx"]
+        
+        if soma_idx not in limb_network.keys():
+            limb_network[soma_idx] = dict()
+            
+        limb_network[soma_idx][soma_group_idx] = dict(touching_verts=k["touching_soma_vertices"],
+                                                     endpoint = k["starting_coordinate"])
+        
+    return limb_network
     
 
+def clean_all_concept_network_data(all_concept_network_data,
+                                  verbose=False):
     
+    """
+    Purpose: To make sure that there are
+    no duplicate entries of that starting nodes
+    and either to combine the soma touching points
+    or just keep the largest one
+
+    Pseudocode: 
+    1) Start with an empty dictionary
+    For all the dictionaries:
+    2)  store the result
+    indexed by starting soma and starting node
+    3) If an entry already existent --> then either add the soma touching
+    vertices (and unique) to the list or replace it if longer
+
+    4) Turn the one dictionary into a list of dictionaries
+    like the all_concept_network_data attribute
+
+    5) Replace the all_concept_network_data
+
+
+    """
+
+    new_network_data = dict()
+
+    for n_dict in all_concept_network_data:
+        starting_soma = n_dict["starting_soma"]
+        starting_node = n_dict["starting_node"]
+
+        if starting_soma not in new_network_data.keys():
+            new_network_data[starting_soma] = dict()
+
+        if starting_node in new_network_data[starting_soma].keys():
+            if (len(new_network_data[starting_soma][starting_node]["touching_soma_vertices"]) < 
+                len(n_dict["touching_soma_vertices"])):
+                if verbose:
+                    print(f"Replacing the Soma_{starting_soma}_Node_{starting_node} dictionary")
+                new_network_data[starting_soma][starting_node] = n_dict
+            else:
+                if verbose:
+                    print(f"Skipping the Soma_{starting_soma}_Node_{starting_node} dictionary because smaller")
+        else:
+            new_network_data[starting_soma][starting_node] = n_dict
+
+    #4) Turn the one dictionary into a list of dictionaries
+    #like the all_concept_network_data attribute
+
+    new_network_list = []
+    for soma_idx,soma_info in new_network_data.items():
+        for idx,(starting_node,node_info) in enumerate(soma_info.items()):
+            node_info["soma_group_idx"] = idx
+            new_network_list.append(node_info)
+
+    return new_network_list
+
+
+
+def clean_neuron_all_concept_network_data(neuron_obj,verbose=False):
+    """
+    Will go through and clean all of the concept network data
+    in all the limbs of a Neuron
+    """
+    for j,curr_limb in enumerate(neuron_obj):
+        if verbose:
+            print(f"\n\n---- Working on Limb {j} ----")
+            
+            
+        cleaned_network = nru.clean_all_concept_network_data(curr_limb.all_concept_network_data,
+                                                                          verbose=verbose)
+        
+        if verbose:
+            print(f"cleaned_network = {cleaned_network}\n\n")
+        
+        curr_limb.all_concept_network_data = cleaned_network
+        
+        #setting the concept network
+        st_soma = curr_limb.all_concept_network_data[0]["starting_soma"]
+        st_node = curr_limb.all_concept_network_data[0]["starting_node"]
+        curr_limb.set_concept_network_directional(starting_soma=st_soma,
+                                                 starting_node=st_node)
+        
+        # --------- 1/24: Cleaning the preprocessed data as well -----------#
+        if verbose:
+            print(f"cleaned_network = {cleaned_network}")
+            
+        new_limb_network = nru.all_concept_network_data_to_limb_network_stating_info(cleaned_network)
+        
+        if verbose:
+            print(f"\n---------\nnew_limb_network = {new_limb_network}\n---------\n")
+        neuron_obj.preprocessed_data["limb_network_stating_info"][j] = new_limb_network
+        
+        if verbose:
+            print(f"curr_limb.all_concept_network_data = {curr_limb.all_concept_network_data}\n\n")
+            
+#         neuron_obj[j] = curr_limb
+    
+#     return neuron_obj
+
+
+def limb_branch_dict_to_connected_components(neuron_obj,
+                                             limb_branch_dict,
+            use_concept_network_directional=False):
+    """
+    Purpose: To turn the limb branch dict into a
+    list of all the connected components described by the
+    limb branch dict
+    
+    """
+    
+    axon_connected_comps = []
+    for limb_name, axon_branches in limb_branch_dict.items():
+        
+        if use_concept_network_directional:
+            curr_network = neuron_obj[limb_name].concept_network_directional
+        else:
+            curr_network = neuron_obj[limb_name].concept_network
+            
+        axon_subgraph = curr_network.subgraph(axon_branches)
+        conn_comp = [(limb_name,np.array(list(k))) for k in nx.connected_components(axon_subgraph)]
+        axon_connected_comps += conn_comp
+
+    return axon_connected_comps
+        
+
 import neuron_utils as nru
 import neuron #package where can use the Branches class to help do branch skeleton analysis
 

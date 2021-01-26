@@ -1057,9 +1057,9 @@ class Limb:
         for branch_idx,curr_branch in enumerate(self):
             if branch_idx in list(attribute_dict.keys()):
                 if attribute_name == "spines":
-                    print(f"     Branch {branch_idx}")
+                    #print(f"     Branch {branch_idx}")
                     if not attribute_dict[branch_idx] is None:
-                        print(f"curr_branch.mesh = {curr_branch.mesh}")
+                        #print(f"curr_branch.mesh = {curr_branch.mesh}")
                         curr_branch.spines = [curr_branch.mesh.submesh([k],append=True,repair=False) for k in attribute_dict[branch_idx]]
                     else:
                         curr_branch.spines = None
@@ -1302,7 +1302,8 @@ class Soma:
     
     """
     
-    def __init__(self,mesh,mesh_face_idx=None,sdf=None,volume_ratio=None):
+    def __init__(self,mesh,mesh_face_idx=None,sdf=None,volume_ratio=None,
+                volume=None):
         #Accounting for the fact that could recieve soma object
         if str(type(mesh)) == str(Soma):
             #print("Recived Soma object so copying object")
@@ -1314,6 +1315,11 @@ class Soma:
             self.volume_ratio = dc(mesh.volume_ratio)
             self.side_length_ratios = dc(mesh.side_length_ratios)
             self.mesh_center = dc(mesh.mesh_center)
+            
+            try:
+                self._volume = dc(mesh._volume)
+            except:
+                self._volume = None
             
             return 
         
@@ -1330,6 +1336,20 @@ class Soma:
             self.volume_ratio = volume_ratio
         self.side_length_ratios = sm.side_length_ratios(self.mesh)
         self.mesh_center = tu.mesh_center_vertex_average(self.mesh)
+        self._volume = volume
+        
+        if volume is None:
+            self.volume
+        
+    @property
+    def volume(self,watertight_method="poisson"):
+        """
+        Will compute the volume of the soma
+        """
+        if self._volume is None:
+            self._volume = tu.mesh_volume(self.mesh,
+                                         watertight_method=watertight_method)
+        return self._volume 
         
     def __eq__(self,other):
         #print("inside equality function")
@@ -1562,11 +1582,12 @@ class Neuron:
     
     def set_attribute_dict(self,attribute_name,attribute_dict):
         for limb_idx,curr_limb in enumerate(self):
-            print(f"Working on Limb {limb_idx}:")
+            #print(f"Working on Limb {limb_idx}:")
             if limb_idx in list(attribute_dict.keys()):
                 curr_limb.set_attribute_dict(attribute_name,attribute_dict[limb_idx])
             else:
-                print(f"Limb {limb_idx} not in attribute dict so skipping")
+                pass
+                #print(f"Limb {limb_idx} not in attribute dict so skipping")
             
     def set_computed_attribute_data(self,computed_attribute_data,print_flag=False):
         start_time = time.time()
@@ -1718,6 +1739,7 @@ class Neuron:
                  
                  glia_faces=None,
                  nuclei_faces = None,
+                 original_mesh_idx = None,
                 ):
 #                  concept_network=None,
 #                  non_graph_meshes=dict(),
@@ -1762,6 +1784,11 @@ class Neuron:
                 else:
                     self.decomposition_type = None
                     
+                if hasattr(mesh,"original_mesh_idx"):
+                    self.original_mesh_idx = dc(mesh.original_mesh_idx)
+                else:
+                    self.original_mesh_idx = None
+                    
                 #in order to become an iterable
                 self._index = -1
                 
@@ -1776,6 +1803,7 @@ class Neuron:
             self._index = -1
 
             self.mesh = mesh
+            self.original_mesh_idx = original_mesh_idx
 
             if description is None:
                 description = ""
@@ -2040,7 +2068,9 @@ class Neuron:
             # printing what concept network looks like 
             print(f"self.n_limbs = {self.n_limbs}")
             
-            if self.n_limbs > 0:    
+            if self.n_limbs > 0:
+                
+                
                 if calculate_spines:
                     #check to see that spines don't already exist
                     print("7) Calculating the spines for the neuorn if do not already exist")
@@ -2050,6 +2080,9 @@ class Neuron:
 
                 for w in widths_to_calculate:
                     self.calculate_new_width(width_name=w)
+                    
+                # ----------- 1/25 Addition that cleans the concept networks ------- #
+                nru.clean_neuron_all_concept_network_data(self)
             else:
                 print("Skipping the width and spine calculation because no limbs")
                 
@@ -2085,11 +2118,11 @@ class Neuron:
     #------------------ some useful built in functions ------------------ #
     
     def __getitem__(self,key):
-        if type(key) == int:
+        if type(key) == int or type(key) == np.int64 or type(key) == np.int32:
             key = f"L{key}"
         return self.concept_network.nodes[key]["data"]
     def __setitem__(self,key,newvalue):
-        if type(key) == int:
+        if type(key) == int or type(key) == np.int64 or type(key) == np.int32:
             key = f"L{key}"
         self.concept_network.nodes[key]["data"] = newvalue
     def __len__(self):
@@ -2333,7 +2366,7 @@ class Neuron:
             return soma_neighbors
     
     # --------------------- For saving the neuron -------------------- #
-    def save_compressed_neuron(self,output_folder,file_name="",return_file_path=False,
+    def save_compressed_neuron(self,output_folder="./",file_name="",return_file_path=False,
                                export_mesh=False,
                               suppress_output=True):
         """
@@ -2646,8 +2679,8 @@ class Neuron:
                             spine_submesh_split_filtered = tu.filter_meshes_by_bounding_box_longest_side(spine_submesh_split_filtered,
                                                                                                      side_length_threshold=side_length_threshold)
                             if len(spine_submesh_split_filtered) < old_length:
-                                print(f"Removed {old_length - len(spine_submesh_split_filtered)} spines because of side length greater than {side_length_threshold}")
-                            
+                                #print(f"Removed {old_length - len(spine_submesh_split_filtered)} spines because of side length greater than {side_length_threshold}")
+                                pass
         #                 if limb_idx == "L0":
         #                     if branch_idx == 0:
         #                         print(f"spine_submesh_split_filtered = {spine_submesh_split_filtered}")

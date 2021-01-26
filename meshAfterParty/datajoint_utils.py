@@ -565,7 +565,8 @@ def plot_decimated_mesh_with_somas(seg_id,
                                    subtract_glia_nuclei=True,
                                   soma_color="red",
                                   glia_color = "brown",
-                                  nuclei_color = "black"):
+                                  nuclei_color = "black",
+                                  main_mesh_color = [0.,1.,0.,0.2]):
     """
     To visualize a decimated mesh with the somas
     """
@@ -608,6 +609,7 @@ def plot_decimated_mesh_with_somas(seg_id,
     print(f"curr_soma_meshes = {curr_soma_meshes}")
     print(f"other_meshes_to_plot = {other_meshes_to_plot}")
     nviz.plot_objects(main_mesh = dec_mesh,
+                      main_mesh_color = main_mesh_color,
                               meshes=curr_soma_meshes + other_meshes_to_plot,
                               meshes_colors=curr_colors)
     
@@ -620,7 +622,11 @@ def plot_errored_faces(segment_id,
                        neuron_obj=None,
                        return_obj=False,
                        valid_synapse_color = "yellow",
-                       error_color = "red",**kwargs):
+                       error_color = "red",
+                       mesh_alpha=1,
+                       main_mesh_color = [0.,1.,0.,0.2],
+                       **kwargs,
+                      ):
     """
     Function that will plot the neuron, the errored mesh part
     and the synapses if requested (distinguishing between errored and non-errored synapses)
@@ -663,9 +669,10 @@ def plot_errored_faces(segment_id,
     
     else:
         nviz.plot_objects(main_mesh=valid_mesh,
+                          main_mesh_color=main_mesh_color,
                  meshes=error_submesh,
                   meshes_colors=error_color,
-                 mesh_alpha=1,
+                 mesh_alpha=mesh_alpha,
                      **kwargs)
     
     
@@ -905,7 +912,11 @@ def create_suggested_splits_neuroglancer_spreadsheet(segment_ids=None,
     if return_dataframe:
         return allen_spreadsheet
     
-
+def get_exc_inh_classified_table():
+    classified_table = (minnie.BaylorManualCellType() &
+                        'nucleus_version=3' & 
+                        "(cell_type = 'excitatory') or  (cell_type = 'inhibitory')")
+    return classified_table
 
 #runs the configuration
 config_celii()
