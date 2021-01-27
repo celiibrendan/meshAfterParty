@@ -915,6 +915,9 @@ def split_neuron_limb_by_seperated_network(neuron_obj,
     curr_limb = neuron_obj[curr_limb_idx]
 
     for seg_graph_idx,sep_G in enumerate(seperated_graphs):
+        if len(sep_G) > 0:
+            pass
+        
         if verbose:
             print(f"\n\n----Working on seperate_graph {seg_graph_idx}----")
 

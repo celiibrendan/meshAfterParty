@@ -576,8 +576,9 @@ def plot_decimated_mesh_with_somas(seg_id,
     dec_mesh = get_decimated_mesh(seg_id)
     print(f"vertices = {len(dec_mesh.vertices)}, faces= = {len(dec_mesh.faces)}")
     curr_soma_meshes = list(get_seg_extracted_somas(seg_id))
+    curr_soma_meshes_filtered = [k for k in curr_soma_meshes if len(k.faces)>0]
     
-    curr_colors = [soma_color]*len(curr_soma_meshes)
+    curr_colors = [soma_color]*len(curr_soma_meshes_filtered)
     
     
     other_meshes_to_plot = []
@@ -604,14 +605,14 @@ def plot_decimated_mesh_with_somas(seg_id,
         
     if not plot_glia_nuclei:
         other_meshes_to_plot = []
-        curr_colors = [soma_color]*len(curr_soma_meshes)
+        curr_colors = [soma_color]*len(curr_soma_meshes_filtered)
 
     print(f"curr_colors = {curr_colors}")
-    print(f"curr_soma_meshes = {curr_soma_meshes}")
+    print(f"curr_soma_meshes_filtered = {curr_soma_meshes_filtered}")
     print(f"other_meshes_to_plot = {other_meshes_to_plot}")
     nviz.plot_objects(main_mesh = dec_mesh,
                       main_mesh_color = main_mesh_color,
-                              meshes=curr_soma_meshes + other_meshes_to_plot,
+                              meshes=curr_soma_meshes_filtered + other_meshes_to_plot,
                               meshes_colors=curr_colors)
     
 import trimesh_utils as tu
