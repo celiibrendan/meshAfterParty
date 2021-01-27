@@ -913,120 +913,140 @@ def split_neuron_limb_by_seperated_network(neuron_obj,
         
     new_limb_data = []
     curr_limb = neuron_obj[curr_limb_idx]
-
-    for seg_graph_idx,sep_G in enumerate(seperated_graphs):
-        if len(sep_G) > 0:
-            pass
-        
-        if verbose:
-            print(f"\n\n----Working on seperate_graph {seg_graph_idx}----")
-
-        curr_subgraph = list(sep_G)
-
-        #will store all of the relevant info in the 
-        sep_graph_data = dict()
-
-
-        fixed_node_objects = dict()
-
-        limb_face_idx_concat = []
-        face_counter = 0
-        old_node_to_new_node_mapping = dict()
-        for i,n_name in enumerate(curr_subgraph):
-            #store the mapping for the new names
-            old_node_to_new_node_mapping[n_name] = i
-
-            fixed_node_objects[i] = copy.deepcopy(curr_limb[n_name])
-            curr_mesh_face_idx = fixed_node_objects[i].mesh_face_idx
-            limb_face_idx_concat.append(curr_mesh_face_idx)
-            fixed_node_objects[i].mesh_face_idx = np.arange(face_counter,face_counter+len(curr_mesh_face_idx))
-            face_counter += len(curr_mesh_face_idx)
-
-
-        total_limb_face_idx = np.concatenate(limb_face_idx_concat)
-        new_limb_mesh = curr_limb.mesh.submesh([total_limb_face_idx],append=True,repair=False)
-
-
-        new_limb_mesh_face_idx = tu.original_mesh_faces_map(neuron_obj.mesh, new_limb_mesh,
-                                   matching=True,
-                                   print_flag=False)
-
-        #recovered_new_limb_mesh = neuron_obj.mesh.submesh([new_limb_mesh_face_idx],append=True,repair=False)
-        sep_graph_data["limb_meshes"] = new_limb_mesh
-
-        # ------- How to get the new concept network starting info --------- #
-
-        #get all of the starting dictionaries that match a node in the subgraph
-        curr_all_concept_network_data = [k for k in curr_limb.all_concept_network_data if k["starting_node"] in list(curr_subgraph)]
-        if len(curr_all_concept_network_data) > 1:
-            warning_string = f"There were more not exactly one starting dictinoary: {curr_all_concept_network_data} "
-            if error_on_multile_starting_nodes:
-                raise Exception(warning_string)
-            else:
-                print(warning_string)
-            
-            
-        limb_corresp_for_networks = dict([(i,dict(branch_skeleton=k.skeleton,
-                                                 width_from_skeleton=k.width,
-                                                 branch_mesh=k.mesh,
-                                                 branch_face_idx=k.mesh_face_idx)) for i,k in fixed_node_objects.items()])
-        
-        floating_flag = False
-        if len(curr_all_concept_network_data) == 0:
-            #pick a random endpoint to start from the skeleton
-            total_skeleton = sk.stack_skeletons([v["branch_skeleton"] for v in limb_corresp_for_networks.values()])
-            all_endpoints = sk.find_skeleton_endpoint_coordinates(total_skeleton)
-            
-            if verbose:
-                print(f"There was no starting information so doing to put dummy information and random starting endpoint = {all_endpoints[0]}")
-            curr_limb_network_stating_info = {-1:{-1:{"touching_verts":None,
-                                                     "endpoint":all_endpoints[0]}}}
-            floating_flag = True
-        else:
-            curr_all_concept_network_data[0]["soma_group_idx"] = 0
-            curr_limb_network_stating_info = nru.all_concept_network_data_to_dict(curr_all_concept_network_data)
-
-        #calculate the concept networks
-
-
-        sep_graph_data["limb_correspondence"] = limb_corresp_for_networks
-
-        sep_graph_data["limb_network_stating_info"] = curr_limb_network_stating_info
-        
-        #raise Exception("Checking on limb starting network info")
-
-        limb_to_soma_concept_networks = pre.calculate_limb_concept_networks(limb_corresp_for_networks,
-                                                                                        curr_limb_network_stating_info,
-                                                                                        run_concept_network_checks=False,
-                                                                            verbose=verbose
-                                                                                       )   
-
-        sep_graph_data["limb_concept_networks"] = limb_to_soma_concept_networks
-
-
-        # --------------- Making the new limb object -------------- #
-        limb_str_name = f"split_limb_from_limb_{curr_limb_idx}_part_{seg_graph_idx}"
-        if floating_flag:
-            limb_str_name += "_floating"
-            
-        new_labels = [limb_str_name]
-        
-        new_limb_obj = neuron.Limb(mesh=new_limb_mesh,
-                     curr_limb_correspondence=limb_corresp_for_networks,
-                     concept_network_dict=limb_to_soma_concept_networks,
-                     mesh_face_idx=new_limb_mesh_face_idx,
-                    labels=new_labels,
-                     branch_objects = fixed_node_objects,#this will have a dictionary mapping to the branch objects if provided
-                   )
-
-
-        sep_graph_data["limb_labels"] = new_labels
-        sep_graph_data["Limb_obj"] = new_limb_obj
-
+    
+    if len(seperated_graphs) == 0:
+        curr_labels = ["empty"]
+        sep_graph_data["Limb_obj"] = nru.empty_limb_object(labels=curr_labels)
+        sep_graph_data["limb_labels"] = curr_labels
+        sep_graph_data["limb_concept_networks"] = dict()
+        sep_graph_data["limb_network_stating_info"]=dict()
+        sep_graph_data["limb_meshes"] = tu.empty_mesh()
         new_limb_data.append(sep_graph_data)
-    
-    
-    
+    else:
+        for seg_graph_idx,sep_G in enumerate(seperated_graphs):
+
+            curr_subgraph = list(sep_G)
+
+            #will store all of the relevant info in the 
+            sep_graph_data = dict()
+
+            if len(curr_subgraph) == 0:
+                curr_labels = ["empty"]
+                sep_graph_data["Limb_obj"] = nru.empty_limb_object(labels=curr_labels)
+                sep_graph_data["limb_correspondence"] = dict()
+                sep_graph_data["limb_labels"] = curr_labels
+                sep_graph_data["limb_concept_networks"] = dict()
+                sep_graph_data["limb_network_stating_info"]=dict()
+                sep_graph_data["limb_meshes"] = tu.empty_mesh()
+                new_limb_data.append(sep_graph_data)
+                continue
+
+
+            if verbose:
+                print(f"\n\n----Working on seperate_graph {seg_graph_idx}----")
+
+
+
+
+            fixed_node_objects = dict()
+
+            limb_face_idx_concat = []
+            face_counter = 0
+            old_node_to_new_node_mapping = dict()
+            for i,n_name in enumerate(curr_subgraph):
+                #store the mapping for the new names
+                old_node_to_new_node_mapping[n_name] = i
+
+                fixed_node_objects[i] = copy.deepcopy(curr_limb[n_name])
+                curr_mesh_face_idx = fixed_node_objects[i].mesh_face_idx
+                limb_face_idx_concat.append(curr_mesh_face_idx)
+                fixed_node_objects[i].mesh_face_idx = np.arange(face_counter,face_counter+len(curr_mesh_face_idx))
+                face_counter += len(curr_mesh_face_idx)
+
+
+            total_limb_face_idx = np.concatenate(limb_face_idx_concat)
+            new_limb_mesh = curr_limb.mesh.submesh([total_limb_face_idx],append=True,repair=False)
+
+
+            new_limb_mesh_face_idx = tu.original_mesh_faces_map(neuron_obj.mesh, new_limb_mesh,
+                                       matching=True,
+                                       print_flag=False)
+
+            #recovered_new_limb_mesh = neuron_obj.mesh.submesh([new_limb_mesh_face_idx],append=True,repair=False)
+            sep_graph_data["limb_meshes"] = new_limb_mesh
+
+            # ------- How to get the new concept network starting info --------- #
+
+            #get all of the starting dictionaries that match a node in the subgraph
+            curr_all_concept_network_data = [k for k in curr_limb.all_concept_network_data if k["starting_node"] in list(curr_subgraph)]
+            if len(curr_all_concept_network_data) > 1:
+                warning_string = f"There were more not exactly one starting dictinoary: {curr_all_concept_network_data} "
+                if error_on_multile_starting_nodes:
+                    raise Exception(warning_string)
+                else:
+                    print(warning_string)
+
+
+            limb_corresp_for_networks = dict([(i,dict(branch_skeleton=k.skeleton,
+                                                     width_from_skeleton=k.width,
+                                                     branch_mesh=k.mesh,
+                                                     branch_face_idx=k.mesh_face_idx)) for i,k in fixed_node_objects.items()])
+
+            floating_flag = False
+            if len(curr_all_concept_network_data) == 0:
+                #pick a random endpoint to start from the skeleton
+                total_skeleton = sk.stack_skeletons([v["branch_skeleton"] for v in limb_corresp_for_networks.values()])
+                all_endpoints = sk.find_skeleton_endpoint_coordinates(total_skeleton)
+
+                if verbose:
+                    print(f"There was no starting information so doing to put dummy information and random starting endpoint = {all_endpoints[0]}")
+                curr_limb_network_stating_info = {-1:{-1:{"touching_verts":None,
+                                                         "endpoint":all_endpoints[0]}}}
+                floating_flag = True
+            else:
+                #curr_all_concept_network_data[0]["soma_group_idx"] = 0
+                curr_all_concept_network_data = nru.clean_all_concept_network_data(curr_all_concept_network_data)
+                curr_limb_network_stating_info = nru.all_concept_network_data_to_dict(curr_all_concept_network_data)
+
+            #calculate the concept networks
+
+
+            sep_graph_data["limb_correspondence"] = limb_corresp_for_networks
+
+            sep_graph_data["limb_network_stating_info"] = curr_limb_network_stating_info
+
+            #raise Exception("Checking on limb starting network info")
+
+            limb_to_soma_concept_networks = pre.calculate_limb_concept_networks(limb_corresp_for_networks,
+                                                                                            curr_limb_network_stating_info,
+                                                                                            run_concept_network_checks=False,
+                                                                                verbose=verbose
+                                                                                           )   
+
+            sep_graph_data["limb_concept_networks"] = limb_to_soma_concept_networks
+
+
+            # --------------- Making the new limb object -------------- #
+            limb_str_name = f"split_limb_from_limb_{curr_limb_idx}_part_{seg_graph_idx}"
+            if floating_flag:
+                limb_str_name += "_floating"
+
+            new_labels = [limb_str_name]
+
+            new_limb_obj = neuron.Limb(mesh=new_limb_mesh,
+                         curr_limb_correspondence=limb_corresp_for_networks,
+                         concept_network_dict=limb_to_soma_concept_networks,
+                         mesh_face_idx=new_limb_mesh_face_idx,
+                        labels=new_labels,
+                         branch_objects = fixed_node_objects,#this will have a dictionary mapping to the branch objects if provided
+                       )
+
+
+            sep_graph_data["limb_labels"] = new_labels
+            sep_graph_data["Limb_obj"] = new_limb_obj
+
+            new_limb_data.append(sep_graph_data)
+
     
     
     # Phase 2: ------------- Adjusting the existing neuron object --------------- #
@@ -2113,6 +2133,111 @@ def split_suggestions_datajoint_dicts_to_neuroglancer_dataframe(split_suggestion
 
 
 # ----------------- 1/26: Final Proofreading Rules splitting ------------#
+
+import copy
+import networkx as nx
+
+
+def delete_branches_from_limb(neuron_obj,
+                              branches_to_delete,
+                              limb_idx=None,
+                              limb_name=None,
+                              verbose=False,
+                                ):
+    """
+    Will delete branches from a certain limb
+    
+    
+    
+    """
+    if limb_idx is None:
+        limb_idx = int(limb_name[1:])
+    
+    if verbose:
+        print(f"---- Working on Limb {limb_idx} ----")
+        print(f"length of concept network BEFORE elimination = {len(neuron_obj[limb_idx].concept_network.nodes())} ")
+
+    #1) Remove the nodes in the limb branch dict
+    concept_graph = nx.Graph(neuron_obj[limb_name].concept_network)
+    concept_graph.remove_nodes_from(branches_to_delete)
+
+    if verbose:
+        print(f"length of concept network AFTER elimination = {len(concept_graph.nodes())} ")
+
+    split_neuron = pru.split_neuron_limb_by_seperated_network(neuron_obj,
+                                                             curr_limb_idx=limb_idx,
+                                                              seperate_networks = [list(concept_graph.nodes())]
+                                                             )
+    return split_neuron
+
+def delete_branches_from_neuron(neuron_obj,
+                                limb_branch_dict,
+                                plot_neuron_after_cancellation = True,
+                                plot_final_neuron = True,
+                                verbose = False,
+                               ):
+    
+
+    """
+    Purpose: To eliminate the error cells and downstream targets
+    given limb branch dict of nodes to eliminate
+
+    Pseudocode: 
+
+    For each limb in branch dict
+    1) Remove the nodes in the limb branch dict
+
+    2) Send the neuron to 
+       i) split_neuron_limbs_by_suggestions
+       ii) split_disconnected_neuron
+
+
+    If a limb is empty or has no more connetion to the
+    starting soma then it will be deleted in the end
+
+    """
+
+
+
+    if verbose:
+        print(f"Number of branches at beginning = {neuron_obj.n_branches} ")
+
+    #For each limb in branch dict
+    n_branches_at_start = int(neuron_obj.n_branches)
+
+    split_neuron = neuron_obj
+    for limb_name,branches_to_delete in limb_branch_dict.items():
+        
+        split_neuron = delete_branches_from_limb(split_neuron,
+                              branches_to_delete=branches_to_delete,
+                              limb_name=limb_name,
+                              verbose=verbose,
+                                )
+        
+
+    if plot_neuron_after_cancellation:
+        nviz.visualize_neuron(split_neuron,
+                             limb_branch_dict="all")
+
+    if verbose:
+        print(f"Number of branches after split_neuron_limb_by_seperated_network = {split_neuron.n_branches} ")
+
+    disconnected_neuron = pru.split_disconnected_neuron(split_neuron,return_n_errored_limbs=False)
+
+    if len(disconnected_neuron) != 1:
+        raise Exception(f"The disconnected neurons were not 1: {disconnected_neuron}")
+
+    return_neuron = disconnected_neuron[0]
+
+    if verbose: 
+        print(f"Number of branches after split_disconnectd neuron = {return_neuron} ")
+
+    if plot_final_neuron:
+        nviz.visualize_neuron(return_neuron,
+                             limb_branch_dict="all")
+    
+    return return_neuron
+    
 
 
 import proofreading_utils as pru

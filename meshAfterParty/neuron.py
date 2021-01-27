@@ -949,11 +949,6 @@ class Limb:
         self.labels=labels
         
         #All the stuff dealing with the concept graph
-        self.current_starting_coordinate=None
-        self.concept_network = None
-        self.all_concept_network_data = None
-        
-        #print(f"Inside the Limb constructor and concept_network_dict = {concept_network_dict}")
         
         if verbose:
             print(f"concept_network_dict = {concept_network_dict}")
@@ -971,10 +966,25 @@ class Limb:
             self.concept_network = concept_network_dict[self.current_starting_soma][self.current_soma_group_idx]
             
             self.all_concept_network_data = concept_network_data
+        else:
+            self.current_starting_coordinate = None
+            self.current_starting_node = None
+            self.current_starting_endpoints = None
+            self.current_starting_soma = None
+            self.current_touching_soma_vertices = None
+            self.current_soma_group_idx = None
+            self.concept_network = None
+            
+            self.all_concept_network_data = []
+            
         
         #get all of the starting coordinates an
         self.mesh_face_idx = mesh_face_idx
-        self.mesh_center = tu.mesh_center_vertex_average(self.mesh)
+        
+        if self.mesh is not None:
+            self.mesh_center = tu.mesh_center_vertex_average(self.mesh)
+        else:
+            self.mesh_center = None
         
         #just adding these in case could be useful in the future (what we computed for somas)
         #self.volume_ratio = sm.soma_volume_ratio(self.mesh)
@@ -1028,14 +1038,21 @@ class Limb:
         if debug_edges:
             print(f"self.deleted_edges = {self.deleted_edges}")
             print(f"self.created_edges = {self.created_edges}")
+            
+        if self.current_starting_coordinate is not None:
         
-        self.set_concept_network_edges_from_current_starting_data()
-        self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True,
-                                                                            suppress_disconnected_errors=suppress_disconnected_errors)
+            self.set_concept_network_edges_from_current_starting_data()
+            self.concept_network_directional = self.convert_concept_network_to_directional(no_cycles = True,
+                                                                                suppress_disconnected_errors=suppress_disconnected_errors)
+        else:
+            self.concept_network_directional = None
         
         if debug_edges:
             print(f"self.deleted_edges = {self.deleted_edges}")
             print(f"self.created_edges = {self.created_edges}")
+            
+            
+        
 
         
         

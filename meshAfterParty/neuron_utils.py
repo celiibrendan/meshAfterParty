@@ -2410,31 +2410,34 @@ def same_soma_multi_touching_limbs(neuron_obj,return_n_touches=False):
 
     touch_dict = dict()
     for curr_limb_idx, curr_limb in enumerate(neuron_obj):
-        touching_somas = [k["starting_soma"] for k in curr_limb.all_concept_network_data]
-        soma_mapping = gu.invert_mapping(touching_somas)
+        if len(curr_limb.all_concept_network_data) > 0:
+            touching_somas = [k["starting_soma"] for k in curr_limb.all_concept_network_data]
+            soma_mapping = gu.invert_mapping(touching_somas)
 
-        for soma_idx,touch_idxs in soma_mapping.items():
-            if len(touch_idxs) > 1:
-                if curr_limb_idx not in touch_dict.keys():
-                    touch_dict[curr_limb_idx] = dict()
-            
-                same_soma_multi_touch_limbs.append(curr_limb_idx)
-                touch_dict[curr_limb_idx][soma_idx] = len(touch_idxs)
-                break
+            for soma_idx,touch_idxs in soma_mapping.items():
+                if len(touch_idxs) > 1:
+                    if curr_limb_idx not in touch_dict.keys():
+                        touch_dict[curr_limb_idx] = dict()
+
+                    same_soma_multi_touch_limbs.append(curr_limb_idx)
+                    touch_dict[curr_limb_idx][soma_idx] = len(touch_idxs)
+                    break
                 
     if return_n_touches:
         return touch_dict
     else:
         return np.array(same_soma_multi_touch_limbs)
-                
+                     
+
 def multi_soma_touching_limbs(neuron_obj):
     multi_soma_touch_limbs = []
 
     for curr_limb_idx, curr_limb in enumerate(neuron_obj):
-        touching_somas = [k["starting_soma"] for k in curr_limb.all_concept_network_data]
-        soma_mapping = gu.invert_mapping(touching_somas)
-        if len(soma_mapping.keys()) > 1:
-            multi_soma_touch_limbs.append(curr_limb_idx)
+        if len(curr_limb.all_concept_network_data) > 0:
+            touching_somas = [k["starting_soma"] for k in curr_limb.all_concept_network_data]
+            soma_mapping = gu.invert_mapping(touching_somas)
+            if len(soma_mapping.keys()) > 1:
+                multi_soma_touch_limbs.append(curr_limb_idx)
 
     return np.array(multi_soma_touch_limbs)
 
@@ -3853,6 +3856,14 @@ def limb_branch_dict_to_connected_components(neuron_obj,
 
     return axon_connected_comps
         
+def empty_limb_object(labels=["empty"]):
+    curr_limb = neuron.Limb(mesh=None,
+                        curr_limb_correspondence=dict(),
+                         concept_network_dict=dict(),
+                        labels=labels)
+    curr_limb.concept_network = nx.Graph()
+    curr_limb.concept_network_directional = nx.DiGraph()
+    return curr_limb
 
 import neuron_utils as nru
 import neuron #package where can use the Branches class to help do branch skeleton analysis

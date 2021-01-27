@@ -851,7 +851,9 @@ def download_and_insert_allen_meshes(segment_ids,n_threads=1,
 # ----------- 1/12/21: Generating Neuroglancer Link reports-----------------------------------#
 import numpy_utils as nu
 import proofreading_utils as pru
-def create_suggested_splits_neuroglancer_spreadsheet(segment_ids=None,
+def create_suggested_splits_neuroglancer_spreadsheet(base_table=minnie.DecompositionSplit() & dict(split_index=0),
+                                                    segment_ids=None,
+                                                     table_to_restrict=None,
     output_type="local", #other option is posting to the server
     output_filepath = None,
     output_folder = "./",
@@ -871,17 +873,19 @@ def create_suggested_splits_neuroglancer_spreadsheet(segment_ids=None,
     4) Export the dataframe to the specified location (default local directory)
     """
 
-    if segment_ids is None:
-        segment_ids = minnie.NeuronSplitSuggestions.fetch("segment_id")
+#     if segment_ids is None:
+#         segment_ids = minnie.NeuronSplitSuggestions.fetch("segment_id")
     
-    if segment_ids is int:
+    if segment_ids is not None and segment_ids is int:
         segment_ids = [segment_ids]
         
     #1) Get the segment ids you want to pull (if none specified then assume whole table)
-    if len(segment_ids) == 0:
-        curr_table = minnie.NeuronSplitSuggestions()
-    else:
-        curr_table = minnie.NeuronSplitSuggestions() & [dict(segment_id=k) for k in segment_ids]
+    curr_table = source_table
+    
+    if table_to_restrict is not None:
+        curr_table = curr_table & table_to_restrict
+    if segment_ids is not None:
+        curr_table = curr_table & [dict(segment_id=k) for k in segment_ids]
 
     if len(curr_table) == 0:
         raise Exception("The current table restriction is empty")

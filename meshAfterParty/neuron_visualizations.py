@@ -1047,6 +1047,10 @@ def visualize_neuron(
             
             for li in limbs_to_plot:
                 curr_limb_obj = current_neuron.concept_network.nodes[li]["data"]
+                
+                if "empty" in curr_limb_obj.labels or curr_limb_obj.concept_network is None:
+                    continue
+                    
                 #handle if "all" is the key
                 if ((configuration_dict["limb_branch_dict"][li] == "all") or 
                    ("all" in configuration_dict["limb_branch_dict"][li])):
