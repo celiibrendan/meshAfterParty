@@ -33,7 +33,7 @@ def get_best_cut_edge(curr_limb,
                       consider_path_neighbors_for_removal = True,
                       
                       #paraeters for high degree nodes
-                      high_degree_offset = 1500,
+                      high_degree_offset = 2500,#1500,
                       comparison_distance = 2000,
                       match_threshold = 35,
                       
@@ -137,40 +137,74 @@ def get_best_cut_edge(curr_limb,
     if verbose:
         print(f"Found {len(high_degree_endpoint_coordinates)} high degree coordinates to cut")
         
-    for curr_high_degree_coord in high_degree_endpoint_coordinates:
-        curr_high_degree_coord_list.append(curr_high_degree_coord)
-
-        if verbose:
-            print(f"Picking {curr_high_degree_coord} high degree coordinates to cut")
-            print(f"curr_limb.deleted_edges 4={curr_limb.deleted_edges}")
-        edges_to_delete_pre,edges_to_create_pre = ed.resolving_crossovers(curr_limb,
-                                                coordinate = curr_high_degree_coord,
-                                                offset=high_degree_offset,
-                                                comparison_distance=comparison_distance,
-                                                                          match_threshold =match_threshold,
-                                                verbose = verbose,
-                                                **kwargs
-                               )
-        print(f"curr_limb.deleted_edges 5 ={curr_limb.deleted_edges}")
         
-        #  --- 1/19: Add in a check that will see if divides up the path, if not then set to empty  --- #
-        
-        if len(edges_to_delete_pre)>0:
-            
-            cut_path_edges = np.vstack([cut_path[:-1],cut_path[1:]]).T
-            G = nx.from_edgelist(cut_path_edges)
-            G.remove_edges_from(edges_to_delete_pre)
-            
-            if len(G.nodes()) < len(cut_path):
-                print("Using the resolve crossover delete edges because will help seperate the path")
-                edges_to_delete = edges_to_delete_pre
-                edges_to_create = edges_to_create_pre
-                resolve_crossover_at_end = False
-                break
+    # -------------- 1/27: Will organize the high degree nodes by the average width of the branches they are touching --- #
+    
+    if len(high_degree_endpoint_coordinates) > 0:
+    
+        sk_branches = [br.skeleton for br in curr_limb]
 
+        high_degree_endpoint_coordinates_widths = []
+        for coordinate in high_degree_endpoint_coordinates:
+            coordinate_branches = np.sort(sk.find_branch_skeleton_with_specific_coordinate(sk_branches,coordinate))
+            if len(coordinate_branches) > 0:
+                mean_width = np.mean([curr_limb[b].width_new["no_spine_median_mesh_center"] for b in coordinate_branches])
             else:
-                print("NOT USING the resolve crossover delete edges because not help resolve the cut")
-                continue
+                mean_width = np.inf
+
+            high_degree_endpoint_coordinates_widths.append(mean_width)
+
+        high_degree_order = np.argsort(high_degree_endpoint_coordinates_widths)
+        
+        if verbose:
+            print(f"high_degree_endpoint_coordinates_widths = {high_degree_endpoint_coordinates_widths}")
+            print(f"high_degree_order = {high_degree_order}")
+
+
+        #for curr_high_degree_coord in high_degree_endpoint_coordinates:
+        for curr_high_degree_coord_idx in high_degree_order:
+            curr_high_degree_coord = high_degree_endpoint_coordinates[curr_high_degree_coord_idx]
+            
+            curr_high_degree_coord_list.append(curr_high_degree_coord)
+
+            if verbose:
+                print(f"Picking {curr_high_degree_coord} high degree coordinates to cut")
+                print(f"curr_limb.deleted_edges 4={curr_limb.deleted_edges}")
+            edges_to_delete_pre,edges_to_create_pre = ed.resolving_crossovers(curr_limb,
+                                                    coordinate = curr_high_degree_coord,
+                                                    offset=high_degree_offset,
+                                                    comparison_distance=comparison_distance,
+                                                                              match_threshold =match_threshold,
+                                                    verbose = verbose,
+                                                    **kwargs
+                                   )
+            print(f"curr_limb.deleted_edges 5 ={curr_limb.deleted_edges}")
+
+            #  --- 1/19: Add in a check that will see if divides up the path, if not then set to empty  --- #
+
+            if len(edges_to_delete_pre)>0:
+
+                cut_path_edges = np.vstack([cut_path[:-1],cut_path[1:]]).T
+                
+                
+                G = nx.from_edgelist(cut_path_edges)
+                print(f"nx.number_connected_components(G) before = {nx.number_connected_components(G)}")
+                G.remove_edges_from(edges_to_delete_pre)
+                
+                print(f"G.edges() = {G.edges()}")
+                print(f"G.nodes() = {G.nodes()}")
+                print(f"nx.number_connected_components(G) after = {nx.number_connected_components(G)}")
+
+                if (len(G.nodes()) < len(cut_path)) or nx.number_connected_components(G)>1:
+                    print("Using the resolve crossover delete edges because will help seperate the path")
+                    edges_to_delete = edges_to_delete_pre
+                    edges_to_create = edges_to_create_pre
+                    resolve_crossover_at_end = False
+                    break
+
+                else:
+                    print("NOT USING the resolve crossover delete edges because not help resolve the cut")
+                    continue
                 
             
         
