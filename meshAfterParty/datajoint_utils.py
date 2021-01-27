@@ -854,7 +854,7 @@ import proofreading_utils as pru
 def create_suggested_splits_neuroglancer_spreadsheet(source_table=None,
                                                     segment_ids=None,
                                                      table_to_restrict=None,
-    output_type="local", #other option is posting to the server
+    output_type="server", #other option is posting to the server
     output_filepath = None,
     output_folder = "./",
     output_filename = "allen_spreadsheet.csv",
