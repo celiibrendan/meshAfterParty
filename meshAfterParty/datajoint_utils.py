@@ -851,7 +851,7 @@ def download_and_insert_allen_meshes(segment_ids,n_threads=1,
 # ----------- 1/12/21: Generating Neuroglancer Link reports-----------------------------------#
 import numpy_utils as nu
 import proofreading_utils as pru
-def create_suggested_splits_neuroglancer_spreadsheet(base_table=minnie.DecompositionSplit() & dict(split_index=0),
+def create_suggested_splits_neuroglancer_spreadsheet(base_table=None,
                                                     segment_ids=None,
                                                      table_to_restrict=None,
     output_type="local", #other option is posting to the server
@@ -875,6 +875,9 @@ def create_suggested_splits_neuroglancer_spreadsheet(base_table=minnie.Decomposi
 
 #     if segment_ids is None:
 #         segment_ids = minnie.NeuronSplitSuggestions.fetch("segment_id")
+    
+    if base_table is None:
+        base_table = minnie.DecompositionSplit() & dict(split_index=0)
     
     if segment_ids is not None and segment_ids is int:
         segment_ids = [segment_ids]
