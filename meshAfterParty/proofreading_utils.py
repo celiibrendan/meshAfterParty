@@ -1207,7 +1207,8 @@ def split_disconnected_neuron(neuron_obj,
                              verbose=False,
                              save_original_mesh_idx=True,
                              filter_away_remaining_error_limbs=True,
-                             return_n_errored_limbs=True):
+                             return_errored_limbs_info=True):
+    verbose=True
     """
     Purpose: If a neuron object has already been disconnected
     at the limbs, this function will then split the neuron object
@@ -1224,6 +1225,9 @@ def split_disconnected_neuron(neuron_obj,
     
     
     #--------Part 1: check that all the limbs have beeen split so that there are no more error limbs
+    same_soma_error_limbs = split_neuron_obj.same_soma_multi_touching_limbs
+    multi_soma_error_limbs = split_neuron_obj.multi_soma_touching_limbs
+    
     curr_error_limbs = nru.error_limbs(split_neuron_obj)
 
     if len(curr_error_limbs) > 0:
@@ -1242,7 +1246,11 @@ def split_disconnected_neuron(neuron_obj,
     
     
     neuron_obj_list = []
-    neuron_obj_errored_limbs = []
+    neuron_obj_errored_limbs_area = []
+    neuron_obj_errored_limbs_skeletal_length = []
+    neuron_obj_n_multi_soma_errors = []
+    neuron_obj_n_same_soma_errors = []
+    
 
     for curr_soma_idx,curr_soma_name in enumerate(soma_names):
         print(f"\n\n------ Working on Soma {curr_soma_idx} -------")
@@ -1262,6 +1270,7 @@ def split_disconnected_neuron(neuron_obj,
         # getting the limb information and new soma connectivity
         limb_neighbors = np.sort(xu.get_neighbors(neuron_cp.concept_network,curr_soma_name)).astype("int")
         limb_neighbors = [int(k) for k in limb_neighbors]
+        print(f"limb_neighbors = {limb_neighbors}")
 
         soma_to_piece_connectivity = neuron_cp.preprocessed_data["soma_to_piece_connectivity"][curr_soma_idx]
         
@@ -1274,17 +1283,45 @@ def split_disconnected_neuron(neuron_obj,
             print(f"limb_neighbors BEFORE error limbs removed = {limb_neighbors}")
             original_len = len(limb_neighbors)
             
+            
+            # ---------- 1/28: More error limb information ----------------- #
+            curr_neuron_same_soma_error_limbs = list(np.intersect1d(limb_neighbors,same_soma_error_limbs))
+            curr_neuron_multi_soma_error_limbs = list(np.intersect1d(limb_neighbors,multi_soma_error_limbs))
+            
+            #print(f"curr_neuron_multi_soma_error_limbs = {curr_neuron_multi_soma_error_limbs}")
+            
+            curr_n_multi_soma_limbs_cancelled = len(curr_neuron_multi_soma_error_limbs)
+            curr_n_same_soma_limbs_cancelled = len(curr_neuron_same_soma_error_limbs)
+            
+            unique_error_limbs = np.unique(curr_neuron_same_soma_error_limbs + curr_neuron_multi_soma_error_limbs)
+            
+            curr_error_limbs_cancelled_area = [split_neuron_obj[k].area/len(np.unique(split_neuron_obj[k].touching_somas()))
+                                               for k in unique_error_limbs]
+            
+            curr_error_limbs_cancelled_skeletal_length = [split_neuron_obj[k].skeletal_length/len(np.unique(split_neuron_obj[k].touching_somas()))
+                                               for k in unique_error_limbs]
+            
+            
             limb_neighbors = np.setdiff1d(limb_neighbors,curr_error_limbs)
             print(f"limb_neighbors AFTER error limbs removed = {limb_neighbors}")
             
-            n_limbs_errored = original_len - len(limb_neighbors)
         else:
-            n_limbs_errored = 0
+            curr_n_multi_soma_limbs_cancelled = 0
+            curr_n_same_soma_limbs_cancelled = 0
+            curr_error_limbs_cancelled_area = []
             
+        if verbose:
+            print(f"curr_n_multi_soma_limbs_cancelled = {curr_n_multi_soma_limbs_cancelled}")
+            print(f"curr_n_same_soma_limbs_cancelled = {curr_n_same_soma_limbs_cancelled}")
+            print(f"n_errored_lims = {len(curr_error_limbs_cancelled_area)}")
+            print(f"curr_error_limbs_cancelled_area = {curr_error_limbs_cancelled_area}")
             
-        neuron_obj_errored_limbs.append(n_limbs_errored)
+        neuron_obj_errored_limbs_area.append(curr_error_limbs_cancelled_area)
+        neuron_obj_errored_limbs_skeletal_length.append(curr_error_limbs_cancelled_skeletal_length)
+        neuron_obj_n_multi_soma_errors.append(curr_n_multi_soma_limbs_cancelled)
+        neuron_obj_n_same_soma_errors.append(curr_n_same_soma_limbs_cancelled)
 
-        curr_soma_to_piece_connectivity = {0:np.arange(0,len(limb_neighbors))}
+        curr_soma_to_piece_connectivity = {0:list(np.arange(0,len(limb_neighbors)))}
 
 
 
@@ -1487,8 +1524,14 @@ def split_disconnected_neuron(neuron_obj,
                                  visualize_type=["mesh","skeleton"],
                                  limb_branch_dict="all")
 
-    if return_n_errored_limbs:
-        return neuron_obj_list,neuron_obj_errored_limbs
+            
+    
+    if return_errored_limbs_info:
+        return (neuron_obj_list,
+                neuron_obj_errored_limbs_area,
+                neuron_obj_errored_limbs_skeletal_length,
+                neuron_obj_n_multi_soma_errors,
+                neuron_obj_n_same_soma_errors)
     else:
         return neuron_obj_list
 
@@ -1500,6 +1543,7 @@ def split_neuron(neuron_obj,
                  plot_seperated_neurons=False,
                 verbose=False,
                  filter_away_remaining_error_limbs=True,
+                 return_error_info = False,
                 **kwargs):
     """
     Purpose: To take in a whole neuron that could have any number of somas
@@ -1542,7 +1586,11 @@ def split_neuron(neuron_obj,
             
     
     #3) Once have split the limbs, split the neuron object into mutliple objects
-    neuron_list,neuron_obj_errored_limbs = pru.split_disconnected_neuron(split_neuron_obj,
+    (neuron_list,
+     neuron_list_errored_limbs_area,
+     neuron_list_errored_limbs_skeletal_length,
+    neuron_list_n_multi_soma_errors,
+    neuron_list_n_same_soma_errors) = pru.split_disconnected_neuron(split_neuron_obj,
                          plot_seperated_neurons=plot_seperated_neurons,
                         filter_away_remaining_error_limbs=filter_away_remaining_error_limbs,
                          verbose =verbose)
@@ -1554,7 +1602,13 @@ def split_neuron(neuron_obj,
         if len(curr_error_limbs) > 0:
             raise Exception(f"There were still error limbs after splitting for neuron obj {i}")
 
-    return neuron_list,neuron_obj_errored_limbs
+    if return_error_info:
+        return (neuron_list,neuron_list_errored_limbs_area,
+                neuron_list_errored_limbs_skeletal_length,
+                                        neuron_list_n_multi_soma_errors,
+                                        neuron_list_n_same_soma_errors)
+    else:
+        return neuron_list
 
 
 import numpy_utils as nu
@@ -2192,15 +2246,17 @@ def delete_branches_from_limb(neuron_obj,
         print(f"length of concept network BEFORE elimination = {len(neuron_obj[limb_idx].concept_network.nodes())} ")
 
     #1) Remove the nodes in the limb branch dict
-    concept_graph = nx.Graph(neuron_obj[limb_name].concept_network)
+    concept_graph = nx.Graph(neuron_obj[limb_idx].concept_network)
     concept_graph.remove_nodes_from(branches_to_delete)
+    seperate_networks = [list(k) for k in nx.connected_components(concept_graph)]
 
     if verbose:
         print(f"length of concept network AFTER elimination = {len(concept_graph.nodes())} ")
 
     split_neuron = pru.split_neuron_limb_by_seperated_network(neuron_obj,
                                                              curr_limb_idx=limb_idx,
-                                                              seperate_networks = [list(concept_graph.nodes())]
+                                                              #seperate_networks = [list(concept_graph.nodes())]
+                                                              seperate_networks = seperate_networks
                                                              )
     return split_neuron
 
@@ -2256,7 +2312,7 @@ def delete_branches_from_neuron(neuron_obj,
     if verbose:
         print(f"Number of branches after split_neuron_limb_by_seperated_network = {split_neuron.n_branches} ")
 
-    disconnected_neuron = pru.split_disconnected_neuron(split_neuron,return_n_errored_limbs=False)
+    disconnected_neuron = pru.split_disconnected_neuron(split_neuron,return_errored_limbs_info=False)
 
     if len(disconnected_neuron) != 1:
         raise Exception(f"The disconnected neurons were not 1: {disconnected_neuron}")
@@ -2272,7 +2328,247 @@ def delete_branches_from_neuron(neuron_obj,
     
     return return_neuron
     
+    
+# ----------- 1/28 Proofreading Rules that will help filter a neuron object --------------- #
+import classification_utils as clu
 
+def filter_away_limb_branch_dict(neuron_obj,
+                                 limb_branch_dict,
+                                plot_limb_branch_filter_away=False,
+                                 plot_limb_branch_filter_with_disconnect_effect=False,
+                                return_error_info=True,
+                                 plot_final_neuron=False,
+                                 verbose=False
+                                ):
+    """
+    Purpose: To filter away a limb branch dict from a single neuron
+    
+    
+    """
+    
+    if plot_limb_branch_filter_away:
+        print("\n\nBranches Requested to Remove (without disconnect effect)")
+        nviz.plot_limb_branch_dict(neuron_obj,
+                             limb_branch_dict)
+
+
+    #2) Find the total branches that will be removed using the axon-error limb branch dict
+
+    removed_limb_branch_dict = nru.limb_branch_after_limb_branch_removal(neuron_obj=neuron_obj,
+                                          limb_branch_dict = limb_branch_dict,
+                                 return_removed_limb_branch = True,
+                                )
+
+    if verbose:
+        print(f"After disconnecte effect, removed_limb_branch_dict = {removed_limb_branch_dict}")
+        
+    if plot_limb_branch_filter_with_disconnect_effect:
+        print("\n\nBranches Requested to Remove (WITH disconnect effect)")
+        nviz.plot_limb_branch_dict(neuron_obj,
+                             removed_limb_branch_dict)
+    
+    #3) Calculate the total skeleton length and error faces area for what will be removed
+    if return_error_info:
+        total_area = nru.sum_feature_over_limb_branch_dict(neuron_obj,
+                                           limb_branch_dict=removed_limb_branch_dict,
+                                           feature="area")
+
+        total_sk_distance = nru.sum_feature_over_limb_branch_dict(neuron_obj,
+                                               limb_branch_dict=removed_limb_branch_dict,
+                                               feature="skeletal_length")/1000
+        
+        if verbose:
+            print(f"total_sk_distance = {total_sk_distance}, total_area = {total_area}")
+        
+    #4) Delete the brnaches from the neuron
+    new_neuron = pru.delete_branches_from_neuron(neuron_obj,
+                                    limb_branch_dict = removed_limb_branch_dict,
+                                    plot_neuron_after_cancellation = False,
+                                    plot_final_neuron = False,
+                                    verbose = False)
+
+    if plot_final_neuron:
+        nviz.visualize_neuron(new_neuron,
+                             visualize_type=["mesh"],
+                             mesh_whole_neuron=True)
+    
+    if return_error_info:
+        return new_neuron,total_area,total_sk_distance
+    else:
+        return new_neuron
+    
+    
+import copy
+
+import neuron_searching as ns
+def filter_away_axon_on_dendrite_merges(
+    neuron_obj,
+    perform_deepcopy = True,
+    
+    axon_merge_error_limb_branch_dict = None,
+    perform_axon_classification = False,
+    use_pre_existing_axon_error_labels = False,
+
+    return_error_info=True,
+
+    plot_limb_branch_filter_away = False,
+    plot_limb_branch_filter_with_disconnect_effect=False,
+    plot_final_neuron = False,
+
+    verbose = False):
+
+    """
+    Pseudocode: 
+
+    If error labels not given
+    1a) Apply axon classification if requested
+    1b) Use the pre-existing error labels if requested
+
+    2) Find the total branches that will be removed using the axon-error limb branch dict
+    3) Calculate the total skeleton length and error faces area for what will be removed
+    4) Delete the brnaches from the neuron
+    5) Return the neuron
+
+    Example: 
+    
+    filter_away_axon_on_dendrite_merges(
+    neuron_obj = neuron_obj_1,
+    perform_axon_classification = True,
+    return_error_info=True,
+    verbose = True)
+    """
+    if perform_deepcopy:
+        neuron_obj = copy.deepcopy(neuron_obj)
+
+    if axon_merge_error_limb_branch_dict is None:
+        if perform_axon_classification == False and use_pre_existing_axon_error_labels == False:
+            raise Exception("Need to set either perform_axon_classification or use_pre_existing_axon_error_labels because"
+                           f" axon_merge_error_limb_branch_dict is None")
+
+        if use_pre_existing_axon_error_labels:
+
+            if verbose:
+                print("using pre-existing labels for axon-error detection")
+
+            axon_merge_error_limb_branch_dict = ns.query_neuron_by_labels(neuron_obj,matching_labels=["axon-error"])
+        else:
+
+            if verbose:
+                print("performing axon classification for axon-error detection")
+
+
+            axon_limb_branch_dict,axon_merge_error_limb_branch_dict = clu.axon_classification(neuron_obj,
+                            return_axon_labels=True,
+                            return_error_labels=True,
+                           plot_axons=False,
+                           plot_axon_errors=False,
+                            verbose=True,
+                           )
+
+
+    new_neuron,total_area,total_sk_distance = filter_away_limb_branch_dict(neuron_obj,
+                                     limb_branch_dict=axon_merge_error_limb_branch_dict,
+                                    plot_limb_branch_filter_away=plot_limb_branch_filter_away,
+                                     plot_limb_branch_filter_with_disconnect_effect=plot_limb_branch_filter_with_disconnect_effect,
+                                    return_error_info=True,
+                                     plot_final_neuron=plot_final_neuron,
+                                     verbose=verbose
+                                    )
+    
+    if return_error_info:
+        return new_neuron,total_area,total_sk_distance
+    else:
+        return new_neuron
+
+#---------- Rule 2: Removing Dendritic Merges on Axon ------------- #
+
+import copy
+import neuron_searching as ns
+def filter_away_dendrite_on_axon_merges(
+    neuron_obj,
+    perform_deepcopy=True,
+    
+    limb_branch_dict_for_search=None,
+    use_pre_existing_axon_labels=False,
+    perform_axon_classification=False,
+    
+    dendritic_merge_on_axon_query=None,
+    dendrite_merge_skeletal_length_min = 20000,
+    dendrite_merge_width_min = 100,
+    dendritie_spine_density_min = 0.00015,
+    
+    plot_limb_branch_filter_away = False,
+    plot_limb_branch_filter_with_disconnect_effect = False,
+    return_error_info = True,
+    plot_final_neuron = False,
+    verbose=False,
+    ):
+    """
+    Purpose: To filter away the dendrite parts that are 
+    merged onto axon pieces
+    
+    if limb_branch_dict_for_search is None then 
+    just going to try and classify the axon and then 
+    going to search from there
+    
+    
+    """
+    
+    
+    if perform_deepcopy:
+        neuron_obj = copy.deepcopy(neuron_obj)
+
+    if limb_branch_dict_for_search is None:
+        if use_pre_existing_axon_labels == False and perform_axon_classification == False:
+            raise Exception("Need to set either perform_axon_classification or use_pre_existing_axon_error_labels because"
+                           f" limb_branch_dict_for_search is None")
+        
+        axon_limb_branch_dict,axon_error_limb_branch_dict = clu.axon_classification(neuron_obj,
+                                    return_error_labels=True,
+                                    plot_candidates=False,
+                                    plot_axons=False,
+                                    plot_axon_errors=False)
+
+
+    if dendritic_merge_on_axon_query is None:
+        dendritic_merge_on_axon_query = (f"labels_restriction == True and "
+                    f"(median_mesh_center > {dendrite_merge_width_min}) and  "
+                    f"(skeletal_length > {dendrite_merge_skeletal_length_min}) and "
+                    f"(spine_density) > {dendritie_spine_density_min}")
+
+
+    function_kwargs = dict(matching_labels=["axon"],
+                          not_matching_labels=["axon-like"])
+
+    dendritic_branches_merged_on_axon = ns.query_neuron(neuron_obj,
+                    functions_list=["labels_restriction","median_mesh_center",
+                                   "skeletal_length","spine_density"],
+                    query=dendritic_merge_on_axon_query,
+                    function_kwargs=function_kwargs)
+
+    if verbose:
+        print(f"dendritic_branches_merged_on_axon = {dendritic_branches_merged_on_axon}")
+        
+        
+    
+
+    (dendrite_stripped_neuron,
+    total_area_dendrite_stripped,
+     total_sk_distance_stripped) = pru.filter_away_limb_branch_dict(neuron_obj,
+                                         limb_branch_dict=dendritic_branches_merged_on_axon,
+                                        plot_limb_branch_filter_away=plot_limb_branch_filter_away,
+                                         plot_limb_branch_filter_with_disconnect_effect=plot_limb_branch_filter_with_disconnect_effect,
+                                        return_error_info=True,
+                                         plot_final_neuron=plot_final_neuron,
+                                         verbose=verbose
+                                        )
+    
+    if return_error_info:
+        return (dendrite_stripped_neuron,
+                total_area_dendrite_stripped,
+                 total_sk_distance_stripped)
+    else:
+        return dendrite_stripped_neuron
 
 import proofreading_utils as pru
     

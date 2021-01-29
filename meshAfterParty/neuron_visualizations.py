@@ -2076,7 +2076,8 @@ def plot_branches_with_spines(branches,plot_skeletons=True,
     if print_spine_info:
         for curr_branch in branches:
             print(f"width = {curr_branch.width_new}, \nn_spines = {curr_branch.n_spines}, spine_density = {curr_branch.spine_density}\n spine_volume_density = {curr_branch.spine_volume_density}"
-                 f"\nskeleton_length = {sk.calculate_skeleton_distance(curr_branch.skeleton)}")
+                 f"\nskeleton_length (in microns) = {sk.calculate_skeleton_distance(curr_branch.skeleton)/1000}\n"
+                 f"area = {curr_branch.area}")
             
     nviz.plot_objects(total_mesh,
                      meshes=total_spines,
@@ -2084,4 +2085,22 @@ def plot_branches_with_spines(branches,plot_skeletons=True,
                       mesh_alpha=1,
                      skeletons=skeletons)
     
+def plot_limb_branch_dict(neuron_obj,
+                         limb_branch_dict,
+                          visualize_type=["mesh"],
+                         color="red",
+                         alpha=1):
+    
+    nviz.visualize_neuron(neuron_obj,
+                          visualize_type=visualize_type,
+                         limb_branch_dict=limb_branch_dict,
+                         mesh_color=color,
+                          mesh_color_alpha=alpha,
+                         mesh_whole_neuron=True)
+    
+def visualize_neuron_lite(neuron_obj):
+    nviz.visualize_neuron(neuron_obj,
+                     visualize_type=["mesh"],
+                     mesh_whole_neuron=True)    
+
 import neuron_visualizations as nviz

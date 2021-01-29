@@ -1491,6 +1491,7 @@ def smaller_preprocessed_data(neuron_object,print_flag=False):
                           insignificant_limbs_face_idx=insignificant_limbs_face_idx,
                           not_processed_soma_containing_meshes_face_idx = not_processed_soma_containing_meshes_face_idx,
                           glia_faces = double_soma_obj.preprocessed_data["glia_faces"],
+                          labels = double_soma_obj.labels,
                           inside_pieces_face_idx=inside_pieces_face_idx,
                           non_soma_touching_meshes_face_idx=non_soma_touching_meshes_face_idx,
 
@@ -1696,6 +1697,16 @@ def decompress_neuron(filepath,original_mesh,
             curr_glia = np.array([])
         
         recovered_preprocessed_data["glia_faces"] = curr_glia
+        
+        
+        if "labels" in loaded_compression.keys():
+            curr_labels = loaded_compression["labels"]
+        else:
+            curr_labels = np.array([])
+        
+        recovered_preprocessed_data["labels"] = curr_labels
+        
+        
         
 
         recovered_preprocessed_data["non_soma_touching_meshes"] = [original_mesh.submesh([k],append=True,repair=False) for k in loaded_compression["non_soma_touching_meshes_face_idx"]]
@@ -3864,6 +3875,188 @@ def empty_limb_object(labels=["empty"]):
     curr_limb.concept_network = nx.Graph()
     curr_limb.concept_network_directional = nx.DiGraph()
     return curr_limb
+
+
+def sum_feature_over_limb_branch_dict(neuron_obj,
+                                       limb_branch_dict,
+                                       feature,
+                                     feature_function=None):
+    """
+    Purpose: To sum the value of some feature over the branches
+    specified by the limb branch dict
+    """
+    
+    feature_total = 0
+    
+    for limb_name, branch_list in limb_branch_dict.items():
+        for b in branch_list:
+            feature_value = getattr(neuron_obj[limb_name][b],feature)
+            if feature_function is not None:
+                feature_value = feature_function(feature_value)
+            feature_total += feature_value
+            
+    return feature_total
+
+def limb_branch_after_limb_branch_removal(neuron_obj,
+                                      limb_branch_dict,
+                             return_removed_limb_branch = False,
+                             verbose=False
+                            ):
+
+    """
+    Purpose: To take a branches that should be deleted from
+    different limbs in a limb branch dict then to determine the leftover branches
+    of each limb that are still connected to the starting node
+
+
+
+    Pseudocode:
+    For each starting node
+    1) Get the starting node
+    2) Get the directional conept network and turn it undirected
+    3) Find the total branches that will be deleted and kept
+    once the desired branches are removed (only keeping the ones 
+    still connected to the starting branch)
+    4) add the removed and kept branches to the running limb branch dict
+
+    """
+    
+
+    limb_branch_dict_kept = dict()
+    limb_branch_dict_removed = dict()
+
+    for limb_name in neuron_obj.get_limb_node_names():
+        limb_obj = neuron_obj[limb_name]
+        branch_names = limb_obj.get_branch_names()
+
+        if limb_name not in limb_branch_dict.keys():
+            limb_branch_dict_kept[limb_name] = branch_names
+            continue
+
+
+
+        nodes_to_remove = limb_branch_dict[limb_name]
+
+        G = nx.Graph(limb_obj.concept_network_directional)
+        nodes_to_keep = limb_obj.current_starting_node
+
+        kept_branches,removed_branches = xu.nodes_in_kept_groups_after_deletion(G,
+                                            nodes_to_keep,
+                                               nodes_to_remove=nodes_to_remove,
+                                            return_removed_nodes = True
+                                               ) 
+        if len(kept_branches)>0:
+            limb_branch_dict_kept[limb_name] = kept_branches
+        if len(removed_branches) > 0:
+            limb_branch_dict_removed[limb_name] = removed_branches
+
+    if return_removed_limb_branch:
+        return limb_branch_dict_removed
+    else:
+        return limb_branch_dict_kept
+
+
+import networkx as nx
+def branches_within_skeletal_distance(limb_obj,
+                                    start_branch,
+                                    max_distance_from_start,
+                                    verbose = False,
+                                    include_start_branch_length = False,
+                                    include_node_branch_length = False,
+                                    only_consider_downstream = False):
+
+    """
+    Purpose: to find nodes within a cetain skeletal distance of a certain 
+    node (can be restricted to only those downstream)
+
+    Pseudocode: 
+    1) Get the directed concept grpah
+    2) Get all of the downstream nodes of the node
+    3) convert directed concept graph into an undirected one
+    4) Get a subgraph using all of the downstream nodes
+    5) For each node: 
+    - get the shortest path from the node to the starting node
+    - add up the skeleton distance (have options for including each endpoint)
+    - if below the max distance then add
+    6) Return nodes
+
+
+    Ex: 
+    start_branch = 53
+        
+    viable_downstream_nodes = nru.branches_within_skeletal_distance(limb_obj = current_neuron[6],
+                                start_branch = start_branch,
+                                max_distance_from_start = 50000,
+                                verbose = False,
+                                include_start_branch_length = False,
+                                include_node_branch_length = False,
+                                only_consider_downstream = True)
+
+    limb_branch_dict=dict(L6=viable_downstream_nodes+[start_branch])
+
+    nviz.plot_limb_branch_dict(current_neuron,
+                              limb_branch_dict)
+
+    """
+
+    curr_limb = limb_obj
+
+
+
+    viable_downstream_nodes = []
+
+    dir_nx = curr_limb.concept_network_directional
+
+    #2) Get all of the downstream nodes of the node
+
+    if only_consider_downstream:
+        all_downstream_nodes = list(xu.all_downstream_nodes(dir_nx,start_branch))
+    else:
+        all_downstream_nodes = list(dir_nx.nodes())
+        all_downstream_nodes.remove(start_branch)
+
+    if len(all_downstream_nodes) == 0:
+        if verbose:
+            print(f"No downstream nodes to test")
+
+        return []
+
+    if verbose:
+        print(f"Number of downstream nodes = {all_downstream_nodes}")
+
+    #3) convert directed concept graph into an undirected one
+    G_whole = nx.Graph(dir_nx)
+
+    #4) Get a subgraph using all of the downstream nodes
+    G = G_whole.subgraph(all_downstream_nodes + [start_branch])
+
+    for n in all_downstream_nodes:
+
+        #- get the shortest path from the node to the starting node
+        try:
+            curr_shortest_path = nx.shortest_path(G,start_branch,n)
+        except:
+            if verbose:
+                print(f"Continuing because No path between start node ({start_branch}) and node {n}")
+            continue 
+
+
+        if not include_node_branch_length:
+            curr_shortest_path = curr_shortest_path[:-1]
+
+        if not include_start_branch_length:
+            curr_shortest_path = curr_shortest_path[1:]
+
+        total_sk_length_of_path = np.sum([curr_limb[k].skeletal_length for k in curr_shortest_path])
+
+        if total_sk_length_of_path <= max_distance_from_start:
+            viable_downstream_nodes.append(n)
+        else:
+            if verbose:
+                print(f"Branch {n} was too far from the start node : {total_sk_length_of_path} (threshold = {max_distance_from_start})")
+
+    return viable_downstream_nodes
+
 
 import neuron_utils as nru
 import neuron #package where can use the Branches class to help do branch skeleton analysis

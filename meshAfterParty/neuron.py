@@ -193,6 +193,14 @@ class Branch:
         self.endpoints = sk.find_branch_endpoints(self.skeleton)
     
     @property
+    def area(self):
+        """
+        dictionary mapping the index to the 
+        """
+        divisor=1000000
+        return self.mesh.area/divisor
+    
+    @property
     def skeletal_length(self):
         return sk.calculate_skeleton_distance(self.skeleton)
     
@@ -326,6 +334,26 @@ class Limb:
     c. Put the branches as "data" in the network
     d. Get all of the starting coordinates and starting edges and put as member attributes in the limb
     """
+    @property
+    def area(self):
+        """
+        dictionary mapping the index to the 
+        """
+        if len(self.branch_objects) > 0:
+            return np.sum([k.area for k in self])
+        else:
+            return 0
+        
+    @property
+    def skeletal_length(self):
+        """
+        dictionary mapping the index to the 
+        """
+        if len(self.branch_objects) > 0:
+            return np.sum([k.skeletal_length for k in self])
+        else:
+            return 0
+    
     @property
     def branch_objects(self):
         """
@@ -1358,6 +1386,10 @@ class Soma:
         if volume is None:
             self.volume
         
+    @property          
+    def area(self):
+        return self.mesh.area/1000000
+    
     @property
     def volume(self,watertight_method="poisson"):
         """
@@ -1757,6 +1789,7 @@ class Neuron:
                  glia_faces=None,
                  nuclei_faces = None,
                  original_mesh_idx = None,
+                 labels=[],
                 ):
 #                  concept_network=None,
 #                  non_graph_meshes=dict(),
@@ -1796,6 +1829,7 @@ class Neuron:
                 self.glia_faces = dc(mesh.glia_faces)
                 self.non_soma_touching_meshes = dc(mesh.non_soma_touching_meshes)
                 
+                
                 if hasattr(mesh,"decomposition_type"):
                     self.decomposition_type = dc(mesh.decomposition_type)
                 else:
@@ -1805,6 +1839,12 @@ class Neuron:
                     self.original_mesh_idx = dc(mesh.original_mesh_idx)
                 else:
                     self.original_mesh_idx = None
+                    
+                if hasattr(mesh,"labels"):
+                    self.labels = dc(mesh.labels)
+                else:
+                    self.labels = []
+                    
                     
                 #in order to become an iterable
                 self._index = -1
@@ -1926,6 +1966,11 @@ class Neuron:
                 self.glia_faces = preprocessed_data["glia_faces"]
             else:
                 self.glia_faces = []
+                
+            if "labels" in preprocessed_data.keys():
+                self.labels = preprocessed_data["labels"]
+            else:
+                self.labels = labels
             
             self.non_soma_touching_meshes = preprocessed_data["non_soma_touching_meshes"]
             self.inside_pieces = preprocessed_data["inside_pieces"]
@@ -2126,7 +2171,7 @@ class Neuron:
                 break
             for branch in limb:
                 if not branch.spines is None:
-                    print(f"Found non-null branch = {branch.spines}")
+                    #print(f"Found non-null branch = {branch.spines}")
                     found_spines=True
                     break
             limb._index = -1
@@ -2762,7 +2807,22 @@ class Neuron:
                 # will compute the spine volumes if asked for 
                 if calculate_spine_volume and not already_calculated_volumes:
                     curr_branch.compute_spines_volume()
-                    
+    @property          
+    def limb_area(self):
+        self._index = -1
+        return np.sum([k.area for k in self])
+    
+    @property          
+    def soma_area(self):
+        soma_node_names = self.get_soma_node_names()
+        return np.sum([self[k].area for k in soma_node_names])
+    
+    @property 
+    def area(self):
+        return self.limb_area + self.soma_area
+    
+    
+    
     @property
     def spines(self):
         self._index = -1

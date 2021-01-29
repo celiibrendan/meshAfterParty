@@ -187,6 +187,7 @@ non_straight_down_axon = [864691137196923713,
 # ---------- These are neurons that have been processed -------- #
 processed_axon_mess = [864691134884741370,
                       864691135578531524, #has it in part of the error section
+                       864691134884789754,
                       ]
 
 lots_of_axon_errors = [864691134884741370]

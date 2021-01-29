@@ -380,7 +380,7 @@ def axon_width_like_segments_old(current_neuron,
 # ------------- 1//22: Addition that accounts for newer higher fidelity spining --------- #
 def axon_width_like_query_revised(width_to_use,spine_limit):
    
-    axon_width_like_query = f"((n_spines < 6) and ({width_to_use}) and spine_density <= 0.00007)"
+    axon_width_like_query = f"((n_spines < 7) and ({width_to_use}) and spine_density <= 0.00008)"
     return axon_width_like_query
 
 
@@ -466,6 +466,9 @@ def axon_segment(curr_limb,limb_branch_dict=None,limb_name=None,
                  
                  #the parameters for the axon_segment_downstream_dendrites function
                  downstream_face_threshold=5000,
+                 downstream_non_axon_percentage_threshold=0.3,
+                 max_skeletal_length_can_flip=20000,
+                 distance_for_downstream_check=40000,
                  print_flag=False,
                  
                  
@@ -481,9 +484,12 @@ def axon_segment(curr_limb,limb_branch_dict=None,limb_name=None,
     curr_limb_concept_network = curr_limb.concept_network
     #print(f"limb_branch_dict BEFORE = {limb_branch_dict}")
     downstream_filtered_limb_branch_dict = axon_segment_downstream_dendrites(curr_limb,limb_branch_dict,limb_name=limb_name,
-                                                                             downstream_face_threshold=downstream_face_threshold,
-                                                                             print_flag=print_flag,
-                                                                             **kwargs)
+             downstream_face_threshold=downstream_face_threshold,
+             downstream_non_axon_percentage_threshold=downstream_non_axon_percentage_threshold,                
+            max_skeletal_length_can_flip=max_skeletal_length_can_flip,                      
+            distance_for_downstream_check=distance_for_downstream_check,
+             print_flag=print_flag,
+             **kwargs)
     """ Old way of doing before condensed
     #print(f"limb_branch_dict AFTER = {limb_branch_dict}")
     #unravel the output back into a dictionary mapping every node to a value
@@ -513,7 +519,9 @@ def axon_segment(curr_limb,limb_branch_dict=None,limb_name=None,
 
 @run_options(run_type="Limb")
 def axon_segment_downstream_dendrites(curr_limb,limb_branch_dict,limb_name=None,downstream_face_threshold=5000,
-                                      downstream_non_axon_percentage_threshold = 0.3,
+                                      downstream_non_axon_percentage_threshold = 0.5,
+                                      max_skeletal_length_can_flip=20000,
+                                      distance_for_downstream_check = 50000,
                  print_flag=False,
                  #return_limb_branch_dict=False,
                  **kwargs):
@@ -532,9 +540,15 @@ def axon_segment_downstream_dendrites(curr_limb,limb_branch_dict,limb_name=None,
                      print_flag=False)
     return_value
     """
+    
+   
+    
+    
     if print_flag:
         print(f"downstream_face_threshold= {downstream_face_threshold}")
         print(f"downstream_non_axon_percentage_threshold = {downstream_non_axon_percentage_threshold}")
+        print(f"max_skeletal_length_can_flip = {max_skeletal_length_can_flip}")
+        print(f"distance_for_downstream_check = {distance_for_downstream_check}")
         #print(f"limb_branch_dict= {limb_branch_dict}")
         
     #curr_limb_branch_dict = kwargs["function_kwargs"]["limb_branch_dict"]
@@ -561,12 +575,27 @@ def axon_segment_downstream_dendrites(curr_limb,limb_branch_dict,limb_name=None,
         
         #- For each node: 
         for n in curr_axon_nodes:
+            
+            # ----------- 1/28: Only want to go downstream for a certain extent, and only want to flip back to dendrite if small segments
+            if curr_limb[n].skeletal_length > max_skeletal_length_can_flip:
+                if print_flag:
+                    print(f"Skipping a possible flip because the length is too long for threshold ({max_skeletal_length_can_flip}): {curr_limb[n].skeletal_length}")
+                continue
             #a. Get all of the downstream nodes
-            curr_downstream_nodes = xu.downstream_edges(curr_directional_network,n)
+            
+            curr_downstream_nodes = nru.branches_within_skeletal_distance(limb_obj = curr_limb_copy,
+                            start_branch = n,
+                            max_distance_from_start = distance_for_downstream_check,
+                            verbose = False,
+                            include_start_branch_length = False,
+                            include_node_branch_length = False,
+                            only_consider_downstream = True)
+            
+            #curr_downstream_nodes = xu.downstream_edges(curr_directional_network,n)
             
             # if there are any downstream nodes
             if len(curr_downstream_nodes) > 0:
-                curr_downstream_nodes = np.concatenate(curr_downstream_nodes)
+                #curr_downstream_nodes = np.concatenate(curr_downstream_nodes)
                 #b. Get the total number of faces for all upstream non-axon nodes
                 curr_non_axon_nodes = set([k for k in curr_downstream_nodes if k not in curr_axon_nodes])
                 downstream_axon_nodes = set([k for k in curr_downstream_nodes if k in curr_axon_nodes])
@@ -581,6 +610,8 @@ def axon_segment_downstream_dendrites(curr_limb,limb_branch_dict,limb_name=None,
                     
                     # ----------- 1/20 addition: That factors in percentages and not just raw face count ------- #
                     if downstream_non_axon_percentage_threshold is not None:
+                        if print_flag:
+                            print(f"perc_non_axon for limb_{limb_name}_node_{n},  = {perc_non_axon}")
                         reverse_label = perc_non_axon > downstream_non_axon_percentage_threshold and non_axon_face_count > downstream_face_threshold
                     else:
                         reverse_label = non_axon_face_count > downstream_face_threshold

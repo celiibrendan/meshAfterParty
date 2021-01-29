@@ -1064,6 +1064,10 @@ def upstream_edges_neighbors(G,node):
     
 def downstream_nodes(G,node):
     return np.array(downstream_edges_neighbors(G,node))[:,1]
+
+def all_downstream_nodes(G,node):
+    curr_nodes = np.unique(np.array(xu.downstream_edges(G,node)).ravel())
+    return list(curr_nodes[curr_nodes!=node])
     
 def parent_node(G,node):
     return upstream_node(G,node)
@@ -1396,6 +1400,77 @@ def connected_components_from_nodes_edges(nodes,edges):
     G.add_nodes_from(nodes)
     G.add_edges_from(edges)
     return [list(k) for k in list(nx.connected_components(G))]
+
+
+def nodes_in_kept_groups_after_deletion(G,
+                                       nodes_to_keep,
+                                        nodes_to_remove,
+                                        return_removed_nodes = False,
+                                        verbose = False,
+                                       ):
+    """
+    Purpose: To delete nodes from a graph and then only return the 
+    nodes that are still connected to a certain group of nodes
+
+    Pseudocode: 
+
+    1) Delete all the nodes from the graph
+    2) Split the graph into connected components
+    3) Find all kept nodes as the connected component with 
+    the starting node (if there is one)
+    4) Return either the kept nodes (and optionally the deleted ones)
+    
+    Application:
+    If have starting node in limb concept network, and want to delete
+    certain nodes, will tell you what nodes will still be connected
+    to starting node after deletion
+    
+    Ex:
+    G = nx.Graph(curr_limb.concept_network_directional)
+    nodes_to_keep = 0
+    nodes_to_remove = [6,13]
+
+    xu.nodes_in_kept_groups_after_deletion(G,
+                                        nodes_to_keep,
+                                           nodes_to_remove=nodes_to_remove,
+                                        return_removed_nodes = True
+                                           )  
+    
+
+    """
+
+    G = nx.Graph(G)
+
+    if not nu.is_array_like(nodes_to_keep):
+        keep_nodes = [nodes_to_keep]
+
+    #1) Delete all the nodes from the graph
+    G.remove_nodes_from(nodes_to_remove)
+
+    #2) Split the graph into connected components
+    conn_comp = list(nx.connected_components(G))
+
+    if verbose:
+        print(f"conn_comp = {conn_comp}")
+
+    #3) Find all kept nodes as the connected component with 
+    #the starting node (if there is one)
+    nodes_kept = []
+    nodes_removed = list(nodes_to_remove)
+
+    for c in conn_comp:
+        intersecting_nodes = np.intersect1d(nodes_to_keep,list(c))
+        if verbose:
+            print(f"intersecting_nodes = {intersecting_nodes} of {keep_nodes} and {c}")
+        if len(intersecting_nodes)>0:
+            nodes_kept += list(c)
+        else:
+            nodes_removed += list(c)
+
+    if return_removed_nodes:
+        return nodes_kept,nodes_removed
+    else:
+        return nodes_kept
     
 import networkx_utils as xu
     

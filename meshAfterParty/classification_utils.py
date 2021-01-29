@@ -340,6 +340,7 @@ def candidate_starting_skeletal_angle(limb_obj,candidate_nodes,
     
     endnodes_to_test = np.setdiff1d(all_endnodes,[starting_coordinate_endnode])
     
+    print(f"endnodes_to_test BEFORE FILTER = {endnodes_to_test}")
     # ------------ 1/24 Addition: Will get rid of end nodes that are on dendritic portions ----- #
     if branches_not_to_consider_for_end_nodes is not None:
         """
@@ -591,6 +592,8 @@ def filter_axon_candiates(neuron_obj,
             non_axon_branches_on_subgraph = np.setdiff1d(candidate_nodes,axon_branches_on_limb)
             
             
+            print(f"candidate_nodes = {candidate_nodes}")
+            print(f"non_axon_branches_on_subgraph = {non_axon_branches_on_subgraph}")
             
             
             
@@ -601,8 +604,8 @@ def filter_axon_candiates(neuron_obj,
                                 axon_sk_direction_comparison_distance = skeletal_angle_comparison_distance,
                                 buffer_for_skeleton = skeletal_angle_buffer,
                                   top_volume_vector = np.array([0,-1,0]),
-#                                   plot_skeleton_paths_before_restriction=False,
-#                                   plot_skeleton_paths_after_restriction=False,
+                                  plot_skeleton_paths_before_restriction=False,
+                                  plot_skeleton_paths_after_restriction=False,
                                                  return_restricted_skeletons=True,
                                   verbose=verbose,
                                    branches_not_to_consider_for_end_nodes = non_axon_branches_on_subgraph,
@@ -670,7 +673,41 @@ def filter_axon_candiates(neuron_obj,
     else:
         return limb_branch_dict
 
+def axon_like_limb_branch_dict(neuron_obj,
+                              downstream_face_threshold=3000,
+                                width_match_threshold=50,
+                               downstream_non_axon_percentage_threshold=0.3,
+                               distance_for_downstream_check=40000,
+                               max_skeletal_length_can_flip=70000,
+                              include_ais=True,
+                              plot_axon_like=False):
+    
+    axon_like_limb_branch_dict = ns.axon_width_like_segments(neuron_obj,
+                                                        include_ais=include_ais)
 
+
+    
+
+    current_functions_list = ["axon_segment"]
+    final_axon_like_classification = ns.query_neuron(neuron_obj,
+
+                                       query="axon_segment==True",
+                                       function_kwargs=dict(limb_branch_dict =axon_like_limb_branch_dict,
+                                                            downstream_face_threshold=downstream_face_threshold,
+                                                            width_match_threshold=width_match_threshold,
+                                                            downstream_non_axon_percentage_threshold=downstream_non_axon_percentage_threshold,
+                                                            distance_for_downstream_check=distance_for_downstream_check,
+                                                            max_skeletal_length_can_flip=max_skeletal_length_can_flip,
+                                                            
+                                                           print_flag=False),
+                                       functions_list=current_functions_list)
+    
+    if plot_axon_like:
+        nviz.plot_limb_branch_dict(neuron_obj,
+                                  final_axon_like_classification)
+
+    return final_axon_like_classification
+    
 def axon_classification(neuron_obj,
                         
                         
@@ -700,6 +737,7 @@ def axon_classification(neuron_obj,
     label_axon_errors =True,
                         
     error_width_max = 140,
+    error_length_min = None,#5000,
                         
     return_axon_labels=True,
     return_axon_angles=False,
@@ -745,6 +783,8 @@ def axon_classification(neuron_obj,
     #  ------------- Part 1: Classify All Axon-Like Segments ----------------------------
     
     
+    '''  Old way that did not use the classification
+    
     axon_like_limb_branch_dict = ns.axon_width_like_segments(curr_neuron_obj,
                                                         include_ais=True)
 
@@ -764,6 +804,12 @@ def axon_classification(neuron_obj,
                                                             width_match_threshold=width_match_threshold,
                                                            print_flag=False),
                                        functions_list=current_functions_list)
+    '''
+    
+    final_axon_like_classification = axon_like_limb_branch_dict(curr_neuron_obj,
+                                                                downstream_face_threshold=downstream_face_threshold,
+                                                                width_match_threshold=width_match_threshold,
+                                                               )
 
     if plot_axon_like_segments:
         nviz.visualize_neuron(curr_neuron_obj,
@@ -872,38 +918,34 @@ def axon_classification(neuron_obj,
 #                     limb_branch_dict=final_axon_like_classification,
 #                     labels="axon-like")
     
+    #adding the labels
     nru.add_branch_label(curr_neuron_obj,
                     limb_branch_dict=final_true_axons,
                     labels="axon")
     
-    if label_axon_errors or return_error_labels:
-        axon_error_like_limb_branch_dict = ns.axon_width_like_segments(curr_neuron_obj,
-                                                        include_ais=False)
-
-
-        current_functions_list = ["axon_segment"]
-        final_axon_error_like_classification = ns.query_neuron(curr_neuron_obj,
-
-                                           query="axon_segment==True",
-                                           function_kwargs=dict(limb_branch_dict =axon_error_like_limb_branch_dict,
-                                                                downstream_face_threshold=downstream_face_threshold,
-                                                                width_match_threshold=width_match_threshold,
-                                                               print_flag=False),
-                                           functions_list=current_functions_list)
-        nru.add_branch_label(curr_neuron_obj,
-                limb_branch_dict=final_axon_error_like_classification,
+    nru.add_branch_label(curr_neuron_obj,
+                limb_branch_dict=final_axon_like_classification,
                 labels="axon-like")
         
         
-        if error_width_max is None:
+    if label_axon_errors or return_error_labels:
+        
+        
+        if error_width_max is None and error_length_min is None:
             error_limb_branch_dict = ns.query_neuron_by_labels(curr_neuron_obj,
                                  matching_labels = ["axon-like"],
                                  not_matching_labels = ["axon"]
                                  )
         else:
+            if error_length_min is None:
+                error_length_min = 0
+            if error_width_max is None:
+                error_width_max = np.inf
+            
             error_limb_branch_dict = ns.query_neuron(neuron_obj,
-                            query=f"(labels_restriction == True) and (median_mesh_center < {error_width_max})",
-                   functions_list=["labels_restriction","median_mesh_center"],
+                            query=f"(labels_restriction == True) and (median_mesh_center < {error_width_max}) "
+                                                     f"and (skeletal_length > {error_length_min})",
+                   functions_list=["labels_restriction","median_mesh_center","skeletal_length"],
                    function_kwargs=dict(matching_labels=["axon-like"],
                                         not_matching_labels=["axon"]
                                        )
@@ -1286,12 +1328,13 @@ def contains_excitatory_axon(neuron_obj,
                              plot_axons=False,
                              return_axon_angles=True,
                              return_n_axons=False,
+                             label_axon_errors=True,
                             **kwargs):
     return_value = clu.axon_classification(neuron_obj,
                                                     return_error_labels=False,
                                                     verbose=False,
                                                     plot_axons=plot_axons,
-                                                    label_axon_errors=False,
+                                                    label_axon_errors=label_axon_errors,
                                                     return_axon_angles=return_axon_angles,
                                                **kwargs)
     if return_axon_angles:
