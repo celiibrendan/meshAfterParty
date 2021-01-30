@@ -13,7 +13,7 @@ using the new decomposition method
 """
 
 
-# In[1]:
+# In[ ]:
 
 
 import numpy as np
@@ -29,22 +29,13 @@ import datajoint_utils as du
 from importlib import reload
 
 
-# In[2]:
-
-
-#so that it will have the adapter defined
-from datajoint_utils import *
-
-
-# In[3]:
+# In[ ]:
 
 
 test_mode = False
 
 
-# # Debugging the contains method
-
-# In[4]:
+# In[ ]:
 
 
 import minfig
@@ -65,7 +56,7 @@ du.print_minnie65_config_paths(minfig)
 minnie,schema = du.configure_minnie_vm()
 
 
-# In[5]:
+# In[ ]:
 
 
 #(schema.jobs & "table_name='__decomposition'").delete()
@@ -73,7 +64,7 @@ minnie,schema = du.configure_minnie_vm()
 
 # # Defining the Table
 
-# In[6]:
+# In[ ]:
 
 
 import neuron_utils as nru
@@ -82,14 +73,21 @@ import trimesh_utils as tu
 import numpy as np
 
 
-# In[7]:
+# In[ ]:
 
 
 import meshlab
 meshlab.set_meshlab_port(current_port=None)
 
 
-# In[10]:
+# In[ ]:
+
+
+#so that it will have the adapter defined
+from datajoint_utils import *
+
+
+# In[ ]:
 
 
 decimation_version = 0
@@ -105,14 +103,14 @@ key_source = ((minnie.Decimation).proj(decimation_version='version') &
 key_source
 
 
-# In[11]:
+# In[ ]:
 
 
 import numpy as np
 import time
 decimation_version = 0
 decimation_ratio = 0.25
-process_version = 5
+process_version = 3
 
 @schema
 class Decomposition(dj.Computed):
@@ -172,7 +170,7 @@ class Decomposition(dj.Computed):
     
     key_source = ((minnie.Decimation).proj(decimation_version='version') & 
                             "decimation_version=" + str(decimation_version) &
-                       f"decimation_ratio={decimation_ratio}" &  (minnie.BaylorSegmentCentroid() & "multiplicity>0")) 
+                       f"decimation_ratio={decimation_ratio}" &  (minnie.BaylorSegmentCentroid() & "multiplicity>0"))
                                                                   
     
 
@@ -269,7 +267,7 @@ class Decomposition(dj.Computed):
 
 # # Running the Populate
 
-# In[19]:
+# In[ ]:
 
 
 curr_table = (minnie.schema.jobs & "table_name='__decomposition'")
@@ -278,7 +276,7 @@ curr_table = (minnie.schema.jobs & "table_name='__decomposition'")
 #(curr_table & "error_message = 'ValueError: need at least one array to concatenate'").delete()
 
 
-# In[18]:
+# In[ ]:
 
 
 import time

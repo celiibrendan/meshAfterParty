@@ -673,6 +673,7 @@ def filter_axon_candiates(neuron_obj,
     else:
         return limb_branch_dict
 
+import copy
 def axon_like_limb_branch_dict(neuron_obj,
                               downstream_face_threshold=3000,
                                 width_match_threshold=50,
@@ -681,7 +682,7 @@ def axon_like_limb_branch_dict(neuron_obj,
                                max_skeletal_length_can_flip=70000,
                               include_ais=True,
                               plot_axon_like=False):
-    
+    neuron_obj = copy.deepcopy(neuron_obj)
     axon_like_limb_branch_dict = ns.axon_width_like_segments(neuron_obj,
                                                         include_ais=include_ais)
 

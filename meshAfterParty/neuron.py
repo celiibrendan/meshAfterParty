@@ -892,7 +892,7 @@ class Limb:
                              concept_network_dict=None,
                              mesh_face_idx=None,
                             labels=[],
-                             branch_objects = dict(),#this will have a dictionary mapping to the branch objects if provided
+                             branch_objects = None,#this will have a dictionary mapping to the branch objects if provided
                              deleted_edges = [],
                              created_edges = [],
                             verbose=False):
@@ -917,6 +917,8 @@ class Limb:
          
         """
         
+        if branch_objects is None:
+            branch_objects = dict()
         
         if str(type(mesh)) == str(Limb):
             #print("Recived Limb object so copying object")
@@ -1979,6 +1981,11 @@ class Neuron:
             soma_to_piece_connectivity = preprocessed_data["soma_to_piece_connectivity"]
             soma_sdfs = preprocessed_data["soma_sdfs"]
             
+            if "soma_volumes" in preprocessed_data.keys():
+                soma_volumes = preprocessed_data["soma_volumes"]
+            else:
+                soma_volumes = [None]*len(soma_sdfs)
+            
             if "soma_volume_ratios" in preprocessed_data.keys() and (not preprocessed_data["soma_volume_ratios"] is None):
                 pass
             else:
@@ -2026,8 +2033,17 @@ class Neuron:
                 print(f"--- 3a) Finshed generating soma_meshes_face_idx: {time.time() - neuron_start_time}")
                 neuron_start_time =time.time()
 
-            for j,(curr_soma,curr_soma_face_idx,current_sdf,curr_volume_ratio) in enumerate(zip(soma_meshes,soma_meshes_face_idx,soma_sdfs,soma_volume_ratios)):
-                Soma_obj = Soma(curr_soma,mesh_face_idx=curr_soma_face_idx,sdf=current_sdf,volume_ratio=curr_volume_ratio)
+            for j,(curr_soma,curr_soma_face_idx,current_sdf,curr_volume_ratio,curr_volume) in enumerate(zip(soma_meshes,soma_meshes_face_idx,soma_sdfs,soma_volume_ratios,soma_volumes)):
+                Soma_obj = Soma(curr_soma,
+                                mesh_face_idx=curr_soma_face_idx,
+                                sdf=current_sdf,
+                                volume_ratio=curr_volume_ratio,
+                               volume=curr_volume)
+                
+                print(f"--- 3b) Finished soma creation: {time.time() - neuron_start_time}")
+                neuron_start_time =time.time()
+                
+                
                 soma_name = f"S{j}"
                 #Add the soma object as data in 
                 

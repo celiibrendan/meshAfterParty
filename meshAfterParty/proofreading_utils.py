@@ -1261,6 +1261,7 @@ def split_disconnected_neuron(neuron_obj,
         soma_obj = neuron_cp[curr_soma_name]
         curr_soma_meshes = [soma_obj.mesh]
         curr_soma_sdfs = [soma_obj.sdf]
+        curr_soma_volume = [soma_obj.volume]
         curr_soma_volume_ratios = [soma_obj.volume_ratio]
 
 
@@ -1455,6 +1456,7 @@ def split_disconnected_neuron(neuron_obj,
                 #soma data
                 soma_meshes = curr_soma_meshes,
                 soma_sdfs = curr_soma_sdfs,
+                soma_volumes = curr_soma_volume,
                 soma_volume_ratios=curr_soma_volume_ratios,
 
                 #soma connectivity
@@ -1556,6 +1558,17 @@ def split_neuron(neuron_obj,
 
 
     """
+    
+    if neuron_obj.n_error_limbs == 0:
+        print("No error limbs to processs so just returning the original neuron")
+        
+        neuron_list = [neuron_obj]
+        
+        if return_error_info:
+            return (neuron_list,[0],[0],0,0)
+        else:
+            return neuron_list
+        
     
     neuron_obj = copy.deepcopy(neuron_obj)
     
@@ -2346,6 +2359,13 @@ def filter_away_limb_branch_dict(neuron_obj,
     
     """
     
+    if len(limb_branch_dict) == 0:
+        print("limb_branch_dict was empty so returning original neuron")
+        if return_error_info:
+            return neuron_obj,0,0
+        else:
+            return neuron_obj
+    
     if plot_limb_branch_filter_away:
         print("\n\nBranches Requested to Remove (without disconnect effect)")
         nviz.plot_limb_branch_dict(neuron_obj,
@@ -2569,6 +2589,76 @@ def filter_away_dendrite_on_axon_merges(
                  total_sk_distance_stripped)
     else:
         return dendrite_stripped_neuron
+    
+    
+# ------------ Rule 3: Filtering away axon mess ----------- #
 
+def filter_away_limb_branch_dict_with_function(
+    neuron_obj,
+    limb_branch_dict_function,
+    perform_deepcopy=True,
+    
+    
+    plot_limb_branch_filter_away = False,
+    plot_limb_branch_filter_with_disconnect_effect = False,
+    return_error_info = True,
+    plot_final_neuron = False,
+    verbose=False,
+    
+    **kwargs #These argument will be for running the function that will come up with limb branch dict
+    ):
+    """
+    Purpose: To filter away a limb branch dict from
+    a neuron using a function that generates a limb branch dict
+    
+    """
+    
+    
+    if perform_deepcopy:
+        neuron_obj = copy.deepcopy(neuron_obj)
+
+    limb_branch_dict_to_cancel = limb_branch_dict_function(neuron_obj,
+                             verbose=verbose,
+                             **kwargs)
+        
+
+    (dendrite_stripped_neuron,
+    total_area_dendrite_stripped,
+     total_sk_distance_stripped) = pru.filter_away_limb_branch_dict(neuron_obj,
+                                         limb_branch_dict=limb_branch_dict_to_cancel,
+                                        plot_limb_branch_filter_away=plot_limb_branch_filter_away,
+                                         plot_limb_branch_filter_with_disconnect_effect=plot_limb_branch_filter_with_disconnect_effect,
+                                        return_error_info=True,
+                                         plot_final_neuron=plot_final_neuron,
+                                         verbose=verbose
+                                        )
+    
+    if return_error_info:
+        return (dendrite_stripped_neuron,
+                total_area_dendrite_stripped,
+                 total_sk_distance_stripped)
+    else:
+        return dendrite_stripped_neuron
+
+def filter_away_low_branch_length_clusters(neuron_obj,
+                                           max_skeletal_length=8000,
+                                           min_n_nodes_in_cluster=4,
+                                           return_error_info=True,
+                                           plot_limb_branch_filter_with_disconnect_effect=False,
+                                           plot_limb_branch_filter_away=False,
+                                           plot_final_neuron=False,
+                                           **kwargs):
+    
+    return filter_away_limb_branch_dict_with_function(neuron_obj,
+                 limb_branch_dict_function=nru.low_branch_length_clusters,
+                 max_skeletal_length=max_skeletal_length,
+                 min_n_nodes_in_cluster=min_n_nodes_in_cluster,
+                 return_error_info=return_error_info,
+                plot_limb_branch_filter_away=plot_limb_branch_filter_away,
+                plot_limb_branch_filter_with_disconnect_effect=plot_limb_branch_filter_with_disconnect_effect,
+                 plot_final_neuron=plot_final_neuron,
+                 **kwargs)
+    
+    
 import proofreading_utils as pru
     

@@ -13,7 +13,8 @@ import pandas_utils as pu
 import networkx_utils as xu
 
 def convert_neuron_to_branches_dataframe(current_neuron,
-                                        limbs_to_process=None):
+                                        limbs_to_process=None,
+                                        limb_branch_dict_restriction=None):
     """
     Purpose: 
     How to turn a concept map into a pandas table with only the limb_idx and node_idx
@@ -33,8 +34,13 @@ def convert_neuron_to_branches_dataframe(current_neuron,
     limb_node_idx_dicts = []
 
     for l in limb_idxs:
-        limb_node_idx_dicts += [dict(limb=l,node=int(k)) for k in 
+        if limb_branch_dict_restriction is None:
+            limb_node_idx_dicts += [dict(limb=l,node=int(k)) for k in 
                                 curr_concept_network.nodes[l]["data"].concept_network.nodes()]
+        else:
+            if l in limb_branch_dict_restriction.keys():
+                limb_node_idx_dicts += [dict(limb=l,node=int(k)) for k in 
+                                    limb_branch_dict_restriction[l]]
 
     df = pd.DataFrame(limb_node_idx_dicts)
     return df
@@ -814,7 +820,8 @@ def soma_starting_angle(curr_limb,limb_name=None,**kwargs):
 
 #------------------------------- Creating the Data tables from the neuron and functions------------------------------
 
-def apply_function_to_neuron(current_neuron,current_function,function_kwargs=dict()):
+def apply_function_to_neuron(current_neuron,current_function,function_kwargs=None,
+                            ):
     """
     Purpose: To retrieve a dictionary mapping every branch on every node
     to a certain value as defined by the function passed
@@ -824,6 +831,8 @@ def apply_function_to_neuron(current_neuron,current_function,function_kwargs=dic
     curr_function_mapping = ns.apply_function_to_neuron(recovered_neuron,curr_function)
     
     """
+    if function_kwargs is None:
+        function_kwargs = dict()
     
     curr_neuron_concept_network = nru.return_concept_network(current_neuron)
     
@@ -831,14 +840,31 @@ def apply_function_to_neuron(current_neuron,current_function,function_kwargs=dic
         curr_limb_names = [nru.get_limb_string_name(k) for k in function_kwargs["limbs_to_process"]]
     else:
         curr_limb_names = nru.get_limb_names_from_concept_network(curr_neuron_concept_network)
+        
+    limb_branch_dict_restriction =  function_kwargs.get("limb_branch_dict_restriction",None)
     
-    function_mapping = dict([(limb_name,dict()) for limb_name in curr_limb_names])
+    if limb_branch_dict_restriction is None:
+        limb_branch_dict_restriction = nru.neuron_limb_branch_dict(current_neuron)
+    else:
+        print(f"Using the limb_branch_dict_restriction = {limb_branch_dict_restriction}")
+        
+    
+    
+    function_mapping = dict([(limb_name,dict()) for limb_name in curr_limb_names if limb_name in limb_branch_dict_restriction.keys()])
 
     #if it was a branch function that was passed
     if current_function.run_type=="Branch":
         for limb_name in function_mapping.keys():
             curr_limb_concept_network = curr_neuron_concept_network.nodes[limb_name]["data"].concept_network
             for branch_idx in curr_limb_concept_network.nodes():
+                
+                # -- 1/29 Addition: Will only look at nodes in the limb branch dict restriction -- #
+                if branch_idx not in limb_branch_dict_restriction[limb_name]:
+                    continue
+                    
+#                 if limb_name == "L0" and branch_idx == 73:
+#                     print(f"Computing {current_function} for !!!!!")
+                    
                 function_mapping[limb_name][branch_idx] = current_function(curr_limb_concept_network.nodes[branch_idx]["data"],limb_name=limb_name,branch_name=branch_idx,**function_kwargs)
                 
     elif current_function.run_type=="Limb":
@@ -937,10 +963,12 @@ def generate_neuron_dataframe(current_neuron,
     
     
     limbs_to_process = function_kwargs.get("limbs_to_process",None)
+    limb_branch_dict_restriction=function_kwargs.get("limb_branch_dict_restriction",None)
     
     #2) Create a dataframe for the neuron
     curr_df = convert_neuron_to_branches_dataframe(current_neuron,
-                                                  limbs_to_process=limbs_to_process)
+                                                  limbs_to_process=limbs_to_process,
+                                                  limb_branch_dict_restriction=limb_branch_dict_restriction)
     
     """
     3) For each function:
@@ -974,12 +1002,14 @@ current_module = sys.modules[__name__]
 def query_neuron(concept_network,
                          functions_list,
                           query,
-                         function_kwargs=dict(),
-                          query_variables_dict=dict(),
+                         function_kwargs=None,
+                          query_variables_dict=None,
                           return_dataframe=False,
                           return_limbs=False,
                           return_limb_grouped_branches=True,
+                         limb_branch_dict_restriction = None,
                          print_flag=False,
+                 
                          ):
     """
     *** to specify "limbs_to_process" to process just put in the function kwargs
@@ -1093,8 +1123,15 @@ def query_neuron(concept_network,
     
     
     """
-    local_dict = query_variables_dict
+    if function_kwargs is None:
+        function_kwargs=dict()
+        
+    if query_variables_dict is None:
+        query_variables_dict=dict()
     
+    
+    local_dict = query_variables_dict
+    concept_network_old = concept_network
     #any preprocessing work
     if concept_network.__class__.__name__ == "Neuron":
         if print_flag:
@@ -1122,6 +1159,11 @@ def query_neuron(concept_network,
     if print_flag:
         print(f"final_feature_functions = {final_feature_functions}")
         
+        
+    
+    if limb_branch_dict_restriction is not None:
+        function_kwargs["limb_branch_dict_restriction"] = limb_branch_dict_restriction
+        
     #0) Generate a pandas table that originally has the limb index and node index
     returned_df = generate_neuron_dataframe(concept_network,functions_list=final_feature_functions,
                                            function_kwargs=function_kwargs)
@@ -1145,6 +1187,10 @@ def query_neuron(concept_network,
         #gets a dictionary where key is the limb and value is a list of all the branches that were in the filtered dataframe
         limb_to_branch = dict([(k,np.sort(limb_branch_pairings[:,1][np.where(limb_branch_pairings[:,0]==k)[0]]).astype("int")) 
                                for k in np.unique(limb_branch_pairings[:,0])])
+        
+        if limb_branch_dict_restriction is not None:
+            limb_to_branch = nru.limb_branch_intersection([limb_branch_dict_restriction,limb_to_branch])
+        
         if return_limbs:
             return list(limb_to_branch.keys())
 

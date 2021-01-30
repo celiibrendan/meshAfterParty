@@ -278,6 +278,20 @@ def sort_rows_by_column(array,column_idx,largest_to_smallest=True):
     return array[order]
 
 
+from functools import reduce
+
+def function_over_multi_lists(arrays,set_function):
+    return reduce(set_function,arrays)
+
+def setdiff1d_multi_list(arrays):
+    return function_over_multi_lists(arrays,np.setdiff1d)
+
+def intersect1d_multi_list(arrays):
+    return function_over_multi_lists(arrays,np.intersect1d)
+
+def union1d_multi_list(arrays):
+    return function_over_multi_lists(arrays,np.union1d)
+
 def intersect1d(arr1,arr2,assume_unique=False,return_indices=False):
     """
     Will return the common elements from 2 possibly different sized arrays

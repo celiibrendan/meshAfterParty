@@ -2098,9 +2098,11 @@ def plot_limb_branch_dict(neuron_obj,
                           mesh_color_alpha=alpha,
                          mesh_whole_neuron=True)
     
-def visualize_neuron_lite(neuron_obj):
+def visualize_neuron_lite(neuron_obj,
+                         **kwargs):
     nviz.visualize_neuron(neuron_obj,
                      visualize_type=["mesh"],
-                     mesh_whole_neuron=True)    
+                     mesh_whole_neuron=True,
+                         **kwargs)    
 
 import neuron_visualizations as nviz

@@ -1477,6 +1477,8 @@ def smaller_preprocessed_data(neuron_object,print_flag=False):
     else:
         original_mesh_idx = None
     
+    soma_names = double_soma_obj.get_soma_node_names()
+    
     compressed_dict = dict(
                           #saving the original number of faces and vertices to make sure reconstruciton doesn't happen with wrong mesh
                           original_mesh_n_faces = len(double_soma_obj.mesh.faces),
@@ -1485,7 +1487,8 @@ def smaller_preprocessed_data(neuron_object,print_flag=False):
                           soma_meshes_face_idx=soma_meshes_face_idx,
 
                           soma_to_piece_connectivity=double_soma_obj.preprocessed_data["soma_to_piece_connectivity"],
-                          soma_sdfs=double_soma_obj.preprocessed_data["soma_sdfs"],
+                          soma_volumes=[double_soma_obj[k].volume for k in soma_names],
+                          soma_sdfs = double_soma_obj.preprocessed_data["soma_sdfs"],
                           soma_volume_ratios=double_soma_obj.preprocessed_data["soma_volume_ratios"],
 
                           insignificant_limbs_face_idx=insignificant_limbs_face_idx,
@@ -1658,6 +1661,9 @@ def decompress_neuron(filepath,original_mesh,
         """
         recovered_preprocessed_data["soma_to_piece_connectivity"] = loaded_compression["soma_to_piece_connectivity"]
         recovered_preprocessed_data["soma_sdfs"] = loaded_compression["soma_sdfs"]
+        
+        recovered_preprocessed_data["soma_volumes"] = loaded_compression.get("soma_volumes",None)
+        
         if "soma_volume_ratios" in  loaded_compression.keys():
             print("using precomputed soma_volume_ratios")
             recovered_preprocessed_data["soma_volume_ratios"] = loaded_compression["soma_volume_ratios"]
@@ -4057,6 +4063,216 @@ def branches_within_skeletal_distance(limb_obj,
 
     return viable_downstream_nodes
 
+import classification_utils as clu
+def low_branch_length_clusters(neuron_obj,
+                              max_skeletal_length = 8000,
+                                min_n_nodes_in_cluster = 4,
+                               width_max = None,
+                               use_axon_like_restriction = False,
+                               verbose=False,
+                               **kwargs
+                                ):
+
+    """
+    Purpose: To find parts of neurons with lots of nodes
+    close together on concept network with low branch length
+    
+    Pseudocode:
+    1) Get the concept graph of a limb 
+    2) Eliminate all of the nodes that are too long skeletal length
+    3) Divide the remaining axon into connected components
+    - if too many nodes are in the connected component then it is
+    an axon mess and should delete all those nodes
+    
+    Application: Helps filter away axon mess
+
+    """
+    
+    use_deletion=False
+    
+    curr_neuron_obj=neuron_obj
+
+    if width_max is None:
+        width_max = np.inf
+
+    limb_branch_dict = dict()
+    
+    
+    
+    # ---------- Getting the restriction that we will check over ---- #
+    if use_axon_like_restriction:
+        axon_limb_branch_dict = clu.axon_like_limb_branch_dict(curr_neuron_obj)
+    else:
+        axon_limb_branch_dict = None
+        
+    
+
+    if not use_deletion:
+        limb_branch_restriction = ns.query_neuron(curr_neuron_obj,
+                        functions_list=["skeletal_length","median_mesh_center"],
+                       query = ( f" (skeletal_length < {max_skeletal_length}) and "
+                               f" (median_mesh_center < {width_max})"),
+                       limb_branch_dict_restriction=axon_limb_branch_dict)
+        if verbose:
+            print(f"limb_branch_restriction = {limb_branch_restriction}")
+    else:
+        limb_branch_restriction = nru.neuron_limb_branch_dict(curr_neuron_obj)
+
+
+    for limb_name,nodes_to_keep in limb_branch_restriction.items():
+        curr_limb = curr_neuron_obj[limb_name]
+        if verbose:
+            print(f"--- Working on Limb {limb_name} ---")
+
+        if use_deletion:
+        #1) Get the branches that are below a certain threshold
+            nodes_to_delete = [jj for jj,branch in enumerate(curr_limb) 
+                               if ((curr_limb[jj].skeletal_length > max_skeletal_length ))]
+
+            if verbose:
+                print(f"nodes_to_delete = {nodes_to_delete}")
+
+            #2) Elimnate the nodes from the concept graph
+            G_short = nx.Graph(curr_limb.concept_network)
+            G_short.remove_nodes_from(nodes_to_delete)
+        
+        else:
+            #2) Elimnate the nodes from the concept graph
+            G= nx.Graph(curr_limb.concept_network)
+            G_short = G.subgraph(nodes_to_keep)
+
+            if verbose:
+                print(f"nodes_to_keep = {nodes_to_keep}")
+
+        
+        #3) Divide the remaining graph into connected components
+        conn_comp = [list(k) for k in nx.connected_components(G_short)]
+
+        potential_error_branches = []
+
+        for c in conn_comp:
+            if len(c) > min_n_nodes_in_cluster:
+                potential_error_branches += c
+
+        #4)  If found any error nodes then add to limb branch dict
+        if len(potential_error_branches) > 0:
+            limb_branch_dict[limb_name] = potential_error_branches
+
+    return limb_branch_dict
+
+def neuron_limb_branch_dict(neuron_obj):
+    """
+    Purpose: To develop a limb branch dict represnetation
+    of the limbs and branchs of a neuron
+    
+    """
+    limb_branch_dict_new = dict()
+    
+    if neuron_obj.__class__.__name__ == "Neuron":
+        for limb_name in neuron_obj.get_limb_node_names():
+            limb_branch_dict_new[limb_name] = neuron_obj[limb_name].get_branch_names()
+    else:
+        net = neuron_obj
+        curr_limb_names = [k for k in net.nodes() if "L" in k]
+        for limb_name in curr_limb_names:
+            limb_branch_dict_new[limb_name] = np.array(list(net.nodes[limb_name]["data"].concept_network.nodes()))
+
+        
+    return limb_branch_dict_new
+
+def limb_branch_invert(neuron_obj,
+                           limb_branch_dict,
+                           verbose=False):
+    """
+    Purpose: To get every node that is not in limb branch dict
+    
+    Ex: 
+    invert_limb_branch_dict(curr_neuron_obj,limb_branch_return,
+                       verbose=True)
+    """
+    
+    limb_branch_dict_new = dict()
+    for j,curr_limb in enumerate(neuron_obj):
+        
+        limb_name = f"L{j}"
+        
+        if verbose:
+            print(f"\n--- Working on limb {limb_name}")
+        
+        if limb_name in limb_branch_dict:
+            curr_branches = limb_branch_dict[limb_name]
+        else:
+            curr_branches = []
+            
+        
+            
+        leftover_branches = np.setdiff1d(curr_limb.get_branch_names(),curr_branches)
+        if verbose:
+            print(f"curr_branches = {curr_branches}")
+            print(f"leftover_branches = {leftover_branches}")
+            print(f"total combined branches = {len(curr_branches) +len(leftover_branches) }, len(limb) = {len(curr_limb)}")
+        if len(leftover_branches)>0:
+            limb_branch_dict_new[limb_name] = leftover_branches
+            
+    return limb_branch_dict_new
+
+def limb_branch_combining(
+                           limb_branch_dict_list,
+                           combining_function,
+                           verbose=False):
+    """
+    Purpose: To get every node that is not in limb branch dict
+    
+    Ex: 
+    invert_limb_branch_dict(curr_neuron_obj,limb_branch_return,
+                       verbose=True)
+    """
+    all_keys = nu.union1d_multi_list([list(k.keys()) for k in limb_branch_dict_list])
+    
+    
+    limb_branch_dict_new = dict()
+    for limb_name in all_keys:
+        
+        if verbose:
+            print(f"\n--- Working on limb {limb_name}")
+        
+        curr_branches = [k.get(limb_name,[]) for k in limb_branch_dict_list]
+        
+        leftover_branches = nu.function_over_multi_lists(curr_branches,combining_function)
+        
+        if verbose:
+            print(f"combining_function = {combining_function}")
+            print(f"curr_branches = {curr_branches}")
+            print(f"leftover_branches = {leftover_branches}")
+            
+        if len(leftover_branches)>0:
+            limb_branch_dict_new[limb_name] = leftover_branches
+            
+    return limb_branch_dict_new
+
+def limb_branch_setdiff(limb_branch_dict_list):
+    
+    return limb_branch_combining(
+                           limb_branch_dict_list,
+                           np.setdiff1d,
+                           verbose=False)
+
+def limb_branch_union(limb_branch_dict_list):
+    
+    return limb_branch_combining(
+                           limb_branch_dict_list,
+                           np.union1d,
+                           verbose=False)
+
+def limb_branch_intersection(limb_branch_dict_list):
+    
+    return limb_branch_combining(
+                           limb_branch_dict_list,
+                           np.intersect1d,
+                           verbose=False
+    )
+
+            
 
 import neuron_utils as nru
 import neuron #package where can use the Branches class to help do branch skeleton analysis
